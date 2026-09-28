@@ -30,6 +30,13 @@
   const local = location.pathname.startsWith('/central/');
   const tagUrl = (c) => (local ? new URL(`/central/t.html?c=${c}`, location.origin).href : new URL(`/t/${c}`, location.origin).href);
   const restDe = (id) => S.rests.find((r) => r.id === id);
+  const nomeArq = (t) => String(t || 'plaquinhas').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9-]+/g, '-').replace(/^-|-$/g, '').toLowerCase() || 'plaquinhas';
+  // PDF para a gráfica: uma plaquinha de 12 × 6 cm por página (central/placa.js).
+  async function pdfPlaquinhas(codigos, titulo) {
+    const lista = [...codigos].sort();
+    toast(`Gerando PDF com ${lista.length} ${lista.length === 1 ? 'plaquinha' : 'plaquinhas'}…`);
+    await Placa.baixarPdf(lista.map((c) => ({ codigo: c, url: tagUrl(c) })), `${nomeArq(titulo)}.pdf`);
+  }
   const fmtData = (iso) => (iso ? new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '');
 
   /* ============================== Dados ============================== */
@@ -356,6 +363,7 @@
         ${n ? `<div class="selacts">
           <button type="button" class="btn btn-cobalt btn-sm" data-abrir="vender">${icon('arrow')} Entregar a um restaurante</button>
           <button type="button" class="btn btn-line btn-sm" data-acao="estoque">Devolver ao estoque</button>
+          <button type="button" class="btn btn-line btn-sm" data-acao="pdf">${icon('download')} PDF das plaquinhas</button>
           <button type="button" class="btn btn-line btn-sm" data-acao="imprimir">${icon('printer')} Imprimir QR</button>
           <button type="button" class="btn btn-line btn-sm" data-acao="etiquetas">${icon('printer')} Etiquetas de código</button>
           <button type="button" class="btn btn-line btn-sm" data-acao="csv">${icon('download')} Exportar CSV</button>
@@ -391,7 +399,8 @@
     $('#shBody').innerHTML = `<form class="stack" id="fGerar" novalidate>
       <label class="field"><span>Quantidade</span><input class="input mono" id="gQtd" type="number" min="1" max="2000" value="50" required></label>
       <label class="field"><span>Nome do lote</span><input class="input" id="gLote" maxlength="40" value="Lote ${hoje}"><small class="help">Ajuda a achar as plaquinhas depois (ex.: pedido da gráfica).</small></label>
-      <button type="submit" class="btn btn-cobalt btn-block">${icon('plus')} Gerar códigos</button>
+      <p class="help">Ao gerar, baixa na hora o PDF para a gráfica: uma plaquinha de 12 × 6 cm por página, cada uma com o QR e o código dela.</p>
+      <button type="submit" class="btn btn-cobalt btn-block">${icon('plus')} Gerar e baixar PDF</button>
     </form>`;
     openSheet('sh');
   }
@@ -431,6 +440,7 @@
       <code>${esc(tagUrl(codigo))}</code>
       <p>${r ? `Entregue a <b>${esc(r.nome)}</b> em ${fmtData(t.vendida_em)}` : 'Em estoque'} · ${t.leituras || 0} leituras${t.ultima_leitura ? ` (última ${ago(t.ultima_leitura)})` : ''}</p>
       <div class="acts">
+        <button type="button" class="btn btn-line btn-sm" data-pdf1="${codigo}">${icon('download')} PDF</button>
         <button type="button" class="btn btn-line btn-sm" data-copiar="${codigo}">${icon('copy')} Copiar link</button>
         <a class="btn btn-line btn-sm" href="${esc(tagUrl(codigo))}" target="_blank" rel="noopener">${icon('external')} Testar</a>
       </div>
@@ -660,6 +670,11 @@
     if (vr) { Object.assign(S, { view: 'plaquinhas', rest: vr.dataset.verRest, filtro: 'todas', lote: '', busca: '' }); return render(); }
     const ver = t.closest('[data-ver]');
     if (ver) return verTag(ver.dataset.ver);
+    const p1 = t.closest('[data-pdf1]');
+    if (p1) {
+      try { await pdfPlaquinhas([p1.dataset.pdf1], `plaquinha-${p1.dataset.pdf1}`); } catch (ex) { toast(ex.message, { tone: 'error', ms: 4500 }); }
+      return;
+    }
     const cp = t.closest('[data-copiar]');
     if (cp) {
       const ok = await copyText(tagUrl(cp.dataset.copiar));
@@ -678,6 +693,13 @@
       const lista = selecionadas();
       if (ac.dataset.acao === 'limpar') { S.sel.clear(); return render(); }
       if (ac.dataset.acao === 'imprimir') return imprimir(lista);
+      if (ac.dataset.acao === 'pdf') {
+        const lotes = [...new Set(lista.map((x) => x.lote).filter(Boolean))];
+        try {
+          await pdfPlaquinhas(lista.map((x) => x.codigo), `plaquinhas-${lotes.length === 1 ? lotes[0] : new Date().toISOString().slice(0, 10)}`);
+        } catch (ex) { toast(ex.message, { tone: 'error', ms: 4500 }); }
+        return;
+      }
       if (ac.dataset.acao === 'etiquetas') return imprimirCodigos(lista);
       if (ac.dataset.acao === 'csv') return exportarCsv(lista);
       if (ac.dataset.acao === 'estoque') {
@@ -743,6 +765,11 @@
         S.sel = new Set(novos);
         Object.assign(S, { filtro: 'todas', lote, rest: '', busca: '' });
         toast(`${novos.length} códigos gerados e selecionados.`, { tone: 'ok' });
+        try {
+          await pdfPlaquinhas(novos, `plaquinhas-${lote || new Date().toISOString().slice(0, 10)}`);
+        } catch (ex) {
+          toast(`Códigos criados, mas o PDF falhou: ${ex.message} Use “PDF das plaquinhas” na seleção.`, { tone: 'error', ms: 6000 });
+        }
       } else if (f.id === 'fVender') {
         const rid = $('#vRest').value;
         const lista = [...S.sel];
