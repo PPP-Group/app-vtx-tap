@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#1B3A9E">
+  <title>Abrindo sua mesa…</title>
+  <style>
+    :root { --bg: #F2F4F8; --ink: #0F1430; --muted: #596080; --cobalt: #1B3A9E; --surface: #fff; color-scheme: light; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #090D20; --ink: #ECEFFA; --muted: #97A0C4; --surface: #111735; color-scheme: dark; } }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; background: var(--bg); color: var(--ink);
+      font: 16px/1.45 system-ui, -apple-system, 'Segoe UI', sans-serif; text-align: center; }
+    main { display: grid; justify-items: center; gap: 14px; max-width: 360px; }
+    .dot { width: 44px; height: 44px; border-radius: 50%; border: 4px solid color-mix(in srgb, var(--cobalt) 25%, transparent); border-top-color: var(--cobalt); animation: gira .8s linear infinite; }
+    @keyframes gira { to { transform: rotate(360deg); } }
+    h1 { margin: 0; font-size: 22px; }
+    p { margin: 0; color: var(--muted); }
+    code { font: 600 15px ui-monospace, 'SF Mono', Consolas, monospace; letter-spacing: .12em; padding: 4px 10px; border-radius: 8px; background: var(--surface); }
+    button { font: inherit; font-weight: 600; min-height: 46px; padding: 0 22px; border: 0; border-radius: 999px; background: var(--cobalt); color: #fff; cursor: pointer; }
+    [hidden] { display: none !important; }
+  </style>
+  <script src="/env.js"></script>
+</head>
+<body>
+  <main id="box" aria-live="polite">
+    <div class="dot" aria-hidden="true"></div>
+    <h1>Abrindo sua mesa…</h1>
+  </main>
+  <script>
+    // Redirecionador das plaquinhas: /t/CODIGO → site do restaurante dono da plaquinha (?tag=CODIGO).
+    (function () {
+      var env = window.CENTRAL_ENV || {};
+      var bruto = (location.pathname.match(/\/t\/([A-Za-z0-9-]+)/) || [])[1] || new URLSearchParams(location.search).get('c') || '';
+      var codigo = bruto.toUpperCase().replace(/[^A-Z0-9]/g, '');
+      var box = document.getElementById('box');
+
+      function mostrar(titulo, texto, tentar) {
+        box.innerHTML = '<h1></h1><p></p>' + (codigo ? '<code></code>' : '') + (tentar ? '<button type="button">Tentar de novo</button>' : '');
+        box.querySelector('h1').textContent = titulo;
+        box.querySelector('p').textContent = texto;
+        if (codigo) box.querySelector('code').textContent = codigo;
+        if (tentar) box.querySelector('button').onclick = function () { location.reload(); };
+      }
+
+      function consultar() {
+        if (env.SUPABASE_URL && env.SUPABASE_ANON_KEY) {
+          return fetch(env.SUPABASE_URL + '/rest/v1/rpc/resolver_etiqueta', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', apikey: env.SUPABASE_ANON_KEY, Authorization: 'Bearer ' + env.SUPABASE_ANON_KEY },
+            body: JSON.stringify({ p_codigo: codigo }),
+          }).then(function (r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.json();
+          });
+        }
+        // Modo demonstração: dados da central guardados neste navegador.
+        var db = {};
+        try { db = JSON.parse(localStorage.getItem('central-demo-v1')) || {}; } catch (e) {}
+        var e = (db.etiquetas || []).find(function (x) { return x.codigo === codigo; });
+        if (!e) return Promise.resolve({ status: 'inexistente' });
+        var dia = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+        e.leituras = (e.leituras || 0) + 1;
+        e.ultima_leitura = new Date().toISOString();
+        db.leituras = db.leituras || [];
+        var l = db.leituras.find(function (x) { return x.dia === dia && x.codigo === codigo; });
+        if (l) { l.n++; l.restaurante_id = e.restaurante_id; } else db.leituras.push({ dia: dia, codigo: codigo, restaurante_id: e.restaurante_id, n: 1 });
+        try { localStorage.setItem('central-demo-v1', JSON.stringify(db)); } catch (x) {}
+        if (!e.restaurante_id) return Promise.resolve({ status: 'livre' });
+        var r = (db.restaurantes || []).find(function (x) { return x.id === e.restaurante_id; });
+        return Promise.resolve(r && r.ativo !== false ? { status: 'ok', destino: r.destino } : { status: 'inativo' });
+      }
+
+      if (!codigo) return mostrar('Link incompleto', 'Encoste o celular na plaquinha de novo ou aponte a câmera para o QR.');
+      consultar().then(function (r) {
+        if (r && r.status === 'ok' && r.destino) {
+          var u = new URL(r.destino);
+          u.searchParams.set('tag', codigo);
+          location.replace(u.href);
+        } else if (r && r.status === 'livre') {
+          mostrar('Plaquinha ainda não ativada', 'Esta plaquinha ainda não foi entregue a um restaurante. Avise a equipe.');
+        } else if (r && r.status === 'inativo') {
+          mostrar('Plaquinha desativada', 'O serviço desta plaquinha está desativado. Avise a equipe do restaurante.');
+        } else {
+          mostrar('Plaquinha não encontrada', 'Não reconhecemos este código. Confira se o link está completo.');
+        }
+      }).catch(function () {
+        mostrar('Sem conexão', 'Não foi possível abrir a página da mesa. Confira a internet.', true);
+      });
+    })();
+  </script>
+</body>
+</html>

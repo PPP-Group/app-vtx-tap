@@ -1,7 +1,7 @@
 /* Painel da equipe — recebe os chamados das mesas em tempo real. */
 (function () {
   const cfg = window.NFC_CONFIG;
-  const { $, $$, esc, brl, pad, icon, toast, copyText, qrSvg, clock, ago, hhmm, secondsSince, openSheet, closeSheet,
+  const { $, $$, esc, brl, pad, icon, toast, clock, ago, hhmm, secondsSince, openSheet, closeSheet,
     instagramHandle, initials, safeUrl } = UI;
   const store = Store.create();
   const isDemo = store.mode === 'local';
@@ -28,8 +28,14 @@
     fbFiltro: 'todos',
     calls: [],
     fb: [],
+    sessoes: [],
+    mesasAbertas: [],
+    etiquetas: [],
     seen: new Set(),
     seenFb: new Set(),
+    seenSess: new Set(),
+    // Plaquinha nova lida pela equipe (/admin/?vincular=CODIGO).
+    vincular: (new URLSearchParams(location.search).get('vincular') || '').toUpperCase().replace(/[^A-Z0-9]/g, '') || null,
     fresh: new Map(),
     ready: false,
     online: true,
@@ -58,6 +64,15 @@
   const firstName = (n) => String(n || '').trim().split(/\s+/)[0];
   const nomeRest = () => S.settings.restaurante.nome || 'Restaurante';
 
+  /* Sessões: celulares que pediram (ou já têm) o sino liberado. */
+  const vigente = (s) =>
+    s.status === 'pendente' ? secondsSince(s.criado_em) < 1800
+      : s.status === 'liberada' ? secondsSince(s.liberada_em || s.criado_em) < 6 * 3600 : false;
+  const pendentes = () => S.sessoes.filter((s) => s.status === 'pendente' && vigente(s));
+  const pessoasNa = (n) => S.sessoes.filter((s) => s.mesa === n && s.status === 'liberada' && vigente(s));
+  const codigoDa = (n) => (S.mesasAbertas.find((m) => m.mesa === n) || {}).codigo || '';
+  const nomeDaSessao = (id) => (id && (S.sessoes.find((s) => s.id === id) || {}).nome) || '';
+
   /* ============================== Entrada ============================== */
   // Entrar: só o PIN. Criar conta: nome, PIN novo e a senha da equipe.
   let temSenhaEquipe = true;
@@ -66,7 +81,7 @@
     $('#login').hidden = false;
     $('#loginBrand').textContent = nomeRest();
     const criar = S.loginModo === 'criar';
-    $('#loginForm').innerHTML = `
+    $('#loginForm').innerHTML = `${S.vincular ? `<p class="note">${icon('nfc')}<span>Entre para ligar a plaquinha <b class="mono">${esc(S.vincular)}</b> a uma mesa.</span></p>` : ''}
       <div class="seg login-tabs" role="tablist" aria-label="Acesso da equipe">
         <button type="button" role="tab" aria-selected="${!criar}" data-login="entrar">Entrar</button>
         <button type="button" role="tab" aria-selected="${criar}" data-login="criar">Criar conta</button>
@@ -172,9 +187,9 @@
 
   async function notify(c) {
     if (!('Notification' in window) || Notification.permission !== 'granted' || !document.hidden) return;
-    const titulo = `Mesa ${c.mesa} · ${motivo(c.tipo).label}`;
+    const titulo = c.titulo || `Mesa ${c.mesa} · ${motivo(c.tipo).label}`;
     const opcoes = {
-      body: c.nota || (c.pagamento ? `Pagamento: ${c.pagamento}` : 'Toque para abrir o painel'),
+      body: c.corpo || c.nota || (c.pagamento ? `Pagamento: ${c.pagamento}` : 'Toque para abrir o painel'),
       tag: c.id,
       icon: '/admin/icons/icon-192.png',
       badge: '/admin/icons/icon-192.png',
@@ -284,9 +299,18 @@
   async function refresh() {
     if (!S.user) return;
     try {
-      const [calls, fb] = await Promise.all([store.listCalls({ desde: desde() }), store.listFeedback()]);
+      const [calls, fb, sessoes, abertas, etiquetas] = await Promise.all([
+        store.listCalls({ desde: desde() }),
+        store.listFeedback(),
+        store.listSessoes({ desde: desde() }),
+        store.listMesasAbertas(),
+        store.listEtiquetas(),
+      ]);
       S.calls = calls || [];
       S.fb = fb || [];
+      S.sessoes = sessoes || [];
+      S.mesasAbertas = abertas || [];
+      S.etiquetas = etiquetas || [];
       S.online = true;
     } catch (e) {
       console.error(e);
@@ -294,9 +318,10 @@
     }
     detectNew();
     renderChrome();
-    if (['chamados', 'salao', 'comentarios'].includes(S.view)) renderView();
+    if (['chamados', 'salao', 'comentarios', 'plaquinhas'].includes(S.view)) renderView();
     if (S.mesaAberta && !$('#sh-mesa').hidden) renderMesaSheet(S.mesaAberta);
   }
+
   let refreshT;
   const queueRefresh = () => {
     clearTimeout(refreshT);
@@ -309,6 +334,12 @@
       if (S.seen.has(c.id)) continue;
       S.seen.add(c.id);
       if (S.ready && c.status === 'aberto') novos.push(c);
+    }
+    const novasSess = [];
+    for (const x of S.sessoes) {
+      if (S.seenSess.has(x.id)) continue;
+      S.seenSess.add(x.id);
+      if (S.ready && x.status === 'pendente') novasSess.push(x);
     }
     let novosFb = 0;
     for (const f of S.fb) {
@@ -329,10 +360,23 @@
         action: S.view !== 'chamados' ? { label: 'Ver', run: () => go('chamados') } : null,
       });
     }
+    if (novasSess.length) {
+      if (!novos.length) ding(2);
+      navigator.vibrate && navigator.vibrate([80, 60, 80]);
+      novasSess.forEach((x) => {
+        S.fresh.set(x.id, Date.now());
+        notify({ id: x.id, titulo: `Mesa ${x.mesa} · ${x.nome}`, corpo: 'Pede para usar o sino. Confira se está na mesa e libere.' });
+      });
+      const x = novasSess[novasSess.length - 1];
+      toast(`Mesa ${x.mesa}: ${x.nome} pede para usar o sino`, {
+        ms: 5000,
+        action: S.view !== 'chamados' ? { label: 'Ver', run: () => go('chamados') } : null,
+      });
+    }
     if (novosFb) toast(novosFb === 1 ? 'Novo comentário anônimo recebido.' : `${novosFb} comentários novos.`, {
       action: S.view !== 'comentarios' ? { label: 'Ler', run: () => go('comentarios') } : null,
     });
-    const abertos = S.calls.filter((c) => c.status === 'aberto').length;
+    const abertos = S.calls.filter((c) => c.status === 'aberto').length + pendentes().length;
     document.title = abertos ? `(${abertos}) Chamados · ${nomeRest()}` : `Painel · ${nomeRest()}`;
   }
 
@@ -366,7 +410,7 @@
   /* ============================== Estrutura ============================== */
   function counts() {
     return {
-      abertos: S.calls.filter((c) => c.status === 'aberto').length,
+      abertos: S.calls.filter((c) => c.status === 'aberto').length + pendentes().length,
       caminho: S.calls.filter((c) => c.status === 'a_caminho').length,
       naoLidos: S.fb.filter((f) => !f.lido).length,
     };
@@ -467,7 +511,7 @@
             ? `<span class="state-tag ${c.status === 'resolvido' ? 'state-tag--ok' : ''}">${c.status === 'resolvido' ? 'Resolvido' : 'Cancelado'}</span>`
             : `<time class="timer" data-since="${c.criado_em}" title="Tempo desde o chamado">${clock(c.criado_em)}</time>`}
         </div>
-        <p class="ccard-meta">${esc(areaDe(c.mesa))} · ${hhmm(c.criado_em)}${done && c.atendente ? ` · ${esc(firstName(c.atendente))}` : ''}</p>
+        <p class="ccard-meta">${nomeDaSessao(c.sessao_id) ? `<b>${esc(nomeDaSessao(c.sessao_id))}</b> · ` : ''}${esc(areaDe(c.mesa))} · ${hhmm(c.criado_em)}${done && c.atendente ? ` · ${esc(firstName(c.atendente))}` : ''}</p>
         ${c.pagamento ? `<span class="ccard-pay">Pagamento: ${esc(c.pagamento)}</span>` : ''}
         ${c.nota ? `<p class="ccard-note">“${esc(c.nota)}”</p>` : ''}
         ${itens}
@@ -475,9 +519,66 @@
         ${done ? '' : `<div class="ccard-actions">
           ${c.status === 'aberto' ? `<button type="button" class="btn btn-cobalt" data-act="ir" data-id="${c.id}">Estou indo</button>` : ''}
           <button type="button" class="btn ${c.status === 'a_caminho' ? 'btn-primary' : 'btn-quiet'}" data-act="ok" data-id="${c.id}">${icon('check')} Resolvido</button>
+          ${c.tipo === 'conta' ? `<button type="button" class="btn btn-line ccard-close" data-fechar="${c.mesa}" data-id="${c.id}">${icon('lock')} Conta paga · fechar mesa</button>` : ''}
         </div>`}
       </div>
     </article>`;
+  }
+
+  function sessCard(x) {
+    const junto = pessoasNa(x.mesa);
+    const isNew = S.fresh.has(x.id) && Date.now() - S.fresh.get(x.id) < 1500;
+    return `<article class="ccard scard ${isNew ? 'is-new' : ''}" data-sess="${x.id}">
+      <div class="mini-plate" aria-label="Mesa ${x.mesa}"><small>Mesa</small><b>${pad(x.mesa)}</b></div>
+      <div class="ccard-body">
+        <div class="ccard-row"><h3>${esc(x.nome)}</h3><time class="timer" data-since="${x.criado_em}">${clock(x.criado_em)}</time></div>
+        <p class="ccard-meta">Pede para usar o sino${areaDe(x.mesa) ? ` · ${esc(areaDe(x.mesa))}` : ''}</p>
+        <p class="scard-hint">${junto.length
+          ? `Já liberados na mesa: ${junto.map((p) => esc(firstName(p.nome))).join(', ')}${codigoDa(x.mesa) ? ` · código <b class="mono">${codigoDa(x.mesa)}</b>` : ''}`
+          : 'Ninguém liberado nesta mesa ainda. Confira se há alguém sentado nela.'}</p>
+        <div class="ccard-actions">
+          <button type="button" class="btn btn-cobalt" data-sess-ok="${x.id}">${icon('check')} Liberar</button>
+          <button type="button" class="btn btn-quiet" data-sess-no="${x.id}">Recusar</button>
+        </div>
+      </div>
+    </article>`;
+  }
+
+  async function decidir(id, liberar) {
+    const x = S.sessoes.find((y) => y.id === id);
+    if (!x) return;
+    x.status = liberar ? 'liberada' : 'recusada';
+    x.liberada_em = new Date().toISOString();
+    renderView();
+    renderChrome();
+    try {
+      await store.decidirSessao(id, liberar, S.user.nome);
+      toast(liberar ? `Sino liberado para ${x.nome} (mesa ${x.mesa}).` : `Pedido de ${x.nome} recusado.`, { tone: liberar ? 'ok' : 'ink' });
+    } catch (e) {
+      console.error(e);
+      toast('Não foi possível salvar. Verifique a conexão.', { tone: 'error' });
+    }
+    queueRefresh();
+  }
+
+  async function fecharMesa(n, callId) {
+    const gente = pessoasNa(n).length;
+    if (!confirm(`Fechar a mesa ${n}? ${gente ? `O sino de ${gente === 1 ? '1 pessoa' : `${gente} pessoas`} será bloqueado` : 'O sino fica bloqueado'} até a equipe liberar de novo.`)) return;
+    try {
+      if (callId) {
+        const c = S.calls.find((x) => x.id === callId);
+        if (c && c.status !== 'resolvido') {
+          const now = new Date().toISOString();
+          await store.updateCall(callId, { status: 'resolvido', resolvido_em: now, atendente: c.atendente || S.user.nome, visto_em: c.visto_em || now });
+        }
+      }
+      await store.fecharMesa(n);
+      toast(`Mesa ${n} fechada.`, { tone: 'ok' });
+    } catch (e) {
+      console.error(e);
+      toast('Não foi possível fechar a mesa. Verifique a conexão.', { tone: 'error' });
+    }
+    queueRefresh();
   }
 
   function avgResponse() {
@@ -495,6 +596,7 @@
     const atrasados = abertos.filter((c) => urgency(c) === 'late').length;
     const resp = avgResponse();
     const list = S.filtro === 'abertos' ? [...abertos, ...caminho] : feitos;
+    const pedidos = pendentes().sort(byOld);
 
     const empty = S.filtro === 'abertos'
       ? `<div class="empty"><span class="empty-ico">${icon('bell')}</span><h2>Nenhuma mesa chamando</h2>
@@ -507,13 +609,17 @@
       <div class="vhead"><div><h1>Chamados</h1><p>Mais antigos primeiro. Toque em “Estou indo” para a mesa saber que alguém está a caminho.</p></div>
         ${isDemo ? `<div class="vhead-actions"><button type="button" class="btn btn-line btn-sm" data-demo="simular">${icon('sparkle')} Simular chamado</button></div>` : ''}</div>
       <dl class="strip">
-        <div class="${abertos.length ? 'is-alert' : ''}"><dt>Aguardando</dt><dd>${abertos.length}</dd></div>
+        <div class="${abertos.length || pedidos.length ? 'is-alert' : ''}"><dt>Aguardando</dt><dd>${abertos.length + pedidos.length}</dd></div>
         <div><dt>A caminho</dt><dd>${caminho.length}</dd></div>
         <div class="${atrasados ? 'is-alert' : ''}"><dt>Mais de ${LATE} min</dt><dd>${atrasados}</dd></div>
         <div><dt>Resposta média</dt><dd>${resp ? `${resp.v}<small>${resp.u}</small>` : '—'}</dd></div>
       </dl>
       <div class="board">
         <div>
+          ${pedidos.length ? `<section class="pedidos" aria-labelledby="hPedidos">
+            <h2 id="hPedidos">Pedindo para usar o sino <small>Libere só quem está mesmo na mesa</small></h2>
+            <div class="calls">${pedidos.map(sessCard).join('')}</div>
+          </section>` : ''}
           <div class="toolbar">
             <div class="seg" role="radiogroup" aria-label="Filtrar chamados">
               <button type="button" role="radio" aria-checked="${S.filtro === 'abertos'}" data-filtro="abertos">Em aberto (${abertos.length + caminho.length})</button>
@@ -523,7 +629,7 @@
           ${list.length ? `<div class="calls">${list.map(callCard).join('')}</div>` : empty}
         </div>
         <aside class="rail" aria-label="Mesas agora"><h2>Mesas agora</h2>${mesasGrid(1, S.settings.mesas.total)}
-          <div class="legend"><span><i class="l-call"></i>Chamando</span><span><i class="l-go"></i>A caminho</span></div></aside>
+          <div class="legend"><span><i class="l-call"></i>Chamando</span><span><i class="l-go"></i>A caminho</span><span><i class="l-occ"></i>Ocupada</span></div></aside>
       </div>`;
   }
 
@@ -531,22 +637,28 @@
   function mesaState(n) {
     const ativos = S.calls.filter((c) => c.mesa === n && (c.status === 'aberto' || c.status === 'a_caminho'));
     const aberto = ativos.find((c) => c.status === 'aberto');
-    return { st: aberto ? 'aberto' : ativos.length ? 'a_caminho' : 'livre', call: aberto || ativos[0], hoje: S.calls.filter((c) => c.mesa === n).length };
+    const pedindo = pendentes().some((x) => x.mesa === n);
+    const pessoas = pessoasNa(n);
+    return {
+      st: aberto || pedindo ? 'aberto' : ativos.length ? 'a_caminho' : pessoas.length ? 'ocupada' : 'livre',
+      call: aberto || ativos[0], pedindo, pessoas, hoje: S.calls.filter((c) => c.mesa === n).length,
+    };
   }
   function mesasGrid(de, ate) {
     let h = '<div class="mesas">';
     for (let n = de; n <= ate; n++) {
       const s = mesaState(n);
-      const label = s.st === 'aberto' ? `Chamando · <span data-since="${s.call.criado_em}">${clock(s.call.criado_em)}</span>`
+      const label = s.st === 'aberto' ? (s.call ? `Chamando · <span data-since="${s.call.criado_em}">${clock(s.call.criado_em)}</span>` : 'Pede o sino')
         : s.st === 'a_caminho' ? `${esc(firstName(s.call.atendente))} a caminho`
-        : s.hoje ? `${s.hoje} ${s.hoje === 1 ? 'chamado' : 'chamados'} hoje` : 'Sem chamados';
+        : s.st === 'ocupada' ? `${s.pessoas.length} ${s.pessoas.length === 1 ? 'pessoa' : 'pessoas'}`
+        : s.hoje ? `${s.hoje} ${s.hoje === 1 ? 'chamado' : 'chamados'} hoje` : 'Livre';
       h += `<button type="button" class="mesa" data-mesa="${n}" data-st="${s.st}" aria-label="Mesa ${n}"><span class="mesa-n">${pad(n)}</span><span class="mesa-st">${label}</span></button>`;
     }
     return h + '</div>';
   }
   function vSalao() {
-    return `<div class="vhead"><div><h1>Salão</h1><p>Toque em uma mesa para ver os chamados de hoje e o link da plaquinha.</p></div>
-        <div class="legend"><span><i class="l-call"></i>Chamando</span><span><i class="l-go"></i>A caminho</span><span><i></i>Sem chamado aberto</span></div></div>
+    return `<div class="vhead"><div><h1>Salão</h1><p>Toque em uma mesa para ver quem está nela, os chamados de hoje e fechar a mesa.</p></div>
+        <div class="legend"><span><i class="l-call"></i>Chamando</span><span><i class="l-go"></i>A caminho</span><span><i class="l-occ"></i>Ocupada</span><span><i></i>Livre</span></div></div>
       ${S.settings.mesas.areas.map((a) => {
         let n = 0;
         for (let i = a.de; i <= a.ate; i++) if (mesaState(i).st === 'aberto') n++;
@@ -557,12 +669,25 @@
   function renderMesaSheet(n) {
     $('#mesaTitle').textContent = `Mesa ${pad(n)}`;
     const calls = S.calls.filter((c) => c.mesa === n).sort((a, b) => new Date(b.criado_em) - new Date(a.criado_em));
+    const pessoas = pessoasNa(n);
+    const pedindo = pendentes().filter((x) => x.mesa === n);
+    const placas = S.etiquetas.filter((e) => e.mesa === n);
     $('#mesaBody').innerHTML = `<div class="stack">
-      <p class="muted">${esc(areaDe(n))} · ${calls.length} ${calls.length === 1 ? 'chamado' : 'chamados'} nas últimas 16 horas</p>
+      <p class="muted">${esc(areaDe(n))}${areaDe(n) ? ' · ' : ''}${calls.length} ${calls.length === 1 ? 'chamado' : 'chamados'} nas últimas 16 horas</p>
+      <section class="mesa-gente">
+        <div class="mesa-gente-head"><h3>Na mesa agora</h3>${codigoDa(n) ? `<span class="mesa-cod">Código <b class="mono">${codigoDa(n)}</b></span>` : ''}</div>
+        ${pessoas.length || pedindo.length ? `<ul class="gente">
+          ${pessoas.map((p) => `<li><span class="avatar" aria-hidden="true">${esc((firstName(p.nome)[0] || '?').toUpperCase())}</span><div><b>${esc(p.nome)}</b><small>Sino liberado ${ago(p.liberada_em || p.criado_em)}${p.via === 'codigo' ? ' · pelo código da mesa' : p.liberada_por ? ` · por ${esc(firstName(p.liberada_por))}` : ''}</small></div></li>`).join('')}
+          ${pedindo.map((p) => `<li class="is-pend"><span class="avatar" aria-hidden="true">${esc((firstName(p.nome)[0] || '?').toUpperCase())}</span><div><b>${esc(p.nome)}</b><small>Pede para usar o sino · ${ago(p.criado_em)}</small></div>
+            <span class="gente-acts"><button type="button" class="btn btn-cobalt btn-sm" data-sess-ok="${p.id}">Liberar</button><button type="button" class="btn btn-quiet btn-sm" data-sess-no="${p.id}">Recusar</button></span></li>`).join('')}
+        </ul>` : '<p class="note">Ninguém com o sino liberado. Quando o cliente pedir, o pedido aparece em Chamados.</p>'}
+        ${codigoDa(n) ? '<small class="help">Quem está na mesa pode passar o código para os acompanhantes: com ele, o sino libera sem precisar da equipe.</small>' : ''}
+        ${pessoas.length || pedindo.length ? `<button type="button" class="btn btn-danger btn-block" data-fechar="${n}">${icon('lock')} Fechar mesa</button>` : ''}
+      </section>
       ${calls.length ? `<div class="calls">${calls.map(callCard).join('')}</div>` : '<p class="note">Esta mesa ainda não fez chamados hoje.</p>'}
+      <p class="muted" style="font-size:13px">${placas.length ? `Plaquinha${placas.length > 1 ? 's' : ''}: ${placas.map((e) => `<span class="mono">${esc(e.codigo)}</span>`).join(', ')}` : 'Nenhuma plaquinha ligada a esta mesa.'}</p>
       <div class="vhead-actions">
         <a class="btn btn-line btn-sm" href="${esc(tableUrl(n))}" target="_blank" rel="noopener">${icon('external')} Abrir página da mesa</a>
-        <button type="button" class="btn btn-quiet btn-sm" data-qr="${n}">${icon('qr')} QR da mesa</button>
       </div></div>`;
   }
 
@@ -604,36 +729,25 @@
           ${isDemo ? `<div class="vhead-actions"><button type="button" class="btn btn-line" data-demo="comentario">${icon('sparkle')} Simular comentário</button></div>` : ''}</div>`}`;
   }
 
-  /* ---------- Plaquinhas ---------- */
-  // Página da mesa (cliente) fica na raiz do site, sem extensão na URL —
-  // não em 'index.html' relativo, pois o painel agora mora em /admin/.
-  const defaultBase = () => new URL('/', location.origin).href;
-  const baseUrl = () => get('nfc-base-url') || defaultBase();
-  const tableUrl = (n) => {
-    const u = new URL(baseUrl(), location.href);
-    u.searchParams.set('mesa', n);
-    return u.href;
-  };
-  const canNfc = 'NDEFReader' in window;
+  /* ---------- Mesas e plaquinhas ---------- */
+  // As plaquinhas saem de fábrica com um código (NFC e QR iguais) que passa
+  // pelo redirecionador central e chega aqui como /?tag=CODIGO. Na primeira
+  // leitura, alguém da equipe escolhe a mesa; depois o código abre direto.
+  const tableUrl = (n) => new URL(`/?mesa=${n}`, location.origin).href;
+  const tagUrl = (codigo) => new URL(`/?tag=${encodeURIComponent(codigo)}`, location.origin).href;
+  const normCodigo = (c) => String(c || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const placasDa = (n) => S.etiquetas.filter((e) => e.mesa === n);
 
   function vPlaquinhas() {
-    let cards = '';
-    for (let n = 1; n <= S.settings.mesas.total; n++) {
-      cards += `<article class="tagcard">
-        <div class="mini-plate"><small>Mesa</small><b>${pad(n)}</b></div>
-        <div style="min-width:0"><div class="tagcard-area">${esc(areaDe(n))}</div><div class="tagcard-url" title="${esc(tableUrl(n))}">${esc(tableUrl(n).replace(/^https?:\/\//, ''))}</div></div>
-        <div class="tagcard-actions">
-          ${canNfc ? `<button type="button" class="btn btn-cobalt" data-nfc="${n}">${icon('nfc')} Gravar</button>` : ''}
-          <button type="button" class="btn btn-quiet" data-copy="${n}">${icon('copy')} Copiar link</button>
-          <button type="button" class="btn btn-quiet" data-qr="${n}">${icon('qr')} QR</button>
-          <a class="btn btn-quiet" href="${esc(tableUrl(n))}" target="_blank" rel="noopener" aria-label="Testar mesa ${n}">${icon('external')}</a>
-        </div></article>`;
-    }
+    const total = S.settings.mesas.total;
+    const semPlaca = [];
+    for (let n = 1; n <= total; n++) if (!placasDa(n).length) semPlaca.push(n);
+    const foraDoTotal = S.etiquetas.filter((e) => e.mesa > total);
     const areas = S.settings.mesas.areas;
     const mesasCfg = `<div class="panel stack" id="mesasCfg">
         <h2>Quantidade de mesas</h2>
         <label class="field" style="max-width:220px"><span>Total no restaurante</span>
-          <input class="input mono" id="totalMesas" type="number" min="1" max="300" value="${S.settings.mesas.total}"></label>
+          <input class="input mono" id="totalMesas" type="number" min="1" max="300" value="${total}"></label>
         <h2 style="margin-top:6px">Áreas do salão</h2>
         <p class="muted" style="font-size:13px">Dê nome aos grupos de mesa (salão, varanda, mezanino…). Uma mesa fora de qualquer faixa aparece sem área.</p>
         <div class="arows">${areas.map((a, i) => `<div class="arow" data-area-idx="${i}">
@@ -645,61 +759,101 @@
           </div>`).join('') || '<p class="muted">Nenhuma área cadastrada — todas as mesas aparecem sem nome.</p>'}</div>
         <button type="button" class="btn btn-line btn-sm" data-area="add">${icon('plus')} Adicionar área</button>
       </div>`;
-    return `<div class="vhead"><div><h1>Mesas</h1><p>Quantidade de mesas, áreas do salão e a plaquinha de cada uma.</p></div>
-        <div class="vhead-actions"><button type="button" class="btn btn-line btn-sm" id="printAll">${icon('printer')} Imprimir QR de todas</button></div></div>
+    const linhas = [];
+    for (let n = 1; n <= total; n++) {
+      const placas = placasDa(n);
+      linhas.push(`<li class="prow ${placas.length ? '' : 'is-vazia'}">
+        <div class="mini-plate"><small>Mesa</small><b>${pad(n)}</b></div>
+        <div class="prow-body"><b>${placas.length ? placas.map((e) => `<span class="mono">${esc(e.codigo)}</span>`).join(' · ') : 'Sem plaquinha'}</b>
+          <small>${esc(areaDe(n))}${placas.length ? `${areaDe(n) ? ' · ' : ''}ligada ${ago(placas[0].vinculada_em)}${placas[0].vinculada_por ? ` por ${esc(firstName(placas[0].vinculada_por))}` : ''}` : ''}</small></div>
+        <span class="prow-acts">
+          ${placas.map((e) => `<button type="button" class="btn btn-quiet btn-sm" data-placa="${esc(e.codigo)}" aria-label="Alterar plaquinha ${esc(e.codigo)}">${icon('edit')}<span>Alterar</span></button>`).join('')}
+          <a class="btn btn-quiet btn-sm" href="${esc(tableUrl(n))}" target="_blank" rel="noopener" aria-label="Abrir a página da mesa ${n}">${icon('external')}</a>
+        </span>
+      </li>`);
+    }
+    return `<div class="vhead"><div><h1>Mesas</h1><p>Quantidade de mesas, áreas do salão e qual plaquinha está em cada mesa.</p></div></div>
       ${mesasCfg}
       <div class="howto">
-        <div class="panel stack"><h2>Como gravar uma plaquinha</h2>
+        <div class="panel stack"><h2>Como ligar uma plaquinha a uma mesa</h2>
           <ol>
-            <li>Use etiquetas NFC <strong>NTAG213</strong> ou <strong>NTAG215</strong> (adesivo ou moeda).</li>
-            ${canNfc
-              ? '<li>Toque em <strong>Gravar</strong> na mesa desejada e encoste a etiqueta atrás deste celular.</li>'
-              : '<li>Neste aparelho, use o app gratuito <strong>NFC Tools</strong>: Escrever › Adicionar registro › URL, e cole o link copiado.</li><li>No Android com Chrome, este painel grava a etiqueta direto pelo botão “Gravar”.</li>'}
-            <li>Teste encostando outro celular: a página da mesa certa deve abrir.</li>
-            <li>Depois de testar, bloqueie a etiqueta (no NFC Tools: Outros › Bloquear) para ninguém regravar.</li>
-          </ol></div>
-        <div class="panel stack"><h2>Endereço da página da mesa</h2>
-          <label class="field"><span>Link base publicado</span><input class="input mono" id="baseUrl" value="${esc(baseUrl())}" spellcheck="false" autocomplete="off"></label>
-          <p class="muted" style="font-size:13px">O número da mesa é adicionado ao final (<code>?mesa=12</code>). Altere se publicar a página em outro domínio.</p>
+            <li>Cole a plaquinha na mesa.</li>
+            <li>Encoste o celular nela (ou aponte a câmera para o QR). Na primeira vez aparece <strong>Plaquinha nova</strong>.</li>
+            <li>Toque em <strong>Sou da equipe · configurar</strong>, entre com seu PIN e escolha o número da mesa.</li>
+            <li>Pronto: daí em diante, a plaquinha abre direto a página dessa mesa.</li>
+          </ol>
+          <small class="help">As plaquinhas já vêm gravadas e bloqueadas. Não é preciso app nenhum para configurar.</small>
         </div>
+        <form class="panel stack" id="placaManual" novalidate><h2>Ligar pelo código</h2>
+          <p class="muted" style="font-size:13px">Sem o celular por perto? Digite o código impresso no verso da plaquinha.</p>
+          <div class="placa-manual">
+            <label class="field"><span>Código</span><input class="input mono" id="pmCodigo" maxlength="16" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="K7P2QXA"></label>
+            <label class="field"><span>Mesa</span><input class="input mono" id="pmMesa" type="number" min="1" max="${total}" inputmode="numeric"></label>
+          </div>
+          <button type="submit" class="btn btn-cobalt btn-sm">${icon('check')} Ligar plaquinha</button>
+        </form>
       </div>
-      <div class="tags-grid">${cards}</div>`;
+      <div class="toolbar"><p class="muted" style="font-size:14px">${S.etiquetas.length} ${S.etiquetas.length === 1 ? 'plaquinha ligada' : 'plaquinhas ligadas'}${semPlaca.length ? ` · ${semPlaca.length} ${semPlaca.length === 1 ? 'mesa sem plaquinha' : 'mesas sem plaquinha'}` : ''}</p></div>
+      ${foraDoTotal.length ? `<p class="note">${icon('msg')}<span>${foraDoTotal.length === 1 ? 'Uma plaquinha está ligada' : `${foraDoTotal.length} plaquinhas estão ligadas`} a mesa acima do total (${foraDoTotal.map((e) => `${esc(e.codigo)} → ${e.mesa}`).join(', ')}). Aumente o total ou altere a plaquinha.</span></p>` : ''}
+      <ul class="plist">${linhas.join('')}</ul>`;
   }
 
   const saveMesas = (patch) => saveSettings({ mesas: { ...S.settings.mesas, ...patch } });
 
-
-  async function gravarNfc(n, btn) {
-    const label = btn.innerHTML;
+  /* Ligar uma plaquinha a uma mesa: aberto pela leitura da plaquinha (?vincular=) ou pela lista. */
+  let vincCodigo = null;
+  let vincMesa = null;
+  function abrirVincular(codigo) {
+    vincCodigo = normCodigo(codigo);
+    const atual = S.etiquetas.find((e) => e.codigo === vincCodigo);
+    vincMesa = atual ? atual.mesa : null;
+    renderVincular();
+    openSheet('sh-vincular');
+  }
+  function renderVincular() {
+    const atual = S.etiquetas.find((e) => e.codigo === vincCodigo);
+    const total = S.settings.mesas.total;
+    let grid = '';
+    for (let n = 1; n <= total; n++) {
+      const outras = placasDa(n).filter((e) => e.codigo !== vincCodigo).length;
+      grid += `<button type="button" class="vmesa" data-vmesa="${n}" aria-pressed="${vincMesa === n}" ${outras ? 'data-tem="1"' : ''}>
+        <b>${pad(n)}</b>${outras ? '<small>já tem</small>' : areaDe(n) ? `<small>${esc(areaDe(n))}</small>` : ''}</button>`;
+    }
+    $('#vincTitle').textContent = atual ? 'Alterar plaquinha' : 'Plaquinha nova';
+    $('#vincBody').innerHTML = `<div class="stack">
+      <p class="vinc-cod">Código <b class="mono">${esc(vincCodigo)}</b>${atual ? ` · hoje na mesa <b>${atual.mesa}</b>` : ''}</p>
+      <p class="muted">Em qual mesa esta plaquinha está colada?</p>
+      <div class="vmesas">${grid}</div>
+      <button type="button" class="btn btn-cobalt btn-block" data-vinc="salvar" ${vincMesa ? '' : 'disabled'}>${icon('check')} ${vincMesa ? `Ligar à mesa ${vincMesa}` : 'Escolha a mesa'}</button>
+      ${atual ? `<button type="button" class="btn btn-danger btn-block" data-vinc="soltar">${icon('trash')} Desligar desta mesa</button>` : ''}
+      <small class="help">Uma mesa pode ter mais de uma plaquinha (por exemplo, uma em cada ponta).</small>
+    </div>`;
+  }
+  async function salvarVinculo() {
+    if (!vincCodigo || !vincMesa) return;
+    const codigo = vincCodigo;
+    const mesa = vincMesa;
     try {
-      btn.disabled = true;
-      btn.textContent = 'Encoste a etiqueta…';
-      const nd = new NDEFReader();
-      await nd.write({ records: [{ recordType: 'url', data: tableUrl(n) }] });
-      toast(`Plaquinha da mesa ${n} gravada.`, { tone: 'ok' });
+      await store.vincularEtiqueta(codigo, mesa, S.user.nome);
+      closeSheet();
+      toast(`Plaquinha ligada à mesa ${mesa}.`, { tone: 'ok', ms: 6000, action: { label: 'Testar', run: () => window.open(tagUrl(codigo), '_blank', 'noopener') } });
+      queueRefresh();
     } catch (e) {
-      toast(e.name === 'NotAllowedError' ? 'Permita o uso de NFC para gravar.' : `Não foi possível gravar: ${e.message}`, { tone: 'error', ms: 4500 });
-    } finally {
-      btn.disabled = false;
-      btn.innerHTML = label;
+      console.error(e);
+      toast(e.message && !/fetch|network/i.test(e.message) ? e.message : 'Não foi possível salvar. Verifique a conexão.', { tone: 'error', ms: 4500 });
     }
   }
-
-  function openQr(n) {
-    $('#qrTitle').textContent = `QR · Mesa ${pad(n)}`;
-    $('#qrBody').innerHTML = `<div class="qr-big">
-      <div class="qr">${qrSvg(tableUrl(n), { cell: 8, margin: 1 })}</div>
-      <code>${esc(tableUrl(n))}</code>
-      <div class="vhead-actions"><button type="button" class="btn btn-quiet btn-sm" data-copy="${n}">${icon('copy')} Copiar link</button>
-      <button type="button" class="btn btn-line btn-sm" data-print="${n}">${icon('printer')} Imprimir</button></div></div>`;
-    openSheet('sh-qr');
-  }
-
-  function printQrs(list) {
-    $('#printArea').innerHTML = list.map((n) => `<div class="print-card"><small>Mesa</small><b>${pad(n)}</b>
-      <div class="qr">${qrSvg(tableUrl(n), { cell: 4, margin: 0 })}</div>
-      <p>Encoste o celular na plaquinha ou aponte a câmera para o código</p></div>`).join('');
-    setTimeout(() => window.print(), 50);
+  async function soltarVinculo() {
+    if (!confirm(`Desligar a plaquinha ${vincCodigo}? Ela volta a aparecer como “Plaquinha nova” até ser ligada de novo.`)) return;
+    try {
+      await store.desvincularEtiqueta(vincCodigo);
+      closeSheet();
+      toast('Plaquinha desligada.');
+      queueRefresh();
+    } catch (e) {
+      console.error(e);
+      toast('Não foi possível salvar. Verifique a conexão.', { tone: 'error' });
+    }
   }
 
   /* ---------- Salvar configuração ---------- */
@@ -1360,18 +1514,21 @@
       renderMesaSheet(S.mesaAberta);
       return openSheet('sh-mesa');
     }
-    const q = t.closest('[data-qr]');
-    if (q) return openQr(+q.dataset.qr);
-    const c = t.closest('[data-copy]');
-    if (c) {
-      const ok = await copyText(tableUrl(+c.dataset.copy));
-      return toast(ok ? `Link da mesa ${c.dataset.copy} copiado.` : 'Não foi possível copiar o link.', { tone: ok ? 'ok' : 'error' });
+    const so = t.closest('[data-sess-ok]');
+    if (so) return decidir(so.dataset.sessOk, true);
+    const sn = t.closest('[data-sess-no]');
+    if (sn) return decidir(sn.dataset.sessNo, false);
+    const fm = t.closest('[data-fechar]');
+    if (fm) return fecharMesa(+fm.dataset.fechar, fm.dataset.id || null);
+    const pl = t.closest('[data-placa]');
+    if (pl) return abrirVincular(pl.dataset.placa);
+    const vm = t.closest('[data-vmesa]');
+    if (vm) {
+      vincMesa = +vm.dataset.vmesa;
+      return renderVincular();
     }
-    const p = t.closest('[data-print]');
-    if (p) return printQrs([+p.dataset.print]);
-    if (t.closest('#printAll')) return printQrs(Array.from({ length: S.settings.mesas.total }, (_, i) => i + 1));
-    const n = t.closest('[data-nfc]');
-    if (n) return gravarNfc(+n.dataset.nfc, n);
+    const vb = t.closest('[data-vinc]');
+    if (vb) return vb.dataset.vinc === 'salvar' ? salvarVinculo() : soltarVinculo();
     const aBtn = t.closest('[data-area]');
     if (aBtn) {
       const areas = S.settings.mesas.areas.slice();
@@ -1429,17 +1586,6 @@
       if (s.dataset.set === 'lembrete') { S.lembrete = s.checked; set('nfc-lembrete', S.lembrete ? '1' : '0'); }
       if (s.dataset.set === 'tela') { S.telaLigada = s.checked; set('nfc-tela', S.telaLigada ? '1' : '0'); applyWakeLock(); }
     }
-    if (e.target.id === 'baseUrl') {
-      const v = e.target.value.trim();
-      try {
-        new URL(v);
-        set('nfc-base-url', v === defaultBase() ? null : v);
-        renderView();
-        toast('Link base atualizado.');
-      } catch {
-        toast('Digite um endereço completo, começando com https://', { tone: 'error' });
-      }
-    }
     if (e.target.id === 'totalMesas') {
       const n = Math.min(300, Math.max(1, parseInt(e.target.value, 10) || S.settings.mesas.total));
       saveMesas({ total: n }).then(renderView);
@@ -1463,6 +1609,18 @@
       list[i] = { ...list[i], ativo: wt.checked };
       saveWidgets(list);
     }
+  });
+
+  document.addEventListener('submit', (e) => {
+    if (e.target.id !== 'placaManual') return;
+    e.preventDefault();
+    const codigo = normCodigo($('#pmCodigo').value);
+    const mesa = parseInt($('#pmMesa').value, 10);
+    if (!/^[A-Z0-9]{4,16}$/.test(codigo)) return toast('Digite o código da plaquinha (letras e números).', { tone: 'error' });
+    if (!(mesa >= 1 && mesa <= S.settings.mesas.total)) return toast(`Digite uma mesa entre 1 e ${S.settings.mesas.total}.`, { tone: 'error' });
+    vincCodigo = codigo;
+    vincMesa = mesa;
+    salvarVinculo();
   });
 
   document.addEventListener('submit', (e) => {
@@ -1519,6 +1677,12 @@
     setInterval(refresh, isDemo ? 30e3 : 20e3);
     applyWakeLock();
     setTimeout(avisoApp, 1500);
+    if (S.vincular) {
+      const codigo = S.vincular;
+      S.vincular = null;
+      history.replaceState(null, '', location.pathname + location.hash);
+      if (/^[A-Z0-9]{4,16}$/.test(codigo)) setTimeout(() => abrirVincular(codigo), 300);
+    }
   }
 
   store

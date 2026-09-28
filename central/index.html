@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#0E1330">
+  <title>Central de plaquinhas</title>
+  <link rel="icon" href="../assets/img/icon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800;900&family=IBM+Plex+Mono:wght@500&family=Schibsted+Grotesk:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="../assets/css/base.css">
+  <link rel="stylesheet" href="central.css">
+  <script>document.documentElement.dataset.theme = 'light';</script>
+</head>
+<body class="central">
+  <div class="login" id="login" hidden>
+    <form class="login-card stack" id="loginForm" novalidate>
+      <h1>Central de plaquinhas</h1>
+      <p class="muted">Acesso interno. Entre com o e-mail de operador.</p>
+      <label class="field"><span>E-mail</span><input class="input" id="lgEmail" type="email" autocomplete="username" required></label>
+      <label class="field"><span>Senha</span><input class="input" id="lgSenha" type="password" autocomplete="current-password" required></label>
+      <p class="form-error" id="loginErr" role="alert"></p>
+      <button class="btn btn-cobalt btn-block" type="submit">Entrar</button>
+    </form>
+  </div>
+
+  <div class="app" id="app" hidden>
+    <header class="top">
+      <strong class="top-brand">Central de plaquinhas</strong>
+      <nav class="seg top-nav" role="tablist" aria-label="Seções">
+        <button type="button" role="tab" data-view="visao">Visão geral</button>
+        <button type="button" role="tab" data-view="plaquinhas">Plaquinhas</button>
+        <button type="button" role="tab" data-view="restaurantes">Restaurantes</button>
+      </nav>
+      <div class="top-who" id="who"></div>
+    </header>
+    <p class="demo-bar" id="demoBar" hidden>Modo demonstração: sem Supabase configurado, os dados ficam só neste navegador.</p>
+    <main class="main" id="main"></main>
+  </div>
+
+  <div class="sheet" id="sh" role="dialog" aria-modal="true" aria-labelledby="shTitle" hidden>
+    <div class="sheet-backdrop" data-close></div>
+    <div class="sheet-panel" tabindex="-1">
+      <div class="sheet-grip"></div>
+      <header class="sheet-head"><h2 id="shTitle"></h2><button class="icon-btn" type="button" data-close aria-label="Fechar"></button></header>
+      <div class="sheet-body" id="shBody"></div>
+    </div>
+  </div>
+
+  <div class="print-area" id="printArea" aria-hidden="true"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js" defer></script>
+  <script src="env.js" defer></script>
+  <script src="../assets/js/ui.js" defer></script>
+  <script src="central.js" defer></script>
+</body>
+</html>
