@@ -265,8 +265,96 @@
     </main>`;
   }
 
+  /* ---------- Cor da marca do restaurante ----------
+     O tema nasce em cobalto (base.css). Com uma cor escolhida nos ajustes,
+     gera a família inteira (--cobalt*) e tinge os neutros com o mesmo tom,
+     nos modos claro e escuro. Cores muito claras são escurecidas até o texto
+     branco dos botões ficar legível (contraste 4,5:1). */
+  const COR_PADRAO = '#1b3a9e';
+  const hexOk = (h) => /^#[0-9a-f]{6}$/i.test(String(h || ''));
+  const hexToRgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+  function rgbToHsl([r, g, b]) {
+    r /= 255; g /= 255; b /= 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2;
+    if (max === min) return [0, 0, l];
+    const d = max - min;
+    const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    const h = max === r ? (g - b) / d + (g < b ? 6 : 0) : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    return [h * 60, s, l];
+  }
+  function hslToRgb(h, s, l) {
+    const k = (n) => (n + h / 30) % 12;
+    const a = s * Math.min(l, 1 - l);
+    return [0, 8, 4].map((n) => Math.round(255 * (l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1)))));
+  }
+  const clamp01 = (x) => Math.max(0, Math.min(1, x));
+  const hsl = (h, s, l) => '#' + hslToRgb(h, clamp01(s), clamp01(l)).map((v) => v.toString(16).padStart(2, '0')).join('');
+  const luminancia = (rgb) => {
+    const [r, g, b] = rgb.map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+
+  // Cor final usada nos botões: a escolhida, escurecida só se o texto branco não couber.
+  function corLegivel(hex) {
+    let [h, s, l] = rgbToHsl(hexToRgb(hex));
+    while (l > 0.05 && (1.05 / (luminancia(hslToRgb(h, s, l)) + 0.05)) < 4.5) l -= 0.01;
+    return hsl(h, s, l);
+  }
+
+  function temaDaCor(hex) {
+    const base = corLegivel(hex);
+    const [h, s, l] = rgbToHsl(hexToRgb(base));
+    const k = Math.min(1, s / 0.71); // cinza escolhido → neutros sem tinta
+    const n = (sat, lum, f = 1) => hsl(h, (sat / 100) * k * f, lum / 100);
+    const claro = {
+      '--cobalt': base,
+      '--cobalt-hi': hsl(h, s * 0.9, l + 0.12),
+      '--cobalt-lo': hsl(h, s, l - 0.1),
+      '--cobalt-ink': base,
+      '--cobalt-soft': n(61, 93),
+      '--cobalt-rgb': hexToRgb(base).join(', '),
+      '--bg': n(30, 96), '--surface-2': n(38, 94), '--line': n(30, 89),
+      '--ink': n(52, 12), '--ink-2': n(31, 24), '--muted': n(18, 43),
+      '--side': n(55, 12, 0.8), '--side-ink': n(48, 94),
+    };
+    const escuro = {
+      '--cobalt-ink': n(100, 79), '--cobalt-soft': n(57, 24, 0.8),
+      '--bg': n(56, 8, 0.8), '--surface': n(51, 14, 0.8), '--surface-2': n(49, 19, 0.8), '--line': n(42, 24, 0.8),
+      '--ink': n(58, 95), '--ink-2': n(37, 85), '--muted': n(28, 68),
+    };
+    const decl = (o) => Object.entries(o).map(([p, v]) => `${p}: ${v};`).join(' ');
+    return `:root { ${decl(claro)} }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { ${decl(escuro)} } }
+:root[data-theme="dark"] { ${decl(escuro)} }`;
+  }
+
+  const COR_CACHE = 'nfc-cor:' + location.host;
+  function aplicarCor(hex, { lembrar = true } = {}) {
+    const cor = hexOk(hex) && hex.toLowerCase() !== COR_PADRAO ? hex.toLowerCase() : '';
+    let el = document.getElementById('cor-marca');
+    if (!cor) {
+      el && el.remove();
+    } else {
+      if (!el) {
+        el = document.createElement('style');
+        el.id = 'cor-marca';
+        document.head.appendChild(el);
+      }
+      el.textContent = temaDaCor(cor);
+    }
+    if (lembrar) {
+      try { cor ? localStorage.setItem(COR_CACHE, cor) : localStorage.removeItem(COR_CACHE); } catch {}
+    }
+  }
+  // Última cor conhecida deste endereço: evita piscar azul enquanto os ajustes carregam.
+  try {
+    const salva = localStorage.getItem(COR_CACHE);
+    if (salva) aplicarCor(salva, { lembrar: false });
+  } catch {}
+
   window.UI = {
     semRestaurante,
+    aplicarCor, corLegivel, COR_PADRAO,
     $, $$, esc, brl, pad, norm, icon, toast, copyText, qrSvg,
     instagramHandle, instagramUrl, mapsUrl, googleReviewUrl, initials, safeUrl,
     clock, ago, hhmm, secondsSince,

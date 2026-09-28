@@ -424,6 +424,7 @@
   function renderChrome() {
     const n = counts();
     $('#sideBrand').textContent = nomeRest();
+    UI.aplicarCor(S.settings.restaurante.cor);
     const logo = safeUrl(S.settings.restaurante.logo);
     const mark = $('.side-mark');
     mark.classList.toggle('has-logo', !!logo);
@@ -882,6 +883,14 @@
       return false;
     }
   }
+  // Cores sugeridas para a marca; a primeira é o azul padrão do sistema.
+  const CORES = ['#1b3a9e', '#0f766e', '#15803d', '#b45309', '#c2410c', '#b91c1c', '#be185d', '#7e22ce', '#3f3f46'];
+  const corAtual = () => (/^#[0-9a-f]{6}$/i.test(S.settings.restaurante.cor || '') ? S.settings.restaurante.cor.toLowerCase() : UI.COR_PADRAO);
+  async function salvarCor(cor) {
+    UI.aplicarCor(cor);
+    await saveRestaurante({ cor: cor === UI.COR_PADRAO ? '' : cor });
+    renderView();
+  }
   const saveRestaurante = (patch) => saveSettings({ restaurante: { ...S.settings.restaurante, ...patch } });
 
   /* ---------- Widgets do cliente ---------- */
@@ -1015,13 +1024,20 @@
 
     return `<div class="aj-grid">
       <section class="panel stack aj-brand" aria-labelledby="hMarca">
-        <h2 id="hMarca">Logo e foto de capa</h2>
+        <h2 id="hMarca">Logo, capa e cor</h2>
         <div class="brand-preview" id="brandPreview">${brandPreview()}</div>
         <div class="img-slots">
           <div class="img-slot"><div><b>Foto de capa</b><small>Foto horizontal do salão ou de um prato. A imagem é ajustada sozinha.</small></div>
             <div class="vhead-actions">${fileBtn('capa', capa)}</div></div>
           <div class="img-slot"><div><b>Logo</b><small>Imagem quadrada; aparece dentro do círculo.</small></div>
             <div class="vhead-actions">${fileBtn('logo', logo)}</div></div>
+          <div class="img-slot cor-slot"><div><b>Cor principal</b><small>Botões, placa da mesa e destaques. Cores muito claras ficam um pouco mais escuras para o texto continuar legível.</small></div>
+            <div class="vhead-actions">
+              <div class="cor-opcoes" role="group" aria-label="Cores sugeridas">${CORES.map((c) => `<button type="button" class="cor-bola" data-cor="${c}" style="background:${c}" aria-label="Usar a cor ${c}" aria-pressed="${corAtual() === c}"></button>`).join('')}
+                <label class="cor-bola cor-livre" title="Outra cor" aria-pressed="${!CORES.includes(corAtual())}" style="${CORES.includes(corAtual()) ? '' : `background:${corAtual()}`}">${icon('plus')}<input type="color" class="sr-only" data-cor-livre value="${corAtual()}" aria-label="Escolher outra cor"></label>
+              </div>
+              ${corAtual() !== UI.COR_PADRAO ? '<button type="button" class="btn btn-line btn-sm" data-cor="padrao">Voltar ao azul</button>' : ''}
+            </div></div>
         </div>
       </section>
 
@@ -1299,6 +1315,8 @@
       S.widgetEdit = null;
       return renderView();
     }
+    const cor = t.closest('[data-cor]');
+    if (cor) return salvarCor(cor.dataset.cor === 'padrao' ? UI.COR_PADRAO : cor.dataset.cor);
     const del = t.closest('[data-img-del]');
     if (del) {
       await saveRestaurante({ [del.dataset.imgDel]: '' });
@@ -1365,6 +1383,7 @@
   document.addEventListener('change', async (e) => {
     const el = e.target;
     if (el.matches('[data-img]')) return enviarImagem(el);
+    if (el.matches('[data-cor-livre]')) return salvarCor(el.value.toLowerCase());
 
     if (el.matches('[data-r]')) {
       const k = el.dataset.r;
