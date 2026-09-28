@@ -117,6 +117,13 @@ A pasta `central/` é um segundo app, independente dos restaurantes: o redirecio
 5. **Domains**: o domínio fixo das plaquinhas (ex.: `tap.seudominio.com.br`), porta **80**. Esse domínio vai gravado em todas as plaquinhas: escolha um que vocês vão manter para sempre.
 6. Abra o domínio, entre com o operador, cadastre o restaurante em *Restaurantes* (endereço do site dele) e use *Plaquinhas* para gerar, entregar, imprimir e gravar.
 
+**O que a central tem:**
+
+- *Visão geral*: leituras por dia (7, 30 ou 90 dias), ranking dos restaurantes mais acessados com a variação contra o período anterior, plaquinhas entregues que nunca foram lidas e alerta de restaurante parado há 7 dias ou mais.
+- *Plaquinhas*: gerar lote, entregar a um restaurante, devolver ao estoque, imprimir QR, imprimir etiquetas só com o código (para o verso), exportar CSV para a gráfica e gravar NFC.
+- *Gravar NFC* (Chrome no Android): no modo **Ler o QR da plaquinha**, a câmera lê o QR impresso e o NFC recebe exatamente o mesmo código. Assim não tem como o NFC de uma plaquinha ficar diferente do QR dela.
+- **Códigos nunca repetem**: o código é a chave primária da tabela `etiquetas`. O banco recusa fisicamente um segundo código igual, e o gerador só devolve códigos que conseguiu gravar. Gere sempre pela central (nunca numa planilha) e mande para a gráfica o CSV exportado.
+
 Para testar localmente sem Supabase: `python -m http.server 5500` na raiz e abra `http://localhost:5500/central/` (o redirecionador fica em `/central/t.html?c=CODIGO`). Cadastre o restaurante com o endereço `http://localhost:5500`.
 
 ## App do painel no celular

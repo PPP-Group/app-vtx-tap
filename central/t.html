@@ -60,6 +60,13 @@
         try { db = JSON.parse(localStorage.getItem('central-demo-v1')) || {}; } catch (e) {}
         var e = (db.etiquetas || []).find(function (x) { return x.codigo === codigo; });
         if (!e) return Promise.resolve({ status: 'inexistente' });
+        var dia = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+        e.leituras = (e.leituras || 0) + 1;
+        e.ultima_leitura = new Date().toISOString();
+        db.leituras = db.leituras || [];
+        var l = db.leituras.find(function (x) { return x.dia === dia && x.codigo === codigo; });
+        if (l) { l.n++; l.restaurante_id = e.restaurante_id; } else db.leituras.push({ dia: dia, codigo: codigo, restaurante_id: e.restaurante_id, n: 1 });
+        try { localStorage.setItem('central-demo-v1', JSON.stringify(db)); } catch (x) {}
         if (!e.restaurante_id) return Promise.resolve({ status: 'livre' });
         var r = (db.restaurantes || []).find(function (x) { return x.id === e.restaurante_id; });
         return Promise.resolve(r && r.ativo !== false ? { status: 'ok', destino: r.destino } : { status: 'inativo' });

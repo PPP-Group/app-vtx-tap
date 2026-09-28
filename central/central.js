@@ -13,7 +13,9 @@
 
   const S = {
     user: null,
-    view: 'plaquinhas',
+    view: 'visao',
+    dias: 30,
+    met: null,
     filtro: 'todas',
     lote: '',
     rest: '',
@@ -84,6 +86,36 @@
         db.etiquetas.forEach((e) => set.has(e.codigo) && (e.gravada = g));
         write(db);
       },
+      // Mesmo formato de public.metricas() do schema.sql.
+      async metricas(dias) {
+        const db = read();
+        const leituras = db.leituras || [];
+        const iso = (d) => d.toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+        const hoje = new Date();
+        const diaMenos = (k) => iso(new Date(hoje.getTime() - k * 864e5));
+        const ini = diaMenos(dias - 1);
+        const ant = diaMenos(2 * dias - 1);
+        const noPer = (l) => l.dia >= ini;
+        const noAnt = (l) => l.dia >= ant && l.dia < ini;
+        const soma = (arr) => arr.reduce((t, l) => t + l.n, 0);
+        const por_dia = [];
+        for (let k = dias - 1; k >= 0; k--) {
+          const d = diaMenos(k);
+          por_dia.push({ dia: d, n: soma(leituras.filter((l) => l.dia === d)) });
+        }
+        const por_restaurante = db.restaurantes.map((r) => {
+          const doR = leituras.filter((l) => l.restaurante_id === r.id);
+          const tags = db.etiquetas.filter((e) => e.restaurante_id === r.id);
+          const ult = tags.map((e) => e.ultima_leitura).filter(Boolean).sort().pop() || null;
+          return {
+            id: r.id, nome: r.nome, ativo: r.ativo !== false,
+            n: soma(doR.filter(noPer)), anterior: soma(doR.filter(noAnt)),
+            etiquetas: tags.length, lidas: new Set(doR.filter(noPer).map((l) => l.codigo)).size,
+            nunca_lidas: tags.filter((e) => !e.leituras).length, ultima: ult,
+          };
+        }).sort((a, b) => b.n - a.n || a.nome.localeCompare(b.nome));
+        return { hoje: iso(hoje), por_dia, por_restaurante, total: soma(leituras.filter(noPer)), total_anterior: soma(leituras.filter(noAnt)) };
+      },
     };
   }
 
@@ -140,14 +172,18 @@
           must(await sb.rpc('marcar_gravadas', { p_codigos: codigos.slice(i, i + 500), p_gravada: g }));
         }
       },
+      async metricas(dias) {
+        return must(await sb.rpc('metricas', { p_dias: dias }));
+      },
     };
   }
 
   async function carregar() {
     try {
-      const [rests, tags] = await Promise.all([api.listRestaurantes(), api.listEtiquetas()]);
+      const [rests, tags, met] = await Promise.all([api.listRestaurantes(), api.listEtiquetas(), api.metricas(S.dias)]);
       S.rests = rests || [];
       S.tags = tags || [];
+      S.met = met;
       const existe = new Set(S.tags.map((t) => t.codigo));
       S.sel.forEach((c) => !existe.has(c) && S.sel.delete(c));
     } catch (e) {
@@ -201,7 +237,80 @@
 
   function render() {
     $$('[data-view]').forEach((b) => b.setAttribute('aria-selected', b.dataset.view === S.view));
-    $('#main').innerHTML = S.view === 'restaurantes' ? vRestaurantes() : vPlaquinhas();
+    $('#main').innerHTML = S.view === 'restaurantes' ? vRestaurantes() : S.view === 'visao' ? vVisao() : vPlaquinhas();
+  }
+
+  /* ---------- Visão geral: quem está usando as plaquinhas ---------- */
+  const num = (n) => Number(n || 0).toLocaleString('pt-BR');
+  const variacao = (n, ant) => {
+    if (!ant) return n ? '<span class="var var--novo">novo</span>' : '';
+    const p = Math.round(((n - ant) / ant) * 100);
+    return `<span class="var ${p >= 0 ? 'var--up' : 'var--down'}">${p >= 0 ? '▲' : '▼'} ${Math.abs(p)}%</span>`;
+  };
+  const diasSem = (iso) => (iso ? Math.floor((Date.now() - new Date(iso)) / 864e5) : null);
+  const diaCurto = (d) => { const [, m, dd] = d.split('-'); return `${dd}/${m}`; };
+
+  function grafico(por_dia) {
+    const W = matchMedia('(max-width: 600px)').matches ? 360 : 720, H = 200, L = 36, B = 22, T = 8;
+    const max = Math.max(4, ...por_dia.map((d) => d.n));
+    const passo = Math.pow(10, Math.floor(Math.log10(max)));
+    const topo = Math.ceil(max / passo) * passo;
+    const n = por_dia.length;
+    const slot = (W - L) / n;
+    const larg = Math.max(1, slot - 2);
+    const y = (v) => T + (H - B - T) * (1 - v / topo);
+    const grade = [0, topo / 2, topo].map((v) => `<g class="gx"><line x1="${L}" x2="${W}" y1="${y(v)}" y2="${y(v)}"/><text x="${L - 6}" y="${y(v) + 4}">${num(v)}</text></g>`).join('');
+    const cada = Math.ceil(n / (W < 500 ? 4 : 8));
+    const barras = por_dia.map((d, i) => {
+      const x = L + i * slot + 1;
+      const h = y(0) - y(d.n);
+      const r = Math.min(4, larg / 2, h);
+      const barra = d.n ? `<path class="bar" d="M${x},${y(0)} V${y(d.n) + r} Q${x},${y(d.n)} ${x + r},${y(d.n)} H${x + larg - r} Q${x + larg},${y(d.n)} ${x + larg},${y(d.n) + r} V${y(0)} Z"/>` : '';
+      const rotulo = (n - 1 - i) % cada === 0 ? `<text class="dx" x="${x + larg / 2}" y="${H - 6}">${diaCurto(d.dia)}</text>` : '';
+      return `<g class="col" data-tip="${diaCurto(d.dia)} · ${num(d.n)} ${d.n === 1 ? 'leitura' : 'leituras'}">${barra}${rotulo}<rect class="hit" x="${x - 1}" y="${T}" width="${slot}" height="${H - B - T}"/></g>`;
+    }).join('');
+    return `<div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Leituras por dia">${grade}<line class="base" x1="${L}" x2="${W}" y1="${y(0)}" y2="${y(0)}"/>${barras}</svg><div class="tip" hidden></div></div>`;
+  }
+
+  function vVisao() {
+    const m = S.met;
+    if (!m) return '<p class="muted">Carregando…</p>';
+    const rs = m.por_restaurante;
+    const ativos = rs.filter((r) => r.n > 0).length;
+    const entregues = S.tags.filter((t) => t.restaurante_id);
+    const nunca = entregues.filter((t) => !t.leituras).length;
+    const media = m.total / m.por_dia.length;
+    const parados = rs.filter((r) => r.ativo && r.etiquetas && (diasSem(r.ultima) === null || diasSem(r.ultima) >= 7));
+    return `<div class="vhead"><div><h1>Visão geral</h1><p>Leituras são os toques no NFC e as leituras do QR que passam pela central. Chamados, cardápio e comentários ficam no sistema de cada restaurante.</p></div>
+        <div class="seg" role="radiogroup" aria-label="Período">${[7, 30, 90].map((d) => `<button type="button" role="radio" aria-checked="${S.dias === d}" data-dias="${d}">${d} dias</button>`).join('')}</div></div>
+      <dl class="strip">
+        <div><dt>Leituras em ${S.dias} dias</dt><dd>${num(m.total)} ${variacao(m.total, m.total_anterior)}</dd></div>
+        <div><dt>Média por dia</dt><dd>${media < 10 ? media.toFixed(1).replace('.', ',') : num(Math.round(media))}</dd></div>
+        <div><dt>Restaurantes com leitura</dt><dd>${ativos}<small>/${rs.length}</small></dd></div>
+        <div><dt>Entregues nunca lidas</dt><dd>${nunca}<small>/${entregues.length}</small></dd></div>
+      </dl>
+      <section class="card-sec"><h2>Leituras por dia</h2>${grafico(m.por_dia)}
+        <details class="tabela-alt"><summary>Ver em tabela</summary><table><thead><tr><th>Dia</th><th class="num">Leituras</th></tr></thead>
+          <tbody>${m.por_dia.slice().reverse().map((d) => `<tr><td>${diaCurto(d.dia)}</td><td class="num">${num(d.n)}</td></tr>`).join('')}</tbody></table></details>
+      </section>
+      ${parados.length ? `<p class="note">${icon('msg')}<span><b>Atenção:</b> ${parados.map((r) => esc(r.nome)).join(', ')} ${parados.length === 1 ? 'está' : 'estão'} sem nenhuma leitura há 7 dias ou mais. Plaquinhas não instaladas, retiradas ou site fora do ar?</span></p>` : ''}
+      <section class="card-sec"><h2>Restaurantes — mais acessados no período</h2>
+        ${rs.length ? `<div class="tabela"><table>
+          <thead><tr><th>#</th><th>Restaurante</th><th class="num">Leituras</th><th class="num">vs. período anterior</th><th class="num">Plaquinhas lidas</th><th class="num">Nunca lidas</th><th>Última leitura</th></tr></thead>
+          <tbody>${rs.map((r, i) => {
+            const ds = diasSem(r.ultima);
+            return `<tr>
+              <td class="muted">${i + 1}</td>
+              <td><button type="button" class="link" data-ver-rest="${r.id}">${esc(r.nome)}</button>${r.ativo ? '' : ' <span class="pill">desativado</span>'}</td>
+              <td class="num"><b>${num(r.n)}</b></td>
+              <td class="num">${variacao(r.n, r.anterior) || '<span class="muted">—</span>'}</td>
+              <td class="num">${r.lidas}/${r.etiquetas}</td>
+              <td class="num">${r.nunca_lidas ? `<span class="warn">${r.nunca_lidas}</span>` : '0'}</td>
+              <td>${r.ultima ? `${ago(r.ultima)}${ds >= 7 ? ' <span class="pill pill--warn">parado</span>' : ''}` : '<span class="muted">nunca</span>'}</td>
+            </tr>`;
+          }).join('')}</tbody></table></div>`
+          : `<div class="vazio">${icon('grid')}<h2>Nenhum restaurante</h2><p>Cadastre em Restaurantes.</p></div>`}
+      </section>`;
   }
 
   function vPlaquinhas() {
@@ -225,7 +334,8 @@
       </tr>`;
     }).join('');
     return `<div class="vhead"><div><h1>Plaquinhas</h1><p>Cada plaquinha tem um código único, igual no NFC e no QR. Ela abre o site do restaurante para o qual foi entregue.</p></div>
-        <button type="button" class="btn btn-cobalt" data-abrir="gerar">${icon('plus')} Gerar lote</button></div>
+        <span class="acts"><button type="button" class="btn btn-line" data-abrir="gravar">${icon('nfc')} Gravar NFC</button>
+        <button type="button" class="btn btn-cobalt" data-abrir="gerar">${icon('plus')} Gerar lote</button></span></div>
       <dl class="strip">
         <div><dt>Total</dt><dd>${total}</dd></div>
         <div><dt>Em estoque</dt><dd>${total - vendidas}</dd></div>
@@ -247,6 +357,7 @@
           <button type="button" class="btn btn-cobalt btn-sm" data-abrir="vender">${icon('arrow')} Entregar a um restaurante</button>
           <button type="button" class="btn btn-line btn-sm" data-acao="estoque">Devolver ao estoque</button>
           <button type="button" class="btn btn-line btn-sm" data-acao="imprimir">${icon('printer')} Imprimir QR</button>
+          <button type="button" class="btn btn-line btn-sm" data-acao="etiquetas">${icon('printer')} Etiquetas de código</button>
           <button type="button" class="btn btn-line btn-sm" data-acao="csv">${icon('download')} Exportar CSV</button>
           <button type="button" class="btn btn-line btn-sm" data-abrir="gravar">${icon('nfc')} Gravar NFC</button>
           <button type="button" class="btn btn-quiet btn-sm" data-acao="limpar">Limpar seleção</button>
@@ -338,6 +449,12 @@
     setTimeout(() => window.print(), 60);
   }
 
+  // Adesivos pequenos só com o código, para o verso da plaquinha.
+  function imprimirCodigos(lista) {
+    $('#printArea').innerHTML = `<div class="etq-cods">${lista.map((t) => `<div class="etq-cod"><code>${t.codigo}</code></div>`).join('')}</div>`;
+    setTimeout(() => window.print(), 60);
+  }
+
   function exportarCsv(lista) {
     const cel = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
     const linhas = [['codigo', 'url', 'lote', 'restaurante', 'gravada'].join(';')]
@@ -352,52 +469,116 @@
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }
 
-  /* Gravação NFC em sequência (Chrome no Android).
-     Espera cada etiqueta ser encostada, grava o link dela e, se marcado, bloqueia.
-     Não regrava a mesma etiqueta duas vezes: compara o número de série. */
-  const G = { fila: [], i: 0, reader: null, ctrl: null, ultimaSerie: null, ultimoLink: null, ocupado: false, bloquear: true };
+  /* Gravação NFC (Chrome no Android). Dois modos:
+     - câmera: lê o QR impresso na plaquinha e grava o MESMO código no NFC dela
+       (não tem como trocar plaquinha, é o recomendado);
+     - lista: segue os códigos selecionados, um por vez, mostrando qual gravar.
+     Opcionalmente bloqueia cada etiqueta. Não regrava a mesma etiqueta duas
+     vezes seguidas: compara o número de série. */
+  const G = { modo: 'camera', fila: [], i: 0, lido: null, feitos: 0, reader: null, ctrl: null, ultimaSerie: null, ultimoLink: null, ocupado: false, bloquear: true, stream: null, detector: null, camT: 0 };
+  const temCamera = () => 'BarcodeDetector' in window && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  const atual = () => (G.modo === 'camera' ? G.lido : G.fila[G.i]);
+  const codigoDoLink = (v) => {
+    const m = String(v || '').match(/\/t\/([A-Za-z0-9]{4,16})\b|[?&]c=([A-Za-z0-9]{4,16})\b/);
+    return m ? (m[1] || m[2]).toUpperCase() : null;
+  };
 
   function abrirGravar() {
     $('#shTitle').textContent = 'Gravar NFC';
     if (!('NDEFReader' in window)) {
       $('#shBody').innerHTML = `<div class="stack">
-        <p>Este navegador não grava NFC. Abra esta página no <b>Chrome do Android</b>, com o NFC do celular ligado.</p>
-        <p class="muted">Outra opção: exporte o CSV e grave com o app NFC Tools (Escrever › Adicionar registro › URL), ou peça para a gráfica gravar a partir do CSV.</p>
+        <p>Este navegador não grava NFC. Abra a central no <b>Chrome do Android</b>, com o NFC do celular ligado.</p>
+        <p class="muted">Outra opção: exporte o CSV e peça para a gráfica gravar o NFC junto com a impressão do QR.</p>
       </div>`;
       return openSheet('sh');
     }
     G.fila = selecionadas().sort((a, b) => a.codigo.localeCompare(b.codigo));
     G.i = Math.max(0, G.fila.findIndex((t) => !t.gravada));
+    G.modo = temCamera() ? 'camera' : 'lista';
     $('#shBody').innerHTML = `<div class="stack">
-      <p>${G.fila.length} ${G.fila.length === 1 ? 'plaquinha' : 'plaquinhas'} na fila${G.fila.some((t) => t.gravada) ? ` · começa pela primeira ainda não gravada` : ''}.</p>
+      <div class="modo" role="radiogroup" aria-label="Como gravar">
+        ${temCamera() ? `<label><input type="radio" name="gModo" value="camera" checked><span><b>Ler o QR da plaquinha</b><small>Aponte a câmera para o QR já impresso e encoste a mesma plaquinha: o NFC recebe exatamente o código do QR. Recomendado.</small></span></label>` : ''}
+        <label><input type="radio" name="gModo" value="lista" ${temCamera() ? '' : 'checked'} ${G.fila.length ? '' : 'disabled'}><span><b>Seguir a lista selecionada</b><small>${G.fila.length ? `${G.fila.length} ${G.fila.length === 1 ? 'código' : 'códigos'} em ordem; a tela mostra qual plaquinha encostar.` : 'Selecione plaquinhas na lista para usar este modo.'}</small></span></label>
+      </div>
       <label class="check"><input type="checkbox" id="gBloq" checked> Bloquear cada etiqueta depois de gravar (definitivo: ninguém consegue regravar)</label>
-      <p class="muted" style="font-size:13.5px">Ponha a plaquinha com o código indicado atrás do celular. Grave com o QR já impresso ao lado, para o NFC e o QR terem o mesmo código.</p>
-      <button type="button" class="btn btn-cobalt btn-block" data-gravar="iniciar">${icon('nfc')} Começar</button>
+      <button type="button" class="btn btn-cobalt btn-block" data-gravar="iniciar" ${temCamera() || G.fila.length ? '' : 'disabled'}>${icon('nfc')} Começar</button>
     </div>`;
     openSheet('sh');
   }
 
   function telaGravar(msg = '', tom = '') {
-    const t = G.fila[G.i];
-    if (!t) {
+    const t = atual();
+    if (G.modo === 'lista' && !t) {
       pararGravar();
       $('#shBody').innerHTML = `<div class="stack gravar-fim">${icon('check')}<h3>Fila concluída</h3><p>${G.fila.length} ${G.fila.length === 1 ? 'plaquinha processada' : 'plaquinhas processadas'}.</p>
         <button type="button" class="btn btn-quiet btn-block" data-close>Fechar</button></div>`;
       return;
     }
+    const prog = G.modo === 'lista' ? `${G.i + 1} de ${G.fila.length}` : `${G.feitos} ${G.feitos === 1 ? 'gravada' : 'gravadas'} nesta sessão`;
+    const topo = t
+      ? `<div class="gravar-cod"><small>Encoste a plaquinha</small><b class="mono">${t.codigo}</b></div>`
+      : `<video class="gravar-cam" id="gCam" playsinline muted></video>`;
+    const padrao = t ? (G.ocupado ? 'Gravando… mantenha encostada.' : 'Aguardando a etiqueta NFC…') : 'Aponte a câmera para o QR da plaquinha.';
     $('#shBody').innerHTML = `<div class="stack gravar">
-      <p class="gravar-prog">${G.i + 1} de ${G.fila.length}</p>
-      <div class="gravar-cod"><small>Encoste a plaquinha</small><b class="mono">${t.codigo}</b></div>
-      <p class="gravar-msg ${tom}" aria-live="polite">${esc(msg || (G.ocupado ? 'Gravando… mantenha encostada.' : 'Aguardando a etiqueta…'))}</p>
+      <p class="gravar-prog">${prog}</p>
+      ${topo}
+      <p class="gravar-msg ${tom}" aria-live="polite">${esc(msg || padrao)}</p>
       <div class="acts">
-        <button type="button" class="btn btn-line btn-sm" data-gravar="pular">Pular</button>
+        ${t ? `<button type="button" class="btn btn-line btn-sm" data-gravar="pular">${G.modo === 'camera' ? 'Ler outro QR' : 'Pular'}</button>` : ''}
         <button type="button" class="btn btn-quiet btn-sm" data-gravar="parar">Parar</button>
       </div>
     </div>`;
+    if (G.modo === 'camera' && !t) ligarCamera();
+  }
+
+  async function ligarCamera() {
+    const video = $('#gCam');
+    if (!video) return;
+    try {
+      G.stream = G.stream || (await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false }));
+      G.detector = G.detector || new BarcodeDetector({ formats: ['qr_code'] });
+      video.srcObject = G.stream;
+      await video.play();
+    } catch (e) {
+      $('.gravar-msg').textContent = e.name === 'NotAllowedError' ? 'Permita o uso da câmera para ler o QR.' : `Câmera indisponível: ${e.message}`;
+      $('.gravar-msg').className = 'gravar-msg is-erro';
+      return;
+    }
+    clearTimeout(G.camT);
+    const loop = async () => {
+      if (!G.stream || G.lido || !document.contains(video)) return;
+      try {
+        for (const b of await G.detector.detect(video)) {
+          const c = codigoDoLink(b.rawValue);
+          if (!c) continue;
+          const tag = S.tags.find((x) => x.codigo === c);
+          if (!tag) {
+            $('.gravar-msg').textContent = `O QR ${c} não é de uma plaquinha cadastrada.`;
+            $('.gravar-msg').className = 'gravar-msg is-erro';
+            continue;
+          }
+          G.lido = tag;
+          navigator.vibrate && navigator.vibrate(30);
+          desligarCamera();
+          return telaGravar(tag.gravada ? 'Esta plaquinha já consta como gravada. Encoste para conferir ou regravar.' : '');
+        }
+      } catch {}
+      G.camT = setTimeout(loop, 250);
+    };
+    loop();
+  }
+  function desligarCamera() {
+    clearTimeout(G.camT);
+    G.stream && G.stream.getTracks().forEach((tr) => tr.stop());
+    G.stream = null;
   }
 
   async function iniciarGravar() {
+    const modo = ($('input[name="gModo"]:checked') || {}).value || 'lista';
+    G.modo = modo;
     G.bloquear = $('#gBloq').checked;
+    G.lido = null;
+    G.feitos = 0;
     G.ultimaSerie = null;
     G.ultimoLink = null;
     G.ctrl = new AbortController();
@@ -407,13 +588,13 @@
     } catch (e) {
       return telaGravar(e.name === 'NotAllowedError' ? 'Permita o uso de NFC para este site.' : `NFC indisponível: ${e.message}`, 'is-erro');
     }
-    G.reader.onreadingerror = () => telaGravar('Não deu para ler. Afaste e encoste de novo.', 'is-erro');
+    G.reader.onreadingerror = () => atual() && telaGravar('Não deu para ler. Afaste e encoste de novo.', 'is-erro');
     G.reader.onreading = (ev) => gravarEtiqueta(ev);
     telaGravar();
   }
 
   async function gravarEtiqueta(ev) {
-    const t = G.fila[G.i];
+    const t = atual();
     if (!t || G.ocupado) return;
     const serie = ev.serialNumber || '';
     const link = (ev.message.records || []).map((r) => {
@@ -422,8 +603,8 @@
     // A mesma etiqueta ainda encostada depois de gravar: ignora.
     if ((serie && serie === G.ultimaSerie) || (!serie && link && link === G.ultimoLink)) return;
     const meu = tagUrl(t.codigo);
-    const outro = link && /\/t\/[A-Z0-9]+|[?&]c=[A-Z0-9]+/.test(link) && link !== meu;
-    if (outro) return telaGravar(`Esta etiqueta já tem outro código (${link.split(/[/=]/).pop()}). Use uma etiqueta nova.`, 'is-erro');
+    const outro = codigoDoLink(link);
+    if (outro && outro !== t.codigo) return telaGravar(`Esta etiqueta já tem outro código (${outro}). Confira se é a plaquinha certa.`, 'is-erro');
     G.ocupado = true;
     telaGravar();
     try {
@@ -433,10 +614,12 @@
       t.gravada = true;
       G.ultimaSerie = serie;
       G.ultimoLink = meu;
+      G.feitos++;
       navigator.vibrate && navigator.vibrate(60);
-      G.i++;
+      if (G.modo === 'camera') G.lido = null;
+      else G.i++;
       G.ocupado = false;
-      telaGravar(`${t.codigo} gravada${G.bloquear ? ' e bloqueada' : ''}. Afaste e encoste a próxima.`, 'is-ok');
+      telaGravar(`${t.codigo} gravada${G.bloquear ? ' e bloqueada' : ''}. ${G.modo === 'camera' ? 'Leia o QR da próxima.' : 'Afaste e encoste a próxima.'}`, 'is-ok');
     } catch (e) {
       G.ocupado = false;
       telaGravar(`Falhou: ${e.message}. Afaste e encoste de novo.`, 'is-erro');
@@ -444,10 +627,12 @@
   }
 
   function pararGravar() {
+    desligarCamera();
     G.ctrl && G.ctrl.abort();
     G.ctrl = null;
     G.reader = null;
     G.ocupado = false;
+    G.lido = null;
     render();
   }
 
@@ -467,6 +652,8 @@
     }
     const f = t.closest('[data-filtro]');
     if (f) { S.filtro = f.dataset.filtro; return render(); }
+    const dd = t.closest('[data-dias]');
+    if (dd) { S.dias = +dd.dataset.dias; return carregar(); }
     const ed = t.closest('[data-editar]');
     if (ed) return abrirRest(ed.dataset.editar);
     const vr = t.closest('[data-ver-rest]');
@@ -491,6 +678,7 @@
       const lista = selecionadas();
       if (ac.dataset.acao === 'limpar') { S.sel.clear(); return render(); }
       if (ac.dataset.acao === 'imprimir') return imprimir(lista);
+      if (ac.dataset.acao === 'etiquetas') return imprimirCodigos(lista);
       if (ac.dataset.acao === 'csv') return exportarCsv(lista);
       if (ac.dataset.acao === 'estoque') {
         if (!confirm(`Devolver ${lista.length} ${lista.length === 1 ? 'plaquinha' : 'plaquinhas'} ao estoque? Elas param de abrir o site do restaurante.`)) return;
@@ -504,7 +692,12 @@
     const g = t.closest('[data-gravar]');
     if (g) {
       if (g.dataset.gravar === 'iniciar') return iniciarGravar();
-      if (g.dataset.gravar === 'pular') { G.i++; G.ultimaSerie = null; return telaGravar(); }
+      if (g.dataset.gravar === 'pular') {
+        if (G.modo === 'camera') G.lido = null;
+        else G.i++;
+        G.ultimaSerie = null;
+        return telaGravar();
+      }
       if (g.dataset.gravar === 'parar') { pararGravar(); return closeSheet(); }
     }
   });
@@ -576,7 +769,29 @@
     }
   });
 
-  $('#sh').addEventListener('sheet:close', () => G.ctrl && pararGravar());
+  $('#sh').addEventListener('sheet:close', () => (G.ctrl || G.stream) && pararGravar());
+
+  /* Dica do gráfico: passa o dedo/mouse sobre o dia. */
+  document.addEventListener('pointerover', (e) => {
+    const col = e.target.closest && e.target.closest('.col');
+    const chart = e.target.closest && e.target.closest('.chart');
+    if (!chart) return;
+    const tip = $('.tip', chart);
+    $$('.col.is-on', chart).forEach((c) => c !== col && c.classList.remove('is-on'));
+    if (!col) return (tip.hidden = true);
+    col.classList.add('is-on');
+    tip.textContent = col.dataset.tip;
+    tip.hidden = false;
+    const r = col.getBoundingClientRect();
+    const cr = chart.getBoundingClientRect();
+    tip.style.left = `${Math.min(Math.max(r.left - cr.left + r.width / 2, 60), cr.width - 60)}px`;
+  });
+  document.addEventListener('pointerleave', (e) => {
+    if (e.target.classList && e.target.classList.contains('chart')) {
+      $('.tip', e.target).hidden = true;
+      $$('.col.is-on', e.target).forEach((c) => c.classList.remove('is-on'));
+    }
+  }, true);
 
   /* ============================== Início ============================== */
   $$('.sheet [data-close].icon-btn').forEach((b) => (b.innerHTML = icon('x')));
