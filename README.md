@@ -30,9 +30,11 @@ Tudo o que muda no dia a dia do restaurante é editado no painel.
 
 **Plaquinhas genéricas.** Toda plaquinha sai de fábrica com um código único (ex.: `K7P2QXA`). O NFC e o QR têm o **mesmo link**, que aponta para a central de vocês: `https://tap.seudominio.com.br/t/K7P2QXA`. A plaquinha não tem número de mesa impresso.
 
-1. **Fábrica (vocês, na central):** gerar lote → imprimir os QR / exportar CSV → gravar e bloquear o NFC (Chrome no Android).
-2. **Venda (vocês, na central):** cadastrar o restaurante com o endereço do site dele e entregar as plaquinhas a ele.
-3. **Instalação (restaurante):** cola a plaquinha na mesa e encosta o celular. Aparece **Plaquinha nova** → *Sou da equipe · configurar* → PIN → escolhe a mesa. Daí em diante, a plaquinha abre direto aquela mesa.
+1. **Fábrica (vocês, na central):** gerar lote (baixa o PDF para a gráfica) → gravar e bloquear o NFC (Chrome no Android). As plaquinhas saem **sem dono**.
+2. **Implantação (vocês, na central):** cadastrar o restaurante com o endereço do site dele. A central gera o **código de ativação** do restaurante (ex.: `QB7K-2M9P`); passe para a equipe.
+3. **Instalação (restaurante):** cola a plaquinha na mesa e encosta o celular. Aparece **Plaquinha nova** → digita o código de ativação (só na primeira; o celular lembra o restaurante para as próximas) → entra com o PIN → escolhe a mesa. Daí em diante, a plaquinha abre direto aquela mesa.
+
+Não é preciso atribuir plaquinha a restaurante na central: a ativação faz isso. *Atribuir a um restaurante* continua disponível para casos manuais. O código de ativação pode ser trocado em *Restaurantes* (plaquinhas já ativadas não mudam), e errar o código 8 vezes em 10 minutos bloqueia aquela plaquinha por um tempo.
 
 O caminho de cada toque: `central/t/CODIGO` → site do restaurante `/?tag=CODIGO` → o banco do restaurante diz qual é a mesa. A central só sabe *de qual restaurante* é o código; *qual mesa* fica no banco do restaurante. Mudou o domínio do cliente? Troque o endereço na central e todas as plaquinhas dele continuam funcionando.
 
@@ -104,11 +106,10 @@ Sem as variáveis do Supabase, os dados ficam no navegador e sincronizam só ent
 A pasta `central/` é um segundo app, independente dos restaurantes: o redirecionador (`/t/CODIGO`) e o painel interno para gerar, entregar, imprimir e gravar as plaquinhas.
 
 1. **Supabase da central** (um projeto só de vocês, separado dos restaurantes): execute `central/schema.sql` no *SQL Editor*.
-2. **Operadores:** em *Authentication › Users › Add user*, crie o usuário com e-mail e senha (marque *Auto confirm*). Depois, no SQL Editor:
+2. **Operadores:** convide o e-mail no SQL Editor e depois crie o usuário em *Authentication › Users › Add user › Create new user*, com *Auto Confirm User* marcado. Ele vira operador na hora:
 
    ```sql
-   insert into public.operadores (user_id, nome)
-   select id, 'Seu nome' from auth.users where email = 'voce@empresa.com';
+   insert into public.operadores_convite (email, nome) values ('voce@empresa.com', 'Seu nome');
    ```
 
    Recomendado: desative *Allow new users to sign up* nesse projeto.
@@ -120,6 +121,7 @@ A pasta `central/` é um segundo app, independente dos restaurantes: o redirecio
 **O que a central tem:**
 
 - *Visão geral*: leituras por dia (7, 30 ou 90 dias), ranking dos restaurantes mais acessados com a variação contra o período anterior, plaquinhas entregues que nunca foram lidas e alerta de restaurante parado há 7 dias ou mais.
+- *Gerar lote* baixa na hora o **PDF para a gráfica**: uma plaquinha de 12 × 6 cm por página, cada uma com o QR e o código único dela (layout em `central/placa.js`; o @ e os textos ficam no topo desse arquivo). O mesmo PDF pode ser gerado de novo pela seleção (*PDF das plaquinhas*) ou para uma plaquinha só.
 - *Plaquinhas*: gerar lote, entregar a um restaurante, devolver ao estoque, imprimir QR, imprimir etiquetas só com o código (para o verso), exportar CSV para a gráfica e gravar NFC.
 - *Gravar NFC* (Chrome no Android): no modo **Ler o QR da plaquinha**, a câmera lê o QR impresso e o NFC recebe exatamente o mesmo código. Assim não tem como o NFC de uma plaquinha ficar diferente do QR dela.
 - **Códigos nunca repetem**: o código é a chave primária da tabela `etiquetas`. O banco recusa fisicamente um segundo código igual, e o gerador só devolve códigos que conseguiu gravar. Gere sempre pela central (nunca numa planilha) e mande para a gráfica o CSV exportado.

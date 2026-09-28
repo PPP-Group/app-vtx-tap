@@ -30,6 +30,28 @@
   const local = location.pathname.startsWith('/central/');
   const tagUrl = (c) => (local ? new URL(`/central/t.html?c=${c}`, location.origin).href : new URL(`/t/${c}`, location.origin).href);
   const restDe = (id) => S.rests.find((r) => r.id === id);
+  const nomeArq = (t) => String(t || 'plaquinhas').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9-]+/g, '-').replace(/^-|-$/g, '').toLowerCase() || 'plaquinhas';
+  // PDF para a gráfica: uma plaquinha de 12 × 6 cm por página (central/placa.js).
+  async function pdfPlaquinhas(codigos, titulo) {
+    const lista = [...codigos].sort();
+    toast(`Gerando PDF com ${lista.length} ${lista.length === 1 ? 'plaquinha' : 'plaquinhas'}…`);
+    await Placa.baixarPdf(lista.map((c) => ({ codigo: c, url: tagUrl(c) })), `${nomeArq(titulo)}.pdf`);
+  }
+  const fmtAtivacao = (c) => { c = String(c || ''); return c.length > 4 ? `${c.slice(0, 4)}-${c.slice(4)}` : c; };
+  function mostrarAtivacao(r, novo) {
+    $('#shTitle').textContent = novo ? 'Restaurante criado' : 'Código de ativação';
+    $('#shBody').innerHTML = `<div class="stack ativ-sheet">
+      <p>Passe este código para a equipe de <b>${esc(r.nome)}</b>:</p>
+      <b class="ativ-grande mono">${fmtAtivacao(r.codigo_ativacao)}</b>
+      <ol class="ativ-passos">
+        <li>Cole a plaquinha na mesa e encoste o celular nela (ou leia o QR).</li>
+        <li>Na tela <b>Plaquinha nova</b>, digite este código. Só na primeira: o celular lembra para as próximas.</li>
+        <li>Entre com o PIN da equipe e escolha o número da mesa.</li>
+      </ol>
+      <button type="button" class="btn btn-cobalt btn-block" data-copiar-atv="${r.id}">${icon('copy')} Copiar código</button>
+    </div>`;
+    openSheet('sh');
+  }
   const fmtData = (iso) => (iso ? new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '');
 
   /* ============================== Dados ============================== */
@@ -53,9 +75,18 @@
       async listRestaurantes() { return read().restaurantes; },
       async salvarRestaurante(r) {
         const db = read();
-        if (r.id) db.restaurantes = db.restaurantes.map((x) => (x.id === r.id ? { ...x, ...r } : x));
-        else db.restaurantes.push({ ...r, id: id(), criado_em: new Date().toISOString() });
+        let salvo;
+        if (r.id) db.restaurantes = db.restaurantes.map((x) => (x.id === r.id ? (salvo = { ...x, ...r }) : x));
+        else db.restaurantes.push((salvo = { ...r, id: id(), codigo_ativacao: novoCodigo() + novoCodigo()[0], criado_em: new Date().toISOString() }));
         write(db);
+        return salvo;
+      },
+      async trocarCodigo(rid) {
+        const db = read();
+        const c = novoCodigo() + novoCodigo()[0];
+        db.restaurantes.forEach((x) => x.id === rid && (x.codigo_ativacao = c));
+        write(db);
+        return c;
       },
       async listEtiquetas() { return read().etiquetas; },
       async gerar(qtd, lote) {
@@ -148,8 +179,11 @@
       },
       async salvarRestaurante(r) {
         const { id, ...dados } = r;
-        if (id) must(await sb.from('restaurantes').update(dados).eq('id', id));
-        else must(await sb.from('restaurantes').insert(dados));
+        if (id) return must(await sb.from('restaurantes').update(dados).eq('id', id).select().single());
+        return must(await sb.from('restaurantes').insert(dados).select().single());
+      },
+      async trocarCodigo(rid) {
+        return must(await sb.rpc('trocar_codigo_ativacao', { p_restaurante: rid }));
       },
       async listEtiquetas() {
         const todas = [];
@@ -287,7 +321,7 @@
         <div><dt>Leituras em ${S.dias} dias</dt><dd>${num(m.total)} ${variacao(m.total, m.total_anterior)}</dd></div>
         <div><dt>Média por dia</dt><dd>${media < 10 ? media.toFixed(1).replace('.', ',') : num(Math.round(media))}</dd></div>
         <div><dt>Restaurantes com leitura</dt><dd>${ativos}<small>/${rs.length}</small></dd></div>
-        <div><dt>Entregues nunca lidas</dt><dd>${nunca}<small>/${entregues.length}</small></dd></div>
+        <div><dt>Ativadas nunca lidas</dt><dd>${nunca}<small>/${entregues.length}</small></dd></div>
       </dl>
       <section class="card-sec"><h2>Leituras por dia</h2>${grafico(m.por_dia)}
         <details class="tabela-alt"><summary>Ver em tabela</summary><table><thead><tr><th>Dia</th><th class="num">Leituras</th></tr></thead>
@@ -333,18 +367,18 @@
         <td class="muted">${fmtData(t.criado_em)}</td>
       </tr>`;
     }).join('');
-    return `<div class="vhead"><div><h1>Plaquinhas</h1><p>Cada plaquinha tem um código único, igual no NFC e no QR. Ela abre o site do restaurante para o qual foi entregue.</p></div>
+    return `<div class="vhead"><div><h1>Plaquinhas</h1><p>Cada plaquinha tem um código único, igual no NFC e no QR. Ela sai sem dono: a equipe do restaurante ativa com o código de ativação na primeira leitura.</p></div>
         <span class="acts"><button type="button" class="btn btn-line" data-abrir="gravar">${icon('nfc')} Gravar NFC</button>
         <button type="button" class="btn btn-cobalt" data-abrir="gerar">${icon('plus')} Gerar lote</button></span></div>
       <dl class="strip">
         <div><dt>Total</dt><dd>${total}</dd></div>
         <div><dt>Em estoque</dt><dd>${total - vendidas}</dd></div>
-        <div><dt>Entregues</dt><dd>${vendidas}</dd></div>
+        <div><dt>Ativadas</dt><dd>${vendidas}</dd></div>
         <div><dt>NFC gravadas</dt><dd>${gravadas}</dd></div>
       </dl>
       <div class="filtros">
         <div class="seg" role="radiogroup" aria-label="Situação">
-          ${[['todas', 'Todas'], ['estoque', 'Em estoque'], ['vendidas', 'Entregues']].map(([v, l]) => `<button type="button" role="radio" aria-checked="${S.filtro === v}" data-filtro="${v}">${l}</button>`).join('')}
+          ${[['todas', 'Todas'], ['estoque', 'Em estoque'], ['vendidas', 'Ativadas']].map(([v, l]) => `<button type="button" role="radio" aria-checked="${S.filtro === v}" data-filtro="${v}">${l}</button>`).join('')}
         </div>
         <select class="input" id="fLote" aria-label="Lote"><option value="">Todos os lotes</option>${lotes.map((l) => `<option ${S.lote === l ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>
         <select class="input" id="fRest" aria-label="Restaurante"><option value="">Todos os restaurantes</option>${S.rests.map((r) => `<option value="${r.id}" ${S.rest === r.id ? 'selected' : ''}>${esc(r.nome)}</option>`).join('')}</select>
@@ -354,8 +388,9 @@
         <label class="selall"><input type="checkbox" id="selAll" ${lista.length && selVis === lista.length ? 'checked' : ''} ${lista.length ? '' : 'disabled'}> ${n ? `<b>${n}</b> ${n === 1 ? 'selecionada' : 'selecionadas'}` : `Selecionar as ${lista.length} da lista`}</label>
         <span class="selpick">ou as próximas <input class="input mono" id="pickN" type="number" min="1" max="2000" placeholder="10" aria-label="Quantidade"> <button type="button" class="btn btn-line btn-sm" data-pick>em estoque</button></span>
         ${n ? `<div class="selacts">
-          <button type="button" class="btn btn-cobalt btn-sm" data-abrir="vender">${icon('arrow')} Entregar a um restaurante</button>
+          <button type="button" class="btn btn-cobalt btn-sm" data-abrir="vender">${icon('arrow')} Atribuir a um restaurante</button>
           <button type="button" class="btn btn-line btn-sm" data-acao="estoque">Devolver ao estoque</button>
+          <button type="button" class="btn btn-line btn-sm" data-acao="pdf">${icon('download')} PDF das plaquinhas</button>
           <button type="button" class="btn btn-line btn-sm" data-acao="imprimir">${icon('printer')} Imprimir QR</button>
           <button type="button" class="btn btn-line btn-sm" data-acao="etiquetas">${icon('printer')} Etiquetas de código</button>
           <button type="button" class="btn btn-line btn-sm" data-acao="csv">${icon('download')} Exportar CSV</button>
@@ -372,16 +407,19 @@
 
   function vRestaurantes() {
     const cont = (id) => S.tags.filter((t) => t.restaurante_id === id).length;
-    return `<div class="vhead"><div><h1>Restaurantes</h1><p>Para onde as plaquinhas de cada cliente apontam. Mudou o domínio? Troque aqui e todas as plaquinhas dele continuam funcionando.</p></div>
+    return `<div class="vhead"><div><h1>Restaurantes</h1><p>Cada restaurante tem um <b>código de ativação</b>: a equipe dele digita na primeira leitura de uma plaquinha nova, e ela passa a ser do restaurante. Mudou o domínio? Troque o endereço aqui e todas as plaquinhas continuam funcionando.</p></div>
         <button type="button" class="btn btn-cobalt" data-abrir="rest">${icon('plus')} Novo restaurante</button></div>
       ${S.rests.length ? `<div class="rests">${S.rests.map((r) => `<article class="rcard ${r.ativo === false ? 'is-off' : ''}">
           <div><h3>${esc(r.nome)}</h3><a href="${esc(r.destino)}" target="_blank" rel="noopener" class="mono">${esc(r.destino.replace(/^https?:\/\//, ''))}</a>
             ${r.observacao ? `<p>${esc(r.observacao)}</p>` : ''}</div>
+          <div class="ativ"><small>Código de ativação</small><b class="mono">${fmtAtivacao(r.codigo_ativacao)}</b>
+            <span class="rcard-acts"><button type="button" class="btn btn-quiet btn-sm" data-copiar-atv="${r.id}">${icon('copy')} Copiar</button>
+            <button type="button" class="btn btn-quiet btn-sm" data-trocar-atv="${r.id}">Trocar</button></span></div>
           <div class="rcard-foot"><span>${cont(r.id)} ${cont(r.id) === 1 ? 'plaquinha' : 'plaquinhas'}${r.ativo === false ? ' · <b>desativado</b>' : ''}</span>
             <span class="rcard-acts"><button type="button" class="btn btn-quiet btn-sm" data-ver-rest="${r.id}">Ver plaquinhas</button>
             <button type="button" class="btn btn-line btn-sm" data-editar="${r.id}">${icon('edit')} Editar</button></span></div>
         </article>`).join('')}</div>`
-        : `<div class="vazio">${icon('grid')}<h2>Nenhum restaurante</h2><p>Cadastre o restaurante com o endereço do site dele (ex.: https://quintal.vtx.com.br) antes de entregar as plaquinhas.</p></div>`}`;
+        : `<div class="vazio">${icon('grid')}<h2>Nenhum restaurante</h2><p>Cadastre o restaurante com o endereço do site dele (ex.: https://quintal.vtx.com.br). Ele recebe um código de ativação para a equipe ligar as plaquinhas.</p></div>`}`;
   }
 
   /* ============================== Folhas ============================== */
@@ -391,12 +429,13 @@
     $('#shBody').innerHTML = `<form class="stack" id="fGerar" novalidate>
       <label class="field"><span>Quantidade</span><input class="input mono" id="gQtd" type="number" min="1" max="2000" value="50" required></label>
       <label class="field"><span>Nome do lote</span><input class="input" id="gLote" maxlength="40" value="Lote ${hoje}"><small class="help">Ajuda a achar as plaquinhas depois (ex.: pedido da gráfica).</small></label>
-      <button type="submit" class="btn btn-cobalt btn-block">${icon('plus')} Gerar códigos</button>
+      <p class="help">Ao gerar, baixa na hora o PDF para a gráfica: uma plaquinha de 12 × 6 cm por página, cada uma com o QR e o código dela.</p>
+      <button type="submit" class="btn btn-cobalt btn-block">${icon('plus')} Gerar e baixar PDF</button>
     </form>`;
     openSheet('sh');
   }
   function abrirVender() {
-    $('#shTitle').textContent = 'Entregar a um restaurante';
+    $('#shTitle').textContent = 'Atribuir a um restaurante';
     const jaVendidas = [...S.sel].filter((c) => (S.tags.find((t) => t.codigo === c) || {}).restaurante_id).length;
     $('#shBody').innerHTML = S.rests.length ? `<form class="stack" id="fVender" novalidate>
       <p>${S.sel.size} ${S.sel.size === 1 ? 'plaquinha' : 'plaquinhas'} passam a abrir o site do restaurante escolhido.</p>
@@ -431,6 +470,7 @@
       <code>${esc(tagUrl(codigo))}</code>
       <p>${r ? `Entregue a <b>${esc(r.nome)}</b> em ${fmtData(t.vendida_em)}` : 'Em estoque'} · ${t.leituras || 0} leituras${t.ultima_leitura ? ` (última ${ago(t.ultima_leitura)})` : ''}</p>
       <div class="acts">
+        <button type="button" class="btn btn-line btn-sm" data-pdf1="${codigo}">${icon('download')} PDF</button>
         <button type="button" class="btn btn-line btn-sm" data-copiar="${codigo}">${icon('copy')} Copiar link</button>
         <a class="btn btn-line btn-sm" href="${esc(tagUrl(codigo))}" target="_blank" rel="noopener">${icon('external')} Testar</a>
       </div>
@@ -660,6 +700,28 @@
     if (vr) { Object.assign(S, { view: 'plaquinhas', rest: vr.dataset.verRest, filtro: 'todas', lote: '', busca: '' }); return render(); }
     const ver = t.closest('[data-ver]');
     if (ver) return verTag(ver.dataset.ver);
+    const ca = t.closest('[data-copiar-atv]');
+    if (ca) {
+      const r = restDe(ca.dataset.copiarAtv);
+      const ok = r && (await copyText(fmtAtivacao(r.codigo_ativacao)));
+      return toast(ok ? 'Código de ativação copiado.' : 'Não foi possível copiar.', { tone: ok ? 'ok' : 'error' });
+    }
+    const ta = t.closest('[data-trocar-atv]');
+    if (ta) {
+      const r = restDe(ta.dataset.trocarAtv);
+      if (!r || !confirm(`Trocar o código de ativação de ${r.nome}? O código antigo para de funcionar. Plaquinhas já ativadas continuam normais.`)) return;
+      try {
+        r.codigo_ativacao = await api.trocarCodigo(r.id);
+        render();
+        mostrarAtivacao(r, false);
+      } catch (ex) { toast(ex.message, { tone: 'error' }); }
+      return;
+    }
+    const p1 = t.closest('[data-pdf1]');
+    if (p1) {
+      try { await pdfPlaquinhas([p1.dataset.pdf1], `plaquinha-${p1.dataset.pdf1}`); } catch (ex) { toast(ex.message, { tone: 'error', ms: 4500 }); }
+      return;
+    }
     const cp = t.closest('[data-copiar]');
     if (cp) {
       const ok = await copyText(tagUrl(cp.dataset.copiar));
@@ -678,6 +740,13 @@
       const lista = selecionadas();
       if (ac.dataset.acao === 'limpar') { S.sel.clear(); return render(); }
       if (ac.dataset.acao === 'imprimir') return imprimir(lista);
+      if (ac.dataset.acao === 'pdf') {
+        const lotes = [...new Set(lista.map((x) => x.lote).filter(Boolean))];
+        try {
+          await pdfPlaquinhas(lista.map((x) => x.codigo), `plaquinhas-${lotes.length === 1 ? lotes[0] : new Date().toISOString().slice(0, 10)}`);
+        } catch (ex) { toast(ex.message, { tone: 'error', ms: 4500 }); }
+        return;
+      }
       if (ac.dataset.acao === 'etiquetas') return imprimirCodigos(lista);
       if (ac.dataset.acao === 'csv') return exportarCsv(lista);
       if (ac.dataset.acao === 'estoque') {
@@ -743,6 +812,11 @@
         S.sel = new Set(novos);
         Object.assign(S, { filtro: 'todas', lote, rest: '', busca: '' });
         toast(`${novos.length} códigos gerados e selecionados.`, { tone: 'ok' });
+        try {
+          await pdfPlaquinhas(novos, `plaquinhas-${lote || new Date().toISOString().slice(0, 10)}`);
+        } catch (ex) {
+          toast(`Códigos criados, mas o PDF falhou: ${ex.message} Use “PDF das plaquinhas” na seleção.`, { tone: 'error', ms: 6000 });
+        }
       } else if (f.id === 'fVender') {
         const rid = $('#vRest').value;
         const lista = [...S.sel];
@@ -755,9 +829,14 @@
         try { new URL(destino); } catch { throw new Error('Endereço do site inválido.'); }
         const nome = $('#rNome').value.trim();
         if (!nome) throw new Error('Informe o nome.');
-        await api.salvarRestaurante({ ...(S.editRest ? { id: S.editRest } : {}), nome, destino, observacao: $('#rObs').value.trim() || null, ativo: $('#rAtivo').checked });
-        closeSheet();
-        toast('Restaurante salvo.', { tone: 'ok' });
+        const salvo = await api.salvarRestaurante({ ...(S.editRest ? { id: S.editRest } : {}), nome, destino, observacao: $('#rObs').value.trim() || null, ativo: $('#rAtivo').checked });
+        if (!S.editRest && salvo) {
+          S.rests.push(salvo);
+          mostrarAtivacao(salvo, true);
+        } else {
+          closeSheet();
+          toast('Restaurante salvo.', { tone: 'ok' });
+        }
       }
       await carregar();
     } catch (ex) {
