@@ -319,21 +319,57 @@
 
 /* ---------- Plaquinhas ---------- */
 .howto { display: grid; gap: 14px; margin-bottom: 18px; }
-@media (min-width: 900px) { .howto { grid-template-columns: 1.2fr 1fr; } }
+@media (min-width: 900px) { .howto { grid-template-columns: 1.2fr 1fr; align-items: start; } }
 .howto ol { margin: 0; padding-left: 1.3em; display: grid; gap: 6px; font-size: 14.5px; color: var(--ink-2); }
 .howto ol li::marker { font-family: var(--font-mono); color: var(--muted); }
-.tags-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: 10px; }
-.tagcard { display: grid; grid-template-columns: auto 1fr; gap: 12px 14px; align-items: center; padding: 14px; border-radius: 18px; background: var(--surface); box-shadow: var(--shadow-1); }
-.tagcard .mini-plate { width: 58px; height: 58px; }
-.tagcard .mini-plate b { font-size: 28px; }
-.tagcard-url { font-family: var(--font-mono); font-size: 12.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tagcard-area { font-weight: 600; font-size: 15px; }
-.tagcard-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; }
-.tagcard-actions .btn { min-height: 38px; font-size: 13.5px; padding: 0 .85em; }
-.qr-big { display: grid; justify-items: center; gap: 14px; text-align: center; }
-.qr-big .qr { width: min(100%, 280px); padding: 14px; border-radius: 18px; background: #fff; }
-.qr-big svg { width: 100%; height: auto; }
-.qr-big code { font-family: var(--font-mono); font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.placa-manual { display: grid; grid-template-columns: 1fr 96px; gap: 8px; }
+.plist { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); }
+.prow { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 16px; background: var(--surface); box-shadow: var(--shadow-1); }
+.prow .mini-plate { width: 50px; height: 50px; }
+.prow .mini-plate b { font-size: 24px; }
+.prow .mini-plate small { font-size: 8px; }
+.prow-body { display: grid; gap: 2px; min-width: 0; }
+.prow-body b { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prow-body .mono { letter-spacing: .06em; }
+.prow-body small { font-size: 12.5px; color: var(--muted); }
+.prow.is-vazia .prow-body b { color: var(--muted); font-weight: 500; }
+.prow.is-vazia .mini-plate { filter: saturate(.25); opacity: .75; }
+.prow-acts { display: flex; gap: 6px; }
+.prow-acts .btn { min-height: 38px; padding: 0 .7em; }
+@media (max-width: 420px) { .prow-acts .btn span { display: none; } }
+
+.vinc-cod { font-size: 15px; }
+.vinc-cod .mono { font-size: 18px; letter-spacing: .1em; }
+.vmesas { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 8px; max-height: 46vh; overflow-y: auto; padding: 2px; }
+.vmesa { display: grid; justify-items: center; align-content: center; gap: 2px; min-height: 60px; border-radius: 14px; background: var(--surface-2); color: var(--ink); }
+.vmesa b { font-family: var(--font-display); font-weight: 900; font-size: 26px; line-height: 1; font-variant-numeric: tabular-nums; }
+.vmesa small { font-size: 10.5px; color: var(--muted); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 4px; }
+.vmesa[data-tem] small { color: var(--amber); }
+.vmesa[aria-pressed="true"] { background: var(--cobalt); color: var(--enamel); box-shadow: 0 8px 20px -10px rgba(27, 58, 158, .8); }
+.vmesa[aria-pressed="true"] small { color: var(--enamel); opacity: .85; }
+
+/* ---------- Sino liberado ---------- */
+.pedidos { margin-bottom: 20px; }
+.pedidos h2 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; font-family: var(--font-display); font-weight: 900; font-size: 24px; text-transform: uppercase; margin-bottom: 10px; }
+.pedidos h2 small { font-family: var(--font-body); font-size: 13px; font-weight: 500; color: var(--muted); text-transform: none; }
+.scard { --tone: var(--brass); }
+.scard-hint { font-size: 13px; color: var(--ink-2); padding: 7px 10px; border-radius: 10px; background: var(--brass-soft); }
+.ccard-close { grid-column: 1 / -1; }
+.mesa[data-st="ocupada"] { background: var(--leaf-soft); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--leaf) 45%, transparent); }
+.mesa[data-st="ocupada"] .mesa-st { color: var(--leaf); }
+.legend .l-occ { background: var(--leaf-soft); box-shadow: inset 0 0 0 1.5px var(--leaf); }
+.mesa-gente { display: grid; gap: 10px; padding: 14px; border-radius: 16px; background: var(--surface-2); }
+.mesa-gente .note { background: var(--surface); }
+.mesa-gente-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.mesa-gente-head h3 { font-size: 15px; font-weight: 700; }
+.mesa-cod { font-size: 13px; color: var(--muted); }
+.mesa-cod .mono { font-size: 17px; color: var(--ink); letter-spacing: .12em; }
+.gente { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.gente li { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.gente li > div { display: grid; flex: 1; min-width: 0; }
+.gente small { font-size: 12.5px; color: var(--muted); }
+.gente li.is-pend .avatar { background: var(--brass-soft); color: var(--brass-lo); }
+.gente-acts { display: flex; gap: 6px; }
 
 /* ---------- Mesas (quantidade e áreas) ---------- */
 #mesasCfg, #widgetsCfg { margin-bottom: 18px; }
@@ -521,35 +557,6 @@
 .stack { display: grid; gap: 12px; }
 .note { display: flex; gap: 10px; padding: 12px 14px; border-radius: 14px; background: var(--surface-2); font-size: 13.5px; color: var(--ink-2); }
 .note .i { width: 18px; height: 18px; margin-top: 1px; }
-
-/* ---------- Impressão dos QR ---------- */
-.print-area { display: none; }
-@media print {
-  @page { margin: 12mm; }
-  body > :not(.print-area) { display: none !important; }
-  body { background: #fff; }
-  .print-area { display: grid !important; grid-template-columns: repeat(3, 1fr); gap: 8mm; }
-  .print-card {
-    break-inside: avoid;
-    display: grid;
-    justify-items: center;
-    gap: 3mm;
-    padding: 6mm 5mm;
-    border-radius: 5mm;
-    background: #1B3A9E;
-    color: #FBFBF7;
-    box-shadow: inset 0 0 0 1.6mm #1B3A9E, inset 0 0 0 2.2mm #FBFBF7;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-    font-family: var(--font-display);
-    text-align: center;
-  }
-  .print-card small { font-weight: 800; font-size: 10pt; letter-spacing: .3em; text-transform: uppercase; }
-  .print-card b { font-weight: 900; font-size: 40pt; line-height: .9; }
-  .print-card .qr { width: 34mm; background: #fff; padding: 2mm; border-radius: 2mm; }
-  .print-card .qr svg { width: 100%; height: auto; }
-  .print-card p { font-family: var(--font-body); font-size: 8pt; max-width: 45mm; }
-}
 
 /* App no celular */
 .app-passos { margin: 0; padding-left: 20px; display: grid; gap: 6px; font-size: 14px; }

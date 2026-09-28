@@ -1,0 +1,113 @@
+/* Central de plaquinhas — usa os tokens e componentes de assets/css/base.css. */
+.central { min-height: 100vh; }
+.stack { display: grid; gap: 12px; }
+.help { font-size: 12.5px; line-height: 1.4; color: var(--muted); }
+.form-error { color: var(--pepper); font-size: 14px; font-weight: 500; }
+.form-error:empty { display: none; }
+.note { display: flex; gap: 10px; padding: 12px 14px; border-radius: 14px; background: var(--surface-2); font-size: 13.5px; color: var(--ink-2); }
+.note .i { width: 18px; height: 18px; margin-top: 1px; }
+.check { display: flex; gap: 10px; align-items: flex-start; font-size: 14.5px; }
+.check input, td input[type="checkbox"], .selall input { width: 20px; height: 20px; margin: 0; accent-color: var(--cobalt); flex: none; }
+select.input { appearance: none; background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: calc(100% - 20px) 50%, calc(100% - 15px) 50%; background-size: 5px 5px; background-repeat: no-repeat; padding-right: 36px; }
+
+/* Entrada */
+.login { min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; }
+.login-card { width: min(100%, 380px); padding: 26px 22px; border-radius: 24px; background: var(--surface); box-shadow: var(--shadow-2); }
+.login-card h1 { font-family: var(--font-display); font-weight: 900; font-size: 32px; text-transform: uppercase; line-height: 1; }
+
+/* Estrutura */
+.top { position: sticky; top: 0; z-index: 10; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 12px 16px; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
+.top-brand { font-family: var(--font-display); font-weight: 900; font-size: 22px; text-transform: uppercase; letter-spacing: .01em; }
+.top-nav { min-width: 260px; }
+.top-who { margin-left: auto; display: flex; align-items: center; gap: 10px; font-size: 13.5px; color: var(--muted); }
+@media (max-width: 640px) { .top-nav { order: 3; width: 100%; } .top-who span { display: none; } }
+.demo-bar { margin: 12px 16px 0; padding: 10px 14px; border-radius: 12px; background: var(--amber-soft); color: var(--ink); font-size: 13.5px; }
+.main { max-width: 1180px; margin: 0 auto; padding: 18px 16px 60px; }
+
+.vhead { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.vhead h1 { font-family: var(--font-display); font-weight: 900; font-size: 36px; text-transform: uppercase; line-height: 1; }
+.vhead p { color: var(--muted); font-size: 14.5px; margin-top: 6px; max-width: 70ch; }
+
+.strip { display: grid; grid-template-columns: repeat(4, 1fr); margin: 0 0 16px; border-radius: 18px; background: var(--surface); box-shadow: var(--shadow-1); overflow: hidden; }
+.strip > div { padding: 12px 16px; border-left: 1px solid var(--line); min-width: 0; }
+.strip > div:first-child { border-left: 0; }
+.strip dt { font-size: 12px; color: var(--muted); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.strip dd { margin: 2px 0 0; font-family: var(--font-display); font-weight: 900; font-size: 30px; line-height: 1; font-variant-numeric: tabular-nums; }
+@media (max-width: 600px) {
+  .strip { grid-template-columns: repeat(2, 1fr); }
+  .strip > div:nth-child(3) { border-left: 0; }
+  .strip > div:nth-child(n+3) { border-top: 1px solid var(--line); }
+}
+
+.filtros { display: grid; gap: 8px; grid-template-columns: minmax(0, 1.3fr) repeat(3, minmax(0, 1fr)); margin-bottom: 10px; }
+.filtros .input { min-height: 48px; }
+@media (max-width: 900px) { .filtros { grid-template-columns: 1fr 1fr; } .filtros .seg { grid-column: 1 / -1; } }
+
+.selbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 10px 14px; margin-bottom: 10px; border-radius: 16px; background: var(--surface-2); font-size: 14px; }
+.selbar.is-on { background: var(--cobalt-soft); }
+.selall { display: flex; align-items: center; gap: 8px; font-weight: 500; }
+.selpick { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
+.selpick .input { width: 74px; min-height: 38px; padding: 6px 10px; font-size: 15px; }
+.selacts { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; }
+
+.tabela { overflow-x: auto; border-radius: 18px; background: var(--surface); box-shadow: var(--shadow-1); }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th { text-align: left; font-size: 12px; font-weight: 600; color: var(--muted); padding: 10px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: middle; white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+tr.is-sel td { background: color-mix(in srgb, var(--cobalt-soft) 60%, transparent); }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+td.num small { display: block; font-size: 11.5px; color: var(--muted); }
+.cod { font-family: var(--font-mono); font-size: 15px; letter-spacing: .08em; color: var(--cobalt-ink); text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; }
+.pill { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 999px; background: var(--surface-2); font-size: 12.5px; font-weight: 600; color: var(--muted); }
+.pill .i { width: 14px; height: 14px; }
+.pill--ok { background: var(--leaf-soft); color: var(--leaf); }
+.mais { padding: 12px; font-size: 13px; }
+
+.vazio { display: grid; justify-items: center; gap: 8px; padding: 48px 16px; text-align: center; color: var(--muted); }
+.vazio .i { width: 40px; height: 40px; color: var(--brass); }
+.vazio h2 { font-family: var(--font-display); font-weight: 900; font-size: 26px; text-transform: uppercase; color: var(--ink); }
+.vazio p { max-width: 46ch; font-size: 14.5px; }
+
+.rests { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); }
+.rcard { display: grid; gap: 12px; padding: 16px; border-radius: 18px; background: var(--surface); box-shadow: var(--shadow-1); }
+.rcard.is-off { opacity: .7; }
+.rcard h3 { font-size: 18px; }
+.rcard a { font-size: 13px; color: var(--cobalt-ink); overflow-wrap: anywhere; }
+.rcard p { font-size: 13.5px; color: var(--muted); margin-top: 4px; }
+.rcard-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; color: var(--muted); }
+.rcard-acts { display: flex; gap: 6px; }
+
+.acts { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.tagver { justify-items: center; text-align: center; }
+.tagver .qr { width: min(100%, 240px); padding: 12px; border-radius: 16px; background: #fff; }
+.tagver .qr svg { width: 100%; height: auto; }
+.tagver code { font-family: var(--font-mono); font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.tagver p { font-size: 14px; }
+
+/* Gravação NFC */
+.gravar { justify-items: center; text-align: center; }
+.gravar-prog { font-size: 13px; font-weight: 600; color: var(--muted); }
+.gravar-cod { display: grid; gap: 4px; padding: 18px 26px; border-radius: 20px; background: var(--cobalt); color: var(--enamel); }
+.gravar-cod small { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; opacity: .85; }
+.gravar-cod b { font-size: 34px; letter-spacing: .14em; }
+.gravar-msg { min-height: 2.8em; font-size: 15px; color: var(--ink-2); }
+.gravar-msg.is-ok { color: var(--leaf); font-weight: 600; }
+.gravar-msg.is-erro { color: var(--pepper); font-weight: 600; }
+.gravar-fim { justify-items: center; text-align: center; }
+.gravar-fim > .i { width: 44px; height: 44px; color: var(--leaf); }
+.gravar-fim h3 { font-size: 20px; }
+
+/* Impressão: etiquetas com QR e código (sem número de mesa). */
+.print-area { display: none; }
+@media print {
+  @page { margin: 10mm; }
+  body > :not(.print-area) { display: none !important; }
+  body { background: #fff; }
+  .print-area { display: grid !important; grid-template-columns: repeat(5, 1fr); gap: 5mm; }
+  .etq { break-inside: avoid; display: grid; justify-items: center; gap: 1.5mm; padding: 3mm; border: .2mm dashed #bbb; border-radius: 2mm; }
+  .etq .qr { width: 28mm; }
+  .etq .qr svg { width: 100%; height: auto; }
+  .etq code { font-family: var(--font-mono); font-size: 8pt; letter-spacing: .1em; color: #000; }
+}

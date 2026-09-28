@@ -7,12 +7,12 @@
   <meta name="theme-color" content="#090D20" media="(prefers-color-scheme: dark)">
   <meta name="description" content="Chame o garçom, veja o cardápio e conecte-se ao Wi-Fi direto da sua mesa.">
   <title>Sua mesa</title>
-  <link rel="icon" href="assets/img/icon.svg" type="image/svg+xml">
+  <link rel="icon" href="/assets/img/icon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800;900&family=IBM+Plex+Mono:wght@500&family=Schibsted+Grotesk:wght@400;500;600;700&display=swap">
-  <link rel="stylesheet" href="assets/css/base.css">
-  <link rel="stylesheet" href="assets/css/cliente.css">
+  <link rel="stylesheet" href="/assets/css/base.css">
+  <link rel="stylesheet" href="/assets/css/cliente.css">
   <script>
     (function () {
       var t = 'light';
@@ -42,6 +42,7 @@
     </header>
 
     <section class="plate-stage" aria-label="Sua mesa">
+      <div class="tag-nova" id="tagNova" hidden></div>
       <form class="table-picker" id="tablePicker" hidden>
         <p><strong>Encoste o celular na plaquinha da mesa</strong> ou digite o número dela.</p>
         <div class="table-picker-row">
@@ -53,10 +54,12 @@
     </section>
 
     <section class="call" id="call" aria-labelledby="callTitle">
+      <div class="call-gate" id="callGate" hidden aria-live="polite"></div>
       <div class="call-panel" id="callPanel">
         <div class="call-head">
           <h2 id="callTitle">Precisa de algo?</h2>
           <p class="muted">Escolha o motivo e segure o sino. A equipe recebe na hora.</p>
+          <p class="call-who" id="callWho" hidden></p>
         </div>
         <div class="reasons" id="reasons" role="radiogroup" aria-label="Motivo do chamado"></div>
         <div class="reason-extra" id="reasonExtra"></div>
@@ -146,10 +149,10 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js" defer></script>
-  <script src="env.js" defer></script>
-  <script src="assets/js/config.js" defer></script>
-  <script src="assets/js/store.js" defer></script>
-  <script src="assets/js/ui.js" defer></script>
-  <script src="assets/js/cliente.js" defer></script>
+  <script src="/env.js" defer></script>
+  <script src="/assets/js/config.js" defer></script>
+  <script src="/assets/js/store.js" defer></script>
+  <script src="/assets/js/ui.js" defer></script>
+  <script src="/assets/js/cliente.js" defer></script>
 </body>
 </html>

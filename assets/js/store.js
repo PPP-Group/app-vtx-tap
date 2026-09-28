@@ -5,7 +5,17 @@
  *   subscribe(fn)                → fn() a cada mudança em chamados/comentários
  *   watchCall(id, fn)            → fn(chamado) quando um chamado específico muda
  *   listCalls({ desde })         → chamados criados depois de `desde` (Date)
- *   getCall(id) / createCall(d) / updateCall(id, patch)
+ *   getCall(id) / updateCall(id, patch)          (equipe)
+ *
+ *   Plaquinhas e sino liberado pela equipe:
+ *   mesaDaEtiqueta(codigo)       → nº da mesa ligada à plaquinha, ou null
+ *   sessaoAbrir({ mesa, nome, codigo }) → { token, status, mesa, nome, codigo }
+ *   sessaoStatus(token) / sessaoSair(token)
+ *   chamar(token, dados)         → chamado criado (só com o sino liberado; erro.code 'BLOQUEADO')
+ *   cancelarChamado(token, id)
+ *   listSessoes({ desde }) / decidirSessao(id, liberar) / fecharMesa(mesa) / listMesasAbertas()   (equipe)
+ *   listEtiquetas() / vincularEtiqueta(codigo, mesa) / desvincularEtiqueta(codigo)                (equipe)
+ *
  *   listFeedback() / createFeedback(d) / updateFeedback(id, patch)
  *   getSettings() / updateSettings(patch)
  *                                → restaurante, wifi, cardápio, mesas e widgets (editados no painel)
@@ -40,6 +50,8 @@
     }
     return out;
   };
+  const normCodigo = (c) => String(c || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const bloqueado = (msg) => Object.assign(new Error(msg || 'O sino não está liberado para este celular.'), { code: 'BLOQUEADO' });
   const blobToDataUrl = (blob) =>
     new Promise((ok, fail) => {
       const r = new FileReader();
@@ -53,7 +65,7 @@
     const KEY = 'nfc-demo-db-v1';
     const listeners = new Set();
     const channel = 'BroadcastChannel' in window ? new BroadcastChannel('nfc-demo') : null;
-    const empty = () => ({ chamados: [], comentarios: [], configuracao: null, equipe: null });
+    const empty = () => ({ chamados: [], comentarios: [], configuracao: null, equipe: null, sessoes: [], mesasAbertas: {}, etiquetas: [] });
 
     const read = () => {
       try {
@@ -83,6 +95,31 @@
       return row;
     };
 
+    // Mesmas regras de public.sessao_* do schema.sql, guardadas neste navegador.
+    const HORA = 3600e3;
+    const expira = (db) => {
+      const agora = Date.now();
+      for (const s of db.sessoes) {
+        const venceu = (s.status === 'liberada' && agora - new Date(s.liberada_em) > 6 * HORA)
+          || (s.status === 'pendente' && agora - new Date(s.criado_em) > HORA / 2);
+        if (venceu) Object.assign(s, { status: 'encerrada', encerrada_em: nowIso() });
+      }
+      for (const m of Object.keys(db.mesasAbertas)) {
+        if (!db.sessoes.some((s) => s.mesa === +m && s.status === 'liberada')) delete db.mesasAbertas[m];
+      }
+      db.sessoes = db.sessoes.filter((s) => agora - new Date(s.criado_em) < 24 * HORA);
+    };
+    const codigoDaMesa = (db, mesa) => {
+      if (!db.mesasAbertas[mesa]) db.mesasAbertas[mesa] = { codigo: String(Math.floor(Math.random() * 10000)).padStart(4, '0'), aberta_em: nowIso() };
+      return db.mesasAbertas[mesa].codigo;
+    };
+    const statusDe = (db, s) => s
+      ? { status: s.status, mesa: s.mesa, nome: s.nome, codigo: s.status === 'liberada' ? (db.mesasAbertas[s.mesa] || {}).codigo || null : null }
+      : { status: 'inexistente' };
+    const publica = ({ token, ...s }) => s;
+    const totalMesas = (db) => (db.configuracao && db.configuracao.mesas && db.configuracao.mesas.total) || 500;
+    const tentativas = {};
+
     return {
       mode: 'local',
       async init() {},
@@ -103,6 +140,7 @@
       async getCall(id) {
         return read().chamados.find((c) => c.id === id) || null;
       },
+      // Só para o botão "Simular chamado" do painel em demonstração.
       async createCall(data) {
         const db = read();
         const row = { id: uid(), status: 'aberto', criado_em: nowIso(), atualizado_em: nowIso(), ...data };
@@ -114,6 +152,104 @@
       },
       async updateCall(id, patch) {
         return patchIn('chamados', id, patch);
+      },
+
+      async mesaDaEtiqueta(codigo) {
+        const e = read().etiquetas.find((x) => x.codigo === normCodigo(codigo));
+        return e ? e.mesa : null;
+      },
+      async sessaoAbrir({ mesa, nome, codigo }) {
+        const db = read();
+        expira(db);
+        nome = String(nome || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+        codigo = String(codigo || '').trim();
+        if (!(mesa >= 1 && mesa <= totalMesas(db))) throw new Error('Mesa inválida.');
+        if (!nome) throw new Error('Informe seu nome.');
+        const t = (tentativas[mesa] = (tentativas[mesa] || []).filter((x) => Date.now() - x < 10 * 60e3));
+        const s = { id: uid(), token: uid(), mesa, nome, status: 'pendente', via: null, liberada_por: null, criado_em: nowIso(), liberada_em: null, encerrada_em: null };
+        if (codigo) {
+          if (t.length >= 6) throw new Error('Muitas tentativas de código. Peça ao garçom para liberar.');
+          t.push(Date.now());
+          if (!db.mesasAbertas[mesa] || db.mesasAbertas[mesa].codigo !== codigo) throw new Error('Código da mesa incorreto.');
+          Object.assign(s, { status: 'liberada', via: 'codigo', liberada_em: nowIso() });
+        } else if (db.sessoes.filter((x) => x.mesa === mesa && x.status === 'pendente').length >= 4) {
+          throw new Error('Já há pedidos aguardando nesta mesa. Aguarde o garçom.');
+        }
+        db.sessoes.push(s);
+        write(db);
+        return { ...statusDe(db, s), token: s.token };
+      },
+      async sessaoStatus(token) {
+        const db = read();
+        expira(db);
+        return statusDe(db, db.sessoes.find((s) => s.token === token));
+      },
+      async sessaoSair(token) {
+        const db = read();
+        const s = db.sessoes.find((x) => x.token === token && (x.status === 'pendente' || x.status === 'liberada'));
+        if (s) Object.assign(s, { status: 'encerrada', encerrada_em: nowIso() });
+        expira(db);
+        write(db);
+      },
+      async chamar(token, dados) {
+        const db = read();
+        expira(db);
+        const s = db.sessoes.find((x) => x.token === token && x.status === 'liberada');
+        if (!s) throw bloqueado();
+        const recentes = db.chamados.filter((c) => c.mesa === s.mesa && Date.now() - new Date(c.criado_em) < 120e3);
+        if (recentes.length >= 5) throw new Error('Muitos chamados desta mesa. Aguarde um instante.');
+        return this.createCall({ ...dados, mesa: s.mesa, sessao_id: s.id });
+      },
+      async cancelarChamado(token, id) {
+        const db = read();
+        const s = db.sessoes.find((x) => x.token === token);
+        const c = db.chamados.find((x) => x.id === id);
+        if (!s || !c || c.sessao_id !== s.id || c.status !== 'aberto') return;
+        return patchIn('chamados', id, { status: 'cancelado' });
+      },
+      async listSessoes({ desde } = {}) {
+        const db = read();
+        const t = desde ? desde.getTime() : 0;
+        return db.sessoes.filter((s) => new Date(s.criado_em).getTime() >= t).map(publica);
+      },
+      async decidirSessao(id, liberar, por) {
+        const db = read();
+        const s = db.sessoes.find((x) => x.id === id && x.status === 'pendente');
+        if (!s) return;
+        Object.assign(s, liberar
+          ? { status: 'liberada', via: 'equipe', liberada_em: nowIso(), liberada_por: por || null }
+          : { status: 'recusada', liberada_por: por || null });
+        if (liberar) codigoDaMesa(db, s.mesa);
+        write(db);
+      },
+      async fecharMesa(mesa) {
+        const db = read();
+        db.sessoes.forEach((s) => {
+          if (s.mesa === mesa && (s.status === 'pendente' || s.status === 'liberada')) Object.assign(s, { status: 'encerrada', encerrada_em: nowIso() });
+        });
+        delete db.mesasAbertas[mesa];
+        write(db);
+      },
+      async listMesasAbertas() {
+        const db = read();
+        expira(db);
+        return Object.entries(db.mesasAbertas).map(([mesa, m]) => ({ mesa: +mesa, ...m }));
+      },
+      async listEtiquetas() {
+        return read().etiquetas.slice().sort((a, b) => a.mesa - b.mesa || a.codigo.localeCompare(b.codigo));
+      },
+      async vincularEtiqueta(codigo, mesa, por) {
+        codigo = normCodigo(codigo);
+        if (!/^[A-Z0-9]{4,16}$/.test(codigo)) throw new Error('Código de plaquinha inválido.');
+        const db = read();
+        db.etiquetas = db.etiquetas.filter((e) => e.codigo !== codigo);
+        db.etiquetas.push({ codigo, mesa, vinculada_em: nowIso(), vinculada_por: por || null });
+        write(db);
+      },
+      async desvincularEtiqueta(codigo) {
+        const db = read();
+        db.etiquetas = db.etiquetas.filter((e) => e.codigo !== normCodigo(codigo));
+        write(db);
       },
       async listFeedback() {
         return read().comentarios.slice().reverse();
@@ -132,7 +268,7 @@
       async reset() {
         // Preserva a configuração do restaurante — só limpa chamados e comentários.
         const db = read();
-        write({ ...empty(), configuracao: db.configuracao, equipe: db.equipe });
+        write({ ...empty(), configuracao: db.configuracao, equipe: db.equipe, etiquetas: db.etiquetas });
       },
       async getSettings() {
         return mergeSettings(read().configuracao);
@@ -252,10 +388,11 @@
         await loadScript('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js');
         sb = window.supabase.createClient(supabaseUrl, supabaseAnonKey);
         if (realtimeAll) {
-          sb.channel('painel')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'chamados' }, () => listeners.forEach((f) => f()))
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'comentarios' }, () => listeners.forEach((f) => f()))
-            .subscribe();
+          const ch = sb.channel('painel');
+          for (const table of ['chamados', 'comentarios', 'sessoes', 'mesas_abertas', 'etiquetas']) {
+            ch.on('postgres_changes', { event: '*', schema: 'public', table }, () => listeners.forEach((f) => f()));
+          }
+          ch.subscribe();
         }
       },
       subscribe(fn) {
@@ -278,14 +415,60 @@
       async getCall(id) {
         return must(await sb.from('chamados').select('*').eq('id', id).maybeSingle());
       },
-      async createCall(data) {
-        // O id é gerado aqui para que o cliente anônimo não precise ler a linha de volta.
-        const row = { id: uid(), ...data };
-        must(await sb.from('chamados').insert(row));
-        return { ...row, status: 'aberto', criado_em: nowIso() };
-      },
       async updateCall(id, patch) {
         must(await sb.from('chamados').update({ ...patch, atualizado_em: nowIso() }).eq('id', id));
+      },
+
+      async mesaDaEtiqueta(codigo) {
+        return must(await sb.rpc('mesa_da_etiqueta', { p_codigo: normCodigo(codigo) })) || null;
+      },
+      async sessaoAbrir({ mesa, nome, codigo }) {
+        return must(await sb.rpc('sessao_abrir', { p_mesa: mesa, p_nome: nome, p_codigo: codigo || null }));
+      },
+      async sessaoStatus(token) {
+        return must(await sb.rpc('sessao_status', { p_token: token }));
+      },
+      async sessaoSair(token) {
+        must(await sb.rpc('sessao_sair', { p_token: token }));
+      },
+      async chamar(token, dados) {
+        const { data, error } = await sb.rpc('chamar', {
+          p_token: token,
+          p_tipo: dados.tipo,
+          p_nota: dados.nota || null,
+          p_pagamento: dados.pagamento || null,
+          p_itens: dados.itens || null,
+        });
+        if (error) throw error.code === 'VT401' ? bloqueado(error.message) : error;
+        return { id: data, status: 'aberto', criado_em: nowIso(), ...dados };
+      },
+      async cancelarChamado(token, id) {
+        must(await sb.rpc('chamado_cancelar', { p_token: token, p_id: id }));
+      },
+      async listSessoes({ desde } = {}) {
+        let q = sb.from('sessoes').select('id, mesa, nome, status, via, liberada_por, criado_em, liberada_em, encerrada_em').order('criado_em', { ascending: true });
+        if (desde) q = q.gte('criado_em', desde.toISOString());
+        return must(await q);
+      },
+      async decidirSessao(id, liberar) {
+        must(await sb.rpc('sessao_decidir', { p_id: id, p_liberar: !!liberar }));
+      },
+      async fecharMesa(mesa) {
+        must(await sb.rpc('mesa_fechar', { p_mesa: mesa }));
+      },
+      async listMesasAbertas() {
+        return must(await sb.from('mesas_abertas').select('mesa, codigo, aberta_em'));
+      },
+      async listEtiquetas() {
+        return must(await sb.from('etiquetas').select('*').order('mesa').order('codigo'));
+      },
+      async vincularEtiqueta(codigo, mesa, por) {
+        codigo = normCodigo(codigo);
+        if (!/^[A-Z0-9]{4,16}$/.test(codigo)) throw new Error('Código de plaquinha inválido.');
+        must(await sb.from('etiquetas').upsert({ codigo, mesa, vinculada_em: nowIso(), vinculada_por: por || null }));
+      },
+      async desvincularEtiqueta(codigo) {
+        must(await sb.from('etiquetas').delete().eq('codigo', normCodigo(codigo)));
       },
       async listFeedback() {
         return must(await sb.from('comentarios').select('*').order('criado_em', { ascending: false }).limit(300));

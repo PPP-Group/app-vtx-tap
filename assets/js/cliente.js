@@ -18,7 +18,16 @@
     const n = parseInt(p.get('mesa') || p.get('m') || '', 10);
     return n >= 1 ? n : null;
   };
-  let mesa = readMesaBruta();
+  // Plaquinha: /?tag=CODIGO (vindo do redirecionador central) ou /t/CODIGO.
+  const readTag = () => {
+    const p = new URLSearchParams(location.search);
+    const raw = p.get('tag') || (location.pathname.match(/^\/t\/([A-Za-z0-9-]+)/) || [])[1] || '';
+    const c = raw.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    return c.length >= 4 ? c : null;
+  };
+  const tag = readTag();
+  let tagNova = false;
+  let mesa = tag ? null : readMesaBruta();
   const areaDe = (n) => (live.mesas.areas.find((a) => n >= a.de && n <= a.ate) || {}).nome || '';
   const motivo = (id) => cfg.motivos.find((m) => m.id === id) || { label: id, curto: id };
 
@@ -85,8 +94,20 @@
     el.innerHTML = `<span class="rivet r1"></span><span class="rivet r2"></span>
       <span class="plate-label" aria-hidden="true">Mesa</span>
       <span class="plate-num" aria-hidden="true">${mesa ? pad(mesa) : '?'}</span>`;
-    $('#tablePicker').hidden = !!mesa;
+    $('#tablePicker').hidden = !!mesa || !!tag;
     $('#menuMesa').textContent = mesa ? `Mesa ${pad(mesa)}` : '';
+    const nova = $('#tagNova');
+    nova.hidden = !tagNova;
+    if (tagNova) {
+      nova.innerHTML = `<span class="tag-nova-ico">${icon('nfc')}</span>
+        <div><h2>Plaquinha nova</h2>
+          <p>Esta plaquinha ainda não foi ligada a uma mesa. Chame alguém da equipe para configurar.</p></div>
+        <a class="btn btn-cobalt btn-block" href="/admin/?vincular=${encodeURIComponent(tag)}">${icon('lock')} Sou da equipe · configurar</a>
+        <small class="mono">Código ${esc(tag)}</small>`;
+    } else if (tag && !mesa) {
+      nova.hidden = false;
+      nova.innerHTML = `<div><h2>Sem conexão</h2><p>Não foi possível identificar a mesa desta plaquinha. Confira a internet e encoste o celular de novo.</p></div>`;
+    }
   }
 
   $('#tablePicker').addEventListener('submit', (e) => {
@@ -102,6 +123,178 @@
     mesa = n;
     boot();
   });
+
+  /* ---------------- Sino liberado pela equipe ----------------
+     Cada celular pede para usar o sino com o nome da pessoa. A equipe libera
+     (ou quem já está liberado passa o código da mesa). Assim, quem abre o
+     link fora do restaurante não consegue chamar ninguém. */
+  const sessKey = () => `nfc-sessao-${mesa}`;
+  let sess = null; // { token, status, mesa, nome, codigo }
+  let sessPoll = 0;
+  const liberado = () => !!(sess && sess.status === 'liberada');
+
+  function pollSessao() {
+    clearTimeout(sessPoll);
+    if (!sess || !sess.token || !['pendente', 'liberada'].includes(sess.status)) return;
+    sessPoll = setTimeout(atualizarSessao, sess.status === 'pendente' ? 4000 : 30000);
+  }
+  async function atualizarSessao() {
+    const token = mesa && safeGet(sessKey());
+    if (!token) {
+      sess = null;
+      return renderGate();
+    }
+    try {
+      const st = await store.sessaoStatus(token);
+      if (st.status === 'inexistente') {
+        safeSet(sessKey(), null);
+        sess = null;
+      } else {
+        if (sess && sess.status === 'pendente' && st.status === 'liberada') {
+          navigator.vibrate && navigator.vibrate([30, 50, 30]);
+          toast('Sino liberado. Agora é só segurar o sino para chamar.', { tone: 'ok', ms: 4000 });
+        }
+        sess = { ...st, token };
+        if (st.status === 'encerrada' || st.status === 'recusada') safeSet(sessKey(), null);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    renderGate();
+    pollSessao();
+  }
+  document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && mesa && atualizarSessao());
+
+  function formGate(msg = '') {
+    const aviso = sess && sess.status === 'recusada'
+      ? 'O pedido anterior não foi aprovado. Se você está na mesa, chame o garçom com um aceno.'
+      : sess && sess.status === 'encerrada'
+        ? 'A mesa foi fechada ou a liberação venceu. Para chamar de novo, peça a liberação.'
+        : msg;
+    return `<div class="call-head">
+        <h2>Chamar o garçom</h2>
+        <p class="muted">Para o sino tocar só para quem está no restaurante, a equipe libera o seu celular uma única vez. Depois é só segurar o sino.</p>
+      </div>
+      ${aviso ? `<p class="note">${icon('msg')}<span>${esc(aviso)}</span></p>` : ''}
+      <form class="gate-form" id="gateForm" novalidate>
+        <label class="field"><span>Seu nome</span>
+          <input class="input" id="gateNome" maxlength="40" autocomplete="given-name" enterkeyhint="send" placeholder="Como o garçom vai te chamar" value="${esc(safeGet('nfc-nome') || '')}"></label>
+        <details class="gate-cod" id="gateCod">
+          <summary>Tenho o código da mesa</summary>
+          <label class="field"><span>Código da mesa</span>
+            <input class="input mono" id="gateCodigo" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" placeholder="0000"></label>
+          <small class="muted">Quem já está liberado na sua mesa vê esse código na tela do celular.</small>
+        </details>
+        <p class="form-error" id="gateErr" role="alert"></p>
+        <button class="btn btn-cobalt btn-block" type="submit">${icon('bell')} Liberar o sino</button>
+      </form>`;
+  }
+
+  function renderGate() {
+    const gate = $('#callGate');
+    $('#call').hidden = !mesa;
+    if (!mesa) return;
+    const pend = sess && sess.status === 'pendente';
+    gate.hidden = liberado();
+    if (!liberado()) {
+      const aberto = document.activeElement && gate.contains(document.activeElement);
+      if (pend) {
+        gate.innerHTML = `<div class="cs-top">
+            <span class="cs-dot">${icon('clock')}</span>
+            <div><h2 class="cs-title">Aguardando a equipe</h2>
+              <p class="cs-sub">Mesa ${pad(mesa)} · ${esc(sess.nome)}. Um garçom vai confirmar que você está na mesa.</p></div>
+          </div>
+          <p class="note">${icon('book')}<span>Enquanto isso, veja o cardápio e monte sua lista. Se alguém da sua mesa já foi liberado, peça o código da mesa.</span></p>
+          <form class="gate-form gate-form--row" id="gateCodForm" novalidate>
+            <label class="sr-only" for="gateCodigo2">Código da mesa</label>
+            <input class="input mono" id="gateCodigo2" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" placeholder="Código da mesa">
+            <button class="btn btn-quiet" type="submit">Usar código</button>
+          </form>
+          <p class="form-error" id="gateErr" role="alert"></p>
+          <div class="cs-actions"><button type="button" class="btn btn-line btn-sm" data-gate="cancelar">Cancelar pedido</button></div>`;
+      } else if (!aberto || !$('#gateForm')) {
+        gate.innerHTML = formGate();
+      }
+    }
+    const who = $('#callWho');
+    who.hidden = !liberado();
+    if (liberado()) {
+      who.innerHTML = `${icon('check')}<span>Sino liberado para <b>${esc(sess.nome)}</b>${sess.codigo ? ` · código da mesa <b class="mono">${esc(sess.codigo)}</b> <small>passe para quem está com você</small>` : ''}</span>`;
+    }
+    layoutCall();
+  }
+
+  function layoutCall() {
+    $('#callPanel').hidden = !liberado() || !!current;
+    $('#callStatus').hidden = !current;
+  }
+
+  async function pedirSino(nome, codigo) {
+    const err = $('#gateErr');
+    try {
+      const r = await store.sessaoAbrir({ mesa, nome, codigo });
+      const antigo = safeGet(sessKey());
+      if (antigo && antigo !== r.token) store.sessaoSair(antigo).catch(() => {});
+      safeSet(sessKey(), r.token);
+      safeSet('nfc-nome', nome);
+      sess = { ...r };
+      if (r.status === 'liberada') toast('Sino liberado. Agora é só segurar o sino para chamar.', { tone: 'ok', ms: 4000 });
+      renderGate();
+      pollSessao();
+      if (r.status === 'liberada') $('#call').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return true;
+    } catch (e) {
+      console.error(e);
+      if (err) err.textContent = e.message && !/fetch|network/i.test(e.message) ? e.message : 'Sem conexão. Confira a internet e tente de novo.';
+      return false;
+    }
+  }
+
+  $('#callGate').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = e.target.querySelector('[type=submit]');
+    if (e.target.id === 'gateForm') {
+      const nome = $('#gateNome').value.replace(/\s+/g, ' ').trim();
+      const codigo = ($('#gateCodigo').value || '').trim();
+      if (!nome) {
+        $('#gateErr').textContent = 'Informe seu nome.';
+        return $('#gateNome').focus();
+      }
+      if (codigo && !/^\d{4}$/.test(codigo)) {
+        $('#gateErr').textContent = 'O código da mesa tem 4 números.';
+        return $('#gateCodigo').focus();
+      }
+      btn.disabled = true;
+      if (!(await pedirSino(nome, codigo))) btn.disabled = false;
+    } else if (e.target.id === 'gateCodForm') {
+      const codigo = $('#gateCodigo2').value.trim();
+      if (!/^\d{4}$/.test(codigo)) {
+        $('#gateErr').textContent = 'O código da mesa tem 4 números.';
+        return $('#gateCodigo2').focus();
+      }
+      btn.disabled = true;
+      if (!(await pedirSino(sess.nome, codigo))) btn.disabled = false;
+    }
+  });
+  $('#callGate').addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-gate="cancelar"]');
+    if (!b) return;
+    b.disabled = true;
+    const token = safeGet(sessKey());
+    try { token && (await store.sessaoSair(token)); } catch {}
+    safeSet(sessKey(), null);
+    sess = null;
+    renderGate();
+  });
+
+  function irParaGate() {
+    closeAllSheets();
+    setTimeout(() => {
+      $('#call').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      const n = $('#gateNome');
+      n && n.focus({ preventScroll: true });
+    }, 350);
+  }
 
   /* ---------------- Chamar garçom ---------------- */
   const state = { motivo: 'atendimento', pagamento: cfg.pagamentos[0], nota: '' };
@@ -158,6 +351,7 @@
       $('#tableInput').focus();
       return;
     }
+    if (!liberado()) return irParaGate();
     holding = true;
     t0 = performance.now();
     bell.classList.add('is-holding');
@@ -216,11 +410,11 @@
   async function sendCall(extra = {}) {
     if (sending) return;
     sending = true;
-    const payload = { mesa, tipo: state.motivo, ...extra };
+    const payload = { tipo: state.motivo, ...extra };
     if (payload.tipo === 'conta') payload.pagamento = state.pagamento;
     if (payload.tipo === 'outro' && state.nota.trim()) payload.nota = state.nota.trim().slice(0, 80);
     try {
-      const call = await store.createCall(payload);
+      const call = await store.chamar(sess.token, payload);
       navigator.vibrate && navigator.vibrate([30, 50, 30]);
       bell.classList.add('is-ringing');
       setTimeout(() => bell.classList.remove('is-ringing'), 1200);
@@ -232,7 +426,13 @@
     } catch (err) {
       console.error(err);
       setProg(0);
-      toast('O chamado não foi enviado. Confira sua conexão e tente de novo.', { tone: 'error', ms: 4200 });
+      if (err.code === 'BLOQUEADO') {
+        // A mesa foi fechada ou a liberação venceu: pede de novo.
+        await atualizarSessao();
+        toast('O sino não está mais liberado para este celular. Peça a liberação de novo.', { tone: 'error', ms: 4500 });
+        return false;
+      }
+      toast(/Muitos chamados/.test(err.message || '') ? err.message : 'O chamado não foi enviado. Confira sua conexão e tente de novo.', { tone: 'error', ms: 4200 });
       return false;
     } finally {
       sending = false;
@@ -255,20 +455,17 @@
   }
 
   function showStatus(c) {
-    const panel = $('#callPanel');
     const box = $('#callStatus');
     clearInterval(timerInt);
     const recent = c && Date.now() - new Date(c.criado_em).getTime() < 3 * 3600e3;
     if (!c || !recent || c.status === 'cancelado') {
       current = null;
-      box.hidden = true;
-      panel.hidden = false;
+      layoutCall();
       safeSet(activeKey(), null);
       return;
     }
     current = c;
-    panel.hidden = true;
-    box.hidden = false;
+    layoutCall();
     box.dataset.state = c.status;
     const m = motivo(c.tipo);
     const who = c.atendente ? esc(c.atendente.split(' ')[0]) : 'Alguém da equipe';
@@ -318,7 +515,7 @@
     if (b.dataset.cs === 'cancel') {
       b.disabled = true;
       try {
-        await store.updateCall(current.id, { status: 'cancelado' });
+        await store.cancelarChamado(safeGet(sessKey()), current.id);
         unwatch && unwatch();
         showStatus(null);
         toast('Chamado cancelado.');
@@ -533,7 +730,9 @@
       <ul class="sel-list">${lines.map((l) => `<li><strong>${esc(l.item.nome)}</strong><span class="price">${brl(l.item.preco * l.q)}</span>${qtyHtml(l.item.id)}</li>`).join('')}</ul>
       <div class="sel-total"><span>Total estimado</span><span class="price">${brl(selTotal())}</span></div>
       <p class="note">${icon('msg')}<span>A lista é um lembrete: o garçom vem até a mesa e confirma o pedido com você.</span></p>
-      <button type="button" class="btn btn-cobalt btn-block" id="sendList" ${mesa ? '' : 'disabled'}>${icon('bell')} Chamar garçom com esta lista</button>
+      ${liberado()
+        ? `<button type="button" class="btn btn-cobalt btn-block" id="sendList">${icon('bell')} Chamar garçom com esta lista</button>`
+        : `<button type="button" class="btn btn-cobalt btn-block" id="gateList" ${mesa ? '' : 'disabled'}>${icon('bell')} Liberar o sino para enviar a lista</button>`}
       <button type="button" class="btn btn-quiet btn-block" id="clearList">Limpar lista</button>
     </div>`;
   }
@@ -546,6 +745,7 @@
       renderSelBar();
       renderSelSheet();
     }
+    if (e.target.closest('#gateList')) return irParaGate();
     const send = e.target.closest('#sendList');
     if (send) {
       send.disabled = true;
@@ -762,6 +962,20 @@
     const id = mesa && safeGet(activeKey());
     if (id) watchActive(id);
     else showStatus(null);
+    sess = null;
+    renderGate();
+    if (mesa) atualizarSessao();
+  }
+
+  async function resolverTag() {
+    if (!tag) return;
+    try {
+      mesa = await store.mesaDaEtiqueta(tag);
+      tagNova = !mesa;
+    } catch (e) {
+      console.error(e);
+      mesa = null;
+    }
   }
 
   store
@@ -775,6 +989,7 @@
       if (s) live = s;
       R = live.restaurante;
     })
+    .then(resolverTag)
     .finally(() => {
       boot();
       renderTiles();

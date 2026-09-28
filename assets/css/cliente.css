@@ -164,9 +164,17 @@
 .table-picker { margin-top: 12px; padding: 16px; border-radius: var(--r-lg); background: var(--surface); box-shadow: var(--shadow-1); display: grid; gap: 12px; font-size: 15px; }
 .table-picker-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
 
+/* Plaquinha ainda sem mesa */
+.tag-nova { margin-top: 12px; padding: 18px; border-radius: var(--r-lg); background: var(--surface); box-shadow: var(--shadow-1); display: grid; gap: 12px; justify-items: start; }
+.tag-nova h2 { font-family: var(--font-display); font-weight: 800; font-size: 26px; line-height: 1; text-transform: uppercase; }
+.tag-nova p { font-size: 15px; color: var(--muted); margin-top: 4px; }
+.tag-nova small { font-size: 12.5px; color: var(--muted); }
+.tag-nova-ico { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%; background: var(--cobalt-soft); color: var(--cobalt-ink); }
+.tag-nova-ico .i { width: 24px; height: 24px; }
+
 /* ---------- Chamar garçom ---------- */
 .call { margin-top: 16px; }
-.call-panel, .call-status {
+.call-panel, .call-status, .call-gate {
   background: var(--surface);
   border-radius: 26px;
   padding: 22px 20px 20px;
@@ -175,6 +183,21 @@
 .call-head h2 { font-family: var(--font-display); font-weight: 800; font-size: 32px; line-height: 1; text-transform: uppercase; letter-spacing: .01em; }
 .call-head p { font-size: 15px; margin-top: 6px; }
 .reasons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+
+/* Liberação do sino */
+.call-gate { display: grid; gap: 14px; animation: fade-up .35s var(--ease); }
+.call-gate .cs-dot::after { display: none; }
+.gate-form { display: grid; gap: 12px; }
+.gate-form--row { grid-template-columns: 1fr auto; gap: 8px; }
+.gate-cod summary { cursor: pointer; font-size: 14px; font-weight: 600; color: var(--cobalt-ink); padding: 4px 0; }
+.gate-cod[open] { display: grid; gap: 8px; }
+.gate-cod .input { max-width: 160px; letter-spacing: .3em; }
+.form-error { color: var(--pepper); font-size: 14px; font-weight: 500; }
+.form-error:empty { display: none; }
+.call-who { display: flex; gap: 8px; align-items: flex-start; margin-top: 10px !important; font-size: 13.5px !important; color: var(--ink-2); }
+.call-who .i { width: 17px; height: 17px; color: var(--leaf); margin-top: 1px; }
+.call-who small { display: block; color: var(--muted); font-size: 12.5px; }
+.call-who .mono { letter-spacing: .12em; }
 .reason-extra:not(:empty) { margin-top: 12px; animation: fade-up .3s var(--ease); }
 @keyframes fade-up { from { opacity: 0; transform: translateY(6px); } }
 
