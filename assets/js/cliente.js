@@ -982,6 +982,10 @@
     .init()
     .catch((err) => {
       console.error(err);
+      if (err.code === 'SEM_RESTAURANTE') {
+        UI.semRestaurante();
+        return new Promise(() => {}); // para aqui
+      }
       toast('Sem conexão com o restaurante. Algumas funções podem não responder.', { tone: 'error', ms: 5000 });
     })
     .then(() => store.getSettings().catch(() => live))

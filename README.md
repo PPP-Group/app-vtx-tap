@@ -26,43 +26,55 @@ O **painel da equipe** (`/admin`) funciona no celular (abas embaixo) e no deskto
 
 Tudo o que muda no dia a dia do restaurante é editado no painel.
 
-## Plaquinhas pré-configuradas e sino liberado pela equipe
+## Como funciona: um sistema para todos os restaurantes
 
-**Plaquinhas genéricas.** Toda plaquinha sai de fábrica com um código único (ex.: `K7P2QXA`). O NFC e o QR têm o **mesmo link**, que aponta para a central de vocês: `https://tap.seudominio.com.br/t/K7P2QXA`. A plaquinha não tem número de mesa impresso.
+Um app e um banco (Supabase) atendem a central da Vortex e todos os restaurantes:
 
-1. **Fábrica (vocês, na central):** gerar lote (baixa o PDF para a gráfica) → gravar e bloquear o NFC (Chrome no Android). As plaquinhas saem **sem dono**.
-2. **Implantação (vocês, na central):** cadastrar o restaurante com o endereço do site dele. A central gera o **código de ativação** do restaurante (ex.: `QB7K-2M9P`); passe para a equipe.
-3. **Instalação (restaurante):** cola a plaquinha na mesa e encosta o celular. Aparece **Plaquinha nova** → digita o código de ativação (só na primeira; o celular lembra o restaurante para as próximas) → entra com o PIN → escolhe a mesa. Daí em diante, a plaquinha abre direto aquela mesa.
+- `tap.vortexsystems.tech` → **central** (painel da Vortex) e o **redirecionador** das plaquinhas (`/t/CODIGO`).
+- `quintal.vortexsystems.tech` → **restaurante** "quintal": página da mesa (`/`) e painel da equipe (`/admin`).
 
-Não é preciso atribuir plaquinha a restaurante na central: a ativação faz isso. *Atribuir a um restaurante* continua disponível para casos manuais. O código de ativação pode ser trocado em *Restaurantes* (plaquinhas já ativadas não mudam), e errar o código 8 vezes em 10 minutos bloqueia aquela plaquinha por um tempo.
+Cada restaurante é uma linha em `restaurantes`, identificado pelo **subdomínio**. Tudo o que é dele (chamados, equipe, mesas, comentários, plaquinhas) tem `restaurante_id`, e as regras do banco (RLS) garantem que a equipe de um restaurante só enxerga o dela. Cliente novo = um cadastro na central; não há banco, deploy nem DNS novo por cliente.
 
-O caminho de cada toque: `central/t/CODIGO` → site do restaurante `/?tag=CODIGO` → o banco do restaurante diz qual é a mesa. A central só sabe *de qual restaurante* é o código; *qual mesa* fica no banco do restaurante. Mudou o domínio do cliente? Troque o endereço na central e todas as plaquinhas dele continuam funcionando.
+### Plaquinhas
 
-**Sino liberado pela equipe (antitrote).** A página da mesa abre para qualquer um (cardápio, Wi-Fi etc.), mas o sino só funciona depois que a equipe libera **aquele celular**:
+Toda plaquinha sai de fábrica com um código único (ex.: `K7P2QXA`). O NFC e o QR têm o **mesmo link**, `https://tap.vortexsystems.tech/t/K7P2QXA`, e ela não tem número de mesa impresso.
 
-- O cliente informa o nome → o pedido aparece em *Chamados* com som → o garçom confere que a pessoa está na mesa e toca em **Liberar** (ou **Recusar**).
-- Quem foi liberado vê o **código da mesa** (4 números) e pode passá-lo para quem está junto: com o código, o sino libera na hora, sem incomodar o garçom.
-- **Fechar mesa** (no chamado de conta, ou em *Salão › mesa*) bloqueia o sino de todos e troca o código. A liberação também vence sozinha depois de 6 h.
-- A regra é garantida no banco: o navegador não consegue criar chamado sem uma liberação válida, e a mesa vem da liberação, não do link. O código não precisa ser alterado para adaptar a plataforma a um novo restaurante.
+1. **Fábrica (central):** *Gerar lote* baixa o **PDF para a gráfica** (uma plaquinha de 12 × 6 cm por página, com QR e código). Depois, *Gravar NFC* (Chrome no Android) grava e bloqueia as etiquetas, de preferência no modo **Ler o QR da plaquinha**, que garante NFC igual ao QR. As plaquinhas saem **sem dono**.
+2. **Implantação (central):** *Novo restaurante* com nome, **subdomínio** e **senha da equipe**. A central mostra o endereço, o painel e o **código de ativação** (ex.: `QB7K-2M9P`) para passar ao restaurante.
+3. **Instalação (restaurante):** cola a plaquinha e encosta o celular → **Plaquinha nova** → digita o código de ativação (só na primeira; o celular lembra o restaurante) → cria a conta com a senha da equipe ou entra com o PIN → escolhe a mesa. Daí em diante, a plaquinha abre direto a mesa.
+
+Os códigos nunca repetem (o código é a chave primária de `etiquetas`); gere sempre pela central. Errar o código de ativação 8 vezes em 10 minutos bloqueia aquela plaquinha por um tempo. *Atribuir a um restaurante* continua na central para casos manuais.
+
+### Sino liberado pela equipe (antitrote)
+
+A página da mesa abre para qualquer um (cardápio, Wi-Fi etc.), mas o sino só funciona depois que a equipe libera **aquele celular**:
+
+- O cliente informa o nome → o pedido aparece em *Chamados* com som → o garçom confere e toca em **Liberar** (ou **Recusar**).
+- Quem foi liberado vê o **código da mesa** (4 números) e pode passá-lo a quem está junto: com o código, o sino libera na hora.
+- **Fechar mesa** bloqueia o sino de todos e troca o código. A liberação vence sozinha depois de 6 h.
+- Garantido no banco: não existe chamado sem liberação válida, e mesa e restaurante vêm da liberação, não do link.
+
+### Central (painel da Vortex)
+
+- *Visão geral*: leituras por dia (7, 30 ou 90 dias), ranking dos restaurantes com variação contra o período anterior, **chamados e tempo médio de resposta** de cada restaurante, plaquinhas nunca lidas e alerta de restaurante parado há 7 dias.
+- *Plaquinhas*: gerar lote (com PDF), PDF de novo pela seleção, atribuir, devolver ao estoque, imprimir QR ou etiquetas de código, exportar CSV e gravar NFC.
+- *Restaurantes*: subdomínio, código de ativação (copiar e trocar), nova senha da equipe, ativar ou desativar.
 
 ## Estrutura
 
 ```
-index.html              página da mesa (cliente)  →  seusite.com/?mesa=12
-admin/index.html        painel da equipe          →  seusite.com/admin
+index.html              página da mesa (cliente)          →  quintal.vortexsystems.tech/?tag=CODIGO
+admin/index.html        painel da equipe do restaurante   →  quintal.vortexsystems.tech/admin
+central/                central da Vortex e redirecionador →  tap.vortexsystems.tech  e  /t/CODIGO
+central/placa.js        layout do PDF das plaquinhas (o @ e os textos ficam no topo)
 env.js                  gerado no servidor a partir das variáveis de ambiente
-assets/js/config.js     dados iniciais de demonstração (copiados para o banco no primeiro uso)
+assets/js/config.js     dados iniciais do restaurante e leitura do subdomínio
 assets/js/store.js      dados: modo demonstração (navegador) ou Supabase
-assets/js/ui.js         utilitários, ícones e folhas deslizantes
-assets/js/cliente.js    lógica da página da mesa
-assets/js/admin.js      lógica do painel
-assets/css/             base.css (tokens e componentes), cliente.css, admin.css
-supabase/schema.sql     tabelas, segurança, imagens e tempo real
-supabase/functions/     função "equipe": criar conta e entrar por PIN
-Dockerfile, deploy/     servidor nginx que gera o env.js na subida
+assets/js/cliente.js    página da mesa;   assets/js/admin.js   painel da equipe
+supabase/schema.sql     banco único: tabelas, regras de acesso, funções, imagens e tempo real
+supabase/functions/     função "equipe": criar conta e entrar por PIN (por restaurante)
+Dockerfile, deploy/     nginx: central no CENTRAL_HOST, restaurantes em qualquer outro subdomínio
 ```
-
-O painel mora em `admin/index.html` para a URL ficar `/admin`, sem extensão.
 
 ## Testar agora (modo demonstração)
 
@@ -70,63 +82,65 @@ O painel mora em `admin/index.html` para a URL ficar `/admin`, sem extensão.
 python -m http.server 5500
 ```
 
-1. Abra `http://localhost:5500/admin` e toque em **Criar conta**: seu nome, um PIN e uma senha da equipe (na primeira conta, a senha digitada passa a ser a da equipe).
-2. Em outra aba, abra `http://localhost:5500/?mesa=12`.
-3. Segure o sino na aba da mesa: o chamado aparece no painel com som. Toque em “Estou indo” e veja a mesa atualizar.
+- Restaurante: `http://localhost:5500/admin` (crie a conta; a primeira senha vira a da equipe) e `http://localhost:5500/?mesa=12`.
+- Central: `http://localhost:5500/central/` (o redirecionador fica em `/central/t.html?c=CODIGO`).
 
 Sem as variáveis do Supabase, os dados ficam no navegador e sincronizam só entre abas do mesmo aparelho.
 
-## Colocar em produção — site do restaurante (EasyPanel + Supabase)
+## Colocar em produção (VPS Hostinger com EasyPanel + Supabase)
 
-1. **Supabase**: crie um projeto, abra o *SQL Editor* e execute `supabase/schema.sql` (pode rodar de novo a cada atualização, sem erro).
-2. **Função da equipe**: publique `supabase/functions/equipe` com a verificação de JWT desligada — ela faz a própria checagem (PIN, senha da equipe e sessão):
+**1. Supabase (um projeto só).** No *SQL Editor*, execute `supabase/schema.sql` (pode rodar de novo a cada atualização). Publique a função da equipe com a verificação de JWT desligada (ela faz a própria checagem):
 
-   ```bash
-   supabase functions deploy equipe --no-verify-jwt --project-ref SEU-PROJETO
-   ```
+```bash
+supabase functions deploy equipe --no-verify-jwt --project-ref SEU-PROJETO
+```
 
-   Opcional, mas recomendado: em *Authentication › Sign In / Providers*, desative **Allow new users to sign up**. Mesmo sem isso, só quem está na equipe acessa os dados.
-3. **EasyPanel › seu app › Source**: método de build **Dockerfile** (arquivo `Dockerfile` na raiz).
-4. **EasyPanel › seu app › Environment**:
+Operadores da central: convide o e-mail e crie o usuário em *Authentication › Users › Add user* com *Auto Confirm User*; ele vira operador na hora.
 
-   ```
-   SUPABASE_URL=https://SEU-PROJETO.supabase.co
-   SUPABASE_ANON_KEY=sua-chave-anon-ou-publishable
-   ```
+```sql
+insert into public.operadores_convite (email, nome) values ('voce@empresa.com', 'Seu nome');
+```
 
-   Os dois valores ficam no Supabase em *Project Settings › API* (“Project URL” e a chave `anon` / `publishable`). Essa chave é pública por natureza; a proteção vem das regras do `schema.sql`. **Nunca** use a chave `service_role` / `secret` aqui.
-5. **EasyPanel › Domains**: porta do container **80**.
-6. Faça o deploy. No log deve aparecer `env.js gerado (Supabase: configurado)`.
-7. **Painel**: abra `/admin` e toque em **Criar conta**. A primeira conta define a senha da equipe; as próximas pessoas criam a conta delas com essa senha e depois entram só com o PIN. Preencha *Ajustes*. As plaquinhas são ligadas às mesas encostando o celular em cada uma (veja acima).
+Recomendado: em *Authentication › Sign In / Providers*, desative **Allow new users to sign up**.
 
-> **Atualizando uma instalação existente:** rode o `supabase/schema.sql` de novo **antes** de publicar o site novo. A página da mesa passa a chamar pelas funções `chamar()`/`sessao_*()` e o acesso direto do cliente à tabela de chamados é removido.
+**2. DNS na Hostinger (uma vez).** Dois registros A apontando para o IP da VPS:
 
-## Colocar em produção — central de plaquinhas (uma só, de vocês)
+| Nome | Tipo | Valor |
+|---|---|---|
+| `tap` | A | IP da VPS |
+| `*` | A | IP da VPS |
 
-A pasta `central/` é um segundo app, independente dos restaurantes: o redirecionador (`/t/CODIGO`) e o painel interno para gerar, entregar, imprimir e gravar as plaquinhas.
+O `*` faz qualquer subdomínio novo (`quintal`, `nonna`…) chegar à VPS sem mexer no DNS de novo.
 
-1. **Supabase da central** (um projeto só de vocês, separado dos restaurantes): execute `central/schema.sql` no *SQL Editor*.
-2. **Operadores:** convide o e-mail no SQL Editor e depois crie o usuário em *Authentication › Users › Add user › Create new user*, com *Auto Confirm User* marcado. Ele vira operador na hora:
+**3. EasyPanel: um app só.** *Source*: este repositório, Dockerfile na raiz. *Environment*:
 
-   ```sql
-   insert into public.operadores_convite (email, nome) values ('voce@empresa.com', 'Seu nome');
-   ```
+```
+SUPABASE_URL=https://SEU-PROJETO.supabase.co
+SUPABASE_ANON_KEY=sua-chave-publishable
+CENTRAL_HOST=tap.vortexsystems.tech
+BASE_DOMAIN=vortexsystems.tech
+```
 
-   Recomendado: desative *Allow new users to sign up* nesse projeto.
-3. **EasyPanel › novo app › Source**: Dockerfile em `central/Dockerfile`, com o contexto de build na **raiz** do repositório.
-4. **Environment**: `SUPABASE_URL` e `SUPABASE_ANON_KEY` do Supabase **da central**.
-5. **Domains**: o domínio fixo das plaquinhas (ex.: `tap.seudominio.com.br`), porta **80**. Esse domínio vai gravado em todas as plaquinhas: escolha um que vocês vão manter para sempre.
-6. Abra o domínio, entre com o operador, cadastre o restaurante em *Restaurantes* (endereço do site dele) e use *Plaquinhas* para gerar, entregar, imprimir e gravar.
+Nunca use a chave `service_role` / `secret` aqui. No log do deploy deve aparecer `env.js gerado (Supabase: configurado; central: tap.vortexsystems.tech; restaurantes: *.vortexsystems.tech)`.
 
-**O que a central tem:**
+**4. Domínios e HTTPS no EasyPanel.** No app, adicione dois domínios, porta **80**:
 
-- *Visão geral*: leituras por dia (7, 30 ou 90 dias), ranking dos restaurantes mais acessados com a variação contra o período anterior, plaquinhas entregues que nunca foram lidas e alerta de restaurante parado há 7 dias ou mais.
-- *Gerar lote* baixa na hora o **PDF para a gráfica**: uma plaquinha de 12 × 6 cm por página, cada uma com o QR e o código único dela (layout em `central/placa.js`; o @ e os textos ficam no topo desse arquivo). O mesmo PDF pode ser gerado de novo pela seleção (*PDF das plaquinhas*) ou para uma plaquinha só.
-- *Plaquinhas*: gerar lote, entregar a um restaurante, devolver ao estoque, imprimir QR, imprimir etiquetas só com o código (para o verso), exportar CSV para a gráfica e gravar NFC.
-- *Gravar NFC* (Chrome no Android): no modo **Ler o QR da plaquinha**, a câmera lê o QR impresso e o NFC recebe exatamente o mesmo código. Assim não tem como o NFC de uma plaquinha ficar diferente do QR dela.
-- **Códigos nunca repetem**: o código é a chave primária da tabela `etiquetas`. O banco recusa fisicamente um segundo código igual, e o gerador só devolve códigos que conseguiu gravar. Gere sempre pela central (nunca numa planilha) e mande para a gráfica o CSV exportado.
+- `tap.vortexsystems.tech` (certificado normal, automático);
+- `vortexsystems.tech` com a opção **Wildcard domain** ligada (atende `*.vortexsystems.tech`).
 
-Para testar localmente sem Supabase: `python -m http.server 5500` na raiz e abra `http://localhost:5500/central/` (o redirecionador fica em `/central/t.html?c=CODIGO`). Cadastre o restaurante com o endereço `http://localhost:5500`.
+O certificado coringa exige validação pelo DNS. Em *Settings › Traefik › Environment*, crie um resolvedor com a Hostinger (gere o token em hPanel › Perfil › API):
+
+```
+TRAEFIK_CERTIFICATESRESOLVERS_HOSTINGER_ACME_EMAIL=seu@email.com
+TRAEFIK_CERTIFICATESRESOLVERS_HOSTINGER_ACME_STORAGE=/data/acme.json
+TRAEFIK_CERTIFICATESRESOLVERS_HOSTINGER_ACME_DNSCHALLENGE_PROVIDER=hostinger
+TRAEFIK_CERTIFICATESRESOLVERS_HOSTINGER_ACME_DNSCHALLENGE_RESOLVERS=1.1.1.1,8.8.8.8
+HOSTINGER_API_TOKEN=seu-token
+```
+
+Reinicie o Traefik e, no domínio coringa, informe o resolvedor `hostinger`. O provedor `hostinger` existe no gerador de certificados do Traefik a partir das versões recentes; se a sua versão não reconhecer, a alternativa é passar o DNS do domínio para a Cloudflare (grátis) e usar o provedor `cloudflare`.
+
+Pronto: cada restaurante criado na central já responde em `https://subdominio.vortexsystems.tech`, com HTTPS, sem nenhum passo manual.
 
 ## App do painel no celular
 
@@ -148,7 +162,7 @@ Cores e fontes estão nos tokens do topo de `assets/css/base.css` (`--cobalt` é
 - O cliente anônimo consegue ler chamados das últimas 3 horas (necessário para acompanhar o status em tempo real). Eles contêm apenas mesa, motivo e itens — nenhum dado pessoal.
 - A senha do Wi-Fi fica visível para quem abre a página da mesa, como numa plaquinha impressa.
 - Quem tem o link de uma mesa vê a página, mas só chama o garçom depois que a equipe libera aquele celular (ou com o código da mesa). Limites no banco: 5 chamados por mesa a cada 2 minutos, 4 pedidos de liberação pendentes por mesa e 6 tentativas de código por mesa a cada 10 minutos.
-- As plaquinhas dependem do domínio da central estar no ar. Mantenham esse domínio e o app da central sempre ativos (custa praticamente nada: um nginx e um Supabase pequeno).
+- As plaquinhas dependem do domínio `tap.vortexsystems.tech` estar no ar: é o link gravado em todas elas.
 - Os nomes que os clientes digitam ficam só na tabela `sessoes`, que só a equipe lê.
 - **Login por PIN**: cada pessoa tem um PIN único (4 a 8 números) e entra só com ele. O servidor bloqueia um aparelho por 15 minutos depois de 10 PINs errados e limita o total de tentativas; prefira PINs de 6 números. Quem sai da equipe é removido em *Ajustes › Restaurante › Equipe* e perde o acesso na hora.
 - Criar conta exige a senha da equipe; trocar essa senha não desconecta ninguém.

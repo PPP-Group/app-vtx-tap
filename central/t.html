@@ -32,6 +32,7 @@
     .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
   </style>
   <script src="/env.js"></script>
+  <script>window.CENTRAL_ENV = window.CENTRAL_ENV || window.NFC_ENV || {};</script>
 </head>
 <body>
   <main id="box" aria-live="polite">
@@ -85,7 +86,7 @@
         gravarDemo(db);
         if (!e.restaurante_id) return Promise.resolve({ status: 'livre' });
         var r = (db.restaurantes || []).find(function (x) { return x.id === e.restaurante_id; });
-        return Promise.resolve(r && r.ativo !== false ? { status: 'ok', destino: r.destino } : { status: 'inativo' });
+        return Promise.resolve(r && r.ativo !== false ? { status: 'ok', slug: r.slug } : { status: 'inativo' });
       }
 
       // Mesmas regras de public.ativar_etiqueta() do schema.sql.
@@ -98,7 +99,7 @@
         var r = (db.restaurantes || []).find(function (x) { return x.codigo_ativacao === atv && x.ativo !== false; });
         if (!r) return Promise.resolve({ status: 'codigo_incorreto' });
         if (!e.restaurante_id) { e.restaurante_id = r.id; e.vendida_em = new Date().toISOString(); gravarDemo(db); }
-        return Promise.resolve({ status: 'ok', destino: r.destino, restaurante: r.nome });
+        return Promise.resolve({ status: 'ok', slug: r.slug, restaurante: r.nome });
       }
 
       /* Plaquinha nova: a equipe digita o código de ativação do restaurante.
@@ -108,9 +109,19 @@
       function lembrar(v) { try { v ? localStorage.setItem(LEMBRAR, JSON.stringify(v)) : localStorage.removeItem(LEMBRAR); } catch (e) {} }
       function formatar(c) { c = String(c || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); return c.length > 4 ? c.slice(0, 4) + '-' + c.slice(4, 8) : c; }
 
-      function irParaMesa(destino) {
+      // Endereço do restaurante: subdomínio do domínio base. Sem domínio base
+      // (teste local), o mesmo servidor com ?r=.
+      var BASE = String(env.BASE_DOMAIN || '').toLowerCase();
+      function site(slug, caminho, params) {
+        var u = BASE ? new URL('https://' + slug + '.' + BASE + caminho) : new URL(caminho, location.origin);
+        if (!BASE) u.searchParams.set('r', slug);
+        Object.keys(params).forEach(function (k) { u.searchParams.set(k, params[k]); });
+        return u.href;
+      }
+
+      function irParaMesa(slug) {
         // Abre o painel do restaurante já na escolha da mesa desta plaquinha.
-        location.replace(new URL('admin/?vincular=' + encodeURIComponent(codigo), destino).href);
+        location.replace(site(slug, '/admin/', { vincular: codigo }));
       }
 
       function telaAtivar(msg) {
@@ -148,10 +159,10 @@
       function enviar(ativacao, btn) {
         btn.disabled = true;
         ativar(ativacao).then(function (r) {
-          if (r && r.status === 'ok' && r.destino) {
+          if (r && r.status === 'ok' && r.slug) {
             lembrar({ codigo: String(ativacao).toUpperCase().replace(/[^A-Z0-9]/g, ''), nome: r.restaurante || '' });
             box.innerHTML = '<div class="dot" aria-hidden="true"></div><h1>Plaquinha ativada</h1><p>Abrindo a escolha da mesa…</p>';
-            return irParaMesa(r.destino);
+            return irParaMesa(r.slug);
           }
           if (r && r.status === 'codigo_incorreto') { lembrar(null); return telaAtivar('Código de ativação incorreto. Confira e tente de novo.'); }
           if (r && r.status === 'bloqueado') return telaAtivar('Muitas tentativas erradas. Aguarde 10 minutos e tente de novo.');
@@ -166,10 +177,8 @@
 
       if (!codigo) return mostrar('Link incompleto', 'Encoste o celular na plaquinha de novo ou aponte a câmera para o QR.');
       consultar().then(function (r) {
-        if (r && r.status === 'ok' && r.destino) {
-          var u = new URL(r.destino);
-          u.searchParams.set('tag', codigo);
-          location.replace(u.href);
+        if (r && r.status === 'ok' && r.slug) {
+          location.replace(site(r.slug, '/', { tag: codigo }));
         } else if (r && r.status === 'livre') {
           telaAtivar();
         } else if (r && r.status === 'inativo') {

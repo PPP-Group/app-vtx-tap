@@ -6,6 +6,24 @@
  */
 (function () {
 const env = window.NFC_ENV || {};
+
+// quintal.vortexsystems.tech → "quintal". Para testar sem subdomínio (ou no
+// endereço provisório do EasyPanel): ?r=quintal, que fica lembrado neste aparelho.
+function slugDoEndereco(base) {
+  const host = location.hostname.toLowerCase();
+  base = String(base || '').toLowerCase().replace(/^\.+|\.+$/g, '');
+  if (base && host.endsWith('.' + base)) {
+    const s = host.slice(0, -(base.length + 1));
+    if (s && !s.includes('.')) return s;
+  }
+  const p = new URLSearchParams(location.search).get('r');
+  try {
+    if (p) localStorage.setItem('nfc-restaurante', p.toLowerCase());
+    return (p || localStorage.getItem('nfc-restaurante') || '').toLowerCase();
+  } catch {
+    return (p || '').toLowerCase();
+  }
+}
 window.NFC_CONFIG = {
   restaurante: {
     nome: 'Quintal Bistrô',
@@ -69,6 +87,8 @@ window.NFC_CONFIG = {
     tipo: env.SUPABASE_URL && env.SUPABASE_ANON_KEY ? 'supabase' : 'local',
     supabaseUrl: env.SUPABASE_URL || '',
     supabaseAnonKey: env.SUPABASE_ANON_KEY || '',
+    // Restaurante deste endereço: o subdomínio (quintal.vortexsystems.tech → "quintal").
+    slug: slugDoEndereco(env.BASE_DOMAIN),
   },
 
   tags: {

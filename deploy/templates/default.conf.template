@@ -1,0 +1,22 @@
+# Gerado na subida do container a partir das variáveis de ambiente (envsubst).
+# Um app só: ${CENTRAL_HOST} é a central (painel da Vortex + redirecionador das
+# plaquinhas); qualquer outro subdomínio é a página e o painel de um restaurante.
+
+# Central
+server {
+  listen 80;
+  server_name ${CENTRAL_HOST};
+  include /etc/nginx/snippets/comum.conf;
+
+  location = / {
+    try_files /central/index.html =404;
+    add_header Cache-Control "no-cache";
+  }
+}
+
+# Restaurantes (subdomínios) e qualquer outro endereço
+server {
+  listen 80 default_server;
+  server_name _;
+  include /etc/nginx/snippets/comum.conf;
+}

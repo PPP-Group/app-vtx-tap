@@ -362,11 +362,14 @@
     };
   }
 
-  /* ---------- Modo produção: Supabase (Postgres + Realtime) ---------- */
+  /* ---------- Modo produção: Supabase (Postgres + Realtime) ----------
+     Um banco para todos os restaurantes: tudo é filtrado pelo restaurante
+     deste endereço (subdomínio), e as regras do banco garantem o isolamento. */
   function SupabaseAdapter() {
-    const { supabaseUrl, supabaseAnonKey } = cfg.backend;
+    const { supabaseUrl, supabaseAnonKey, slug } = cfg.backend;
     const listeners = new Set();
     let sb;
+    let rid = null;
 
     const loadScript = (src) =>
       new Promise((ok, fail) => {
@@ -387,10 +390,14 @@
       async init({ realtimeAll = false } = {}) {
         await loadScript('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js');
         sb = window.supabase.createClient(supabaseUrl, supabaseAnonKey);
+        const r = slug ? must(await sb.rpc('restaurante_publico', { p_slug: slug })) : null;
+        if (!r) throw Object.assign(new Error('Restaurante não encontrado.'), { code: 'SEM_RESTAURANTE' });
+        rid = r.id;
+        this.restaurante = { id: r.id, slug: r.slug, nome: r.nome };
         if (realtimeAll) {
-          const ch = sb.channel('painel');
+          const ch = sb.channel('painel-' + rid);
           for (const table of ['chamados', 'comentarios', 'sessoes', 'mesas_abertas', 'etiquetas']) {
-            ch.on('postgres_changes', { event: '*', schema: 'public', table }, () => listeners.forEach((f) => f()));
+            ch.on('postgres_changes', { event: '*', schema: 'public', table, filter: 'restaurante_id=eq.' + rid }, () => listeners.forEach((f) => f()));
           }
           ch.subscribe();
         }
@@ -408,7 +415,7 @@
         return () => sb.removeChannel(ch);
       },
       async listCalls({ desde } = {}) {
-        let q = sb.from('chamados').select('*').order('criado_em', { ascending: true });
+        let q = sb.from('chamados').select('*').eq('restaurante_id', rid).order('criado_em', { ascending: true });
         if (desde) q = q.gte('criado_em', desde.toISOString());
         return must(await q);
       },
@@ -420,10 +427,10 @@
       },
 
       async mesaDaEtiqueta(codigo) {
-        return must(await sb.rpc('mesa_da_etiqueta', { p_codigo: normCodigo(codigo) })) || null;
+        return must(await sb.rpc('mesa_da_etiqueta', { p_restaurante: rid, p_codigo: normCodigo(codigo) })) || null;
       },
       async sessaoAbrir({ mesa, nome, codigo }) {
-        return must(await sb.rpc('sessao_abrir', { p_mesa: mesa, p_nome: nome, p_codigo: codigo || null }));
+        return must(await sb.rpc('sessao_abrir', { p_restaurante: rid, p_mesa: mesa, p_nome: nome, p_codigo: codigo || null }));
       },
       async sessaoStatus(token) {
         return must(await sb.rpc('sessao_status', { p_token: token }));
@@ -446,7 +453,7 @@
         must(await sb.rpc('chamado_cancelar', { p_token: token, p_id: id }));
       },
       async listSessoes({ desde } = {}) {
-        let q = sb.from('sessoes').select('id, mesa, nome, status, via, liberada_por, criado_em, liberada_em, encerrada_em').order('criado_em', { ascending: true });
+        let q = sb.from('sessoes').select('id, mesa, nome, status, via, liberada_por, criado_em, liberada_em, encerrada_em').eq('restaurante_id', rid).order('criado_em', { ascending: true });
         if (desde) q = q.gte('criado_em', desde.toISOString());
         return must(await q);
       },
@@ -457,52 +464,56 @@
         must(await sb.rpc('mesa_fechar', { p_mesa: mesa }));
       },
       async listMesasAbertas() {
-        return must(await sb.from('mesas_abertas').select('mesa, codigo, aberta_em'));
+        return must(await sb.from('mesas_abertas').select('mesa, codigo, aberta_em').eq('restaurante_id', rid));
       },
       async listEtiquetas() {
-        return must(await sb.from('etiquetas').select('*').order('mesa').order('codigo'));
+        return must(await sb.from('etiquetas').select('codigo, mesa, vinculada_em, vinculada_por, ativada_em').eq('restaurante_id', rid).order('mesa').order('codigo'));
       },
-      async vincularEtiqueta(codigo, mesa, por) {
+      async vincularEtiqueta(codigo, mesa) {
         codigo = normCodigo(codigo);
         if (!/^[A-Z0-9]{4,16}$/.test(codigo)) throw new Error('Código de plaquinha inválido.');
-        must(await sb.from('etiquetas').upsert({ codigo, mesa, vinculada_em: nowIso(), vinculada_por: por || null }));
+        must(await sb.rpc('etiqueta_vincular', { p_codigo: codigo, p_mesa: mesa }));
       },
       async desvincularEtiqueta(codigo) {
-        must(await sb.from('etiquetas').delete().eq('codigo', normCodigo(codigo)));
+        must(await sb.rpc('etiqueta_desvincular', { p_codigo: normCodigo(codigo) }));
       },
       async listFeedback() {
-        return must(await sb.from('comentarios').select('*').order('criado_em', { ascending: false }).limit(300));
+        return must(await sb.from('comentarios').select('*').eq('restaurante_id', rid).order('criado_em', { ascending: false }).limit(300));
       },
       async createFeedback(data) {
-        must(await sb.from('comentarios').insert(data));
+        must(await sb.from('comentarios').insert({ ...data, restaurante_id: rid }));
       },
       async updateFeedback(id, patch) {
         must(await sb.from('comentarios').update(patch).eq('id', id));
       },
       async getSettings() {
-        const row = must(await sb.from('configuracao').select('restaurante, wifi, cardapio, mesas, widgets').eq('id', 'geral').maybeSingle());
-        return mergeSettings(row);
+        const row = must(await sb.rpc('restaurante_publico', { p_slug: slug }));
+        const s = mergeSettings(row);
+        // Nome cadastrado na central até a equipe definir o dela.
+        if (row && !(row.restaurante && row.restaurante.nome)) s.restaurante = { ...s.restaurante, nome: row.nome };
+        return s;
       },
       async updateSettings(patch) {
-        must(await sb.from('configuracao').upsert({ id: 'geral', ...patch }));
+        must(await sb.rpc('salvar_config', { p_patch: patch }));
         return this.getSettings();
       },
       async uploadImage(blob, nome) {
         const ext = (blob.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
-        const path = `${nome}-${Date.now()}.${ext}`;
+        const path = `${rid}/${nome}-${Date.now()}.${ext}`;
         must(await sb.storage.from('marca').upload(path, blob, { contentType: blob.type, cacheControl: '31536000', upsert: false }));
         return sb.storage.from('marca').getPublicUrl(path).data.publicUrl;
       },
       auth: {
         // Cadastro e login passam pela função "equipe" do Supabase, que confere PIN e senha da equipe.
         async chamar(acao, dados = {}, logado = false) {
+          if (!rid) throw new Error('Sem conexão com o servidor. Confira a internet e recarregue a página.');
           const token = logado ? (await sb.auth.getSession()).data.session?.access_token : null;
           let r;
           try {
             r = await fetch(`${supabaseUrl}/functions/v1/equipe`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', apikey: supabaseAnonKey, Authorization: `Bearer ${token || supabaseAnonKey}` },
-              body: JSON.stringify({ acao, ...dados }),
+              body: JSON.stringify({ acao, restaurante: rid, ...dados }),
             });
           } catch {
             throw new Error('Sem conexão com o servidor. Confira a internet e tente de novo.');
