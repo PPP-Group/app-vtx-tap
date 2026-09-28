@@ -240,7 +240,7 @@ img, svg { display: block; }
   color: var(--muted);
   transition: background-color .2s, color .2s;
 }
-.seg button[aria-checked="true"], .seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: var(--shadow-1); }
+.seg button[aria-checked="true"], .seg button[aria-pressed="true"], .seg button[aria-selected="true"] { background: var(--surface); color: var(--ink); box-shadow: var(--shadow-1); }
 
 /* ---------- Campos ---------- */
 .field { display: grid; gap: 6px; }

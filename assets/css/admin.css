@@ -487,6 +487,19 @@
 .chips-wrap { display: flex; flex-wrap: wrap; gap: 8px; }
 .item-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 @media (max-width: 420px) { .item-row { grid-template-columns: 1fr; } }
+/* Equipe */
+.team-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.team-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 14px; background: var(--surface-2); }
+.team-id { flex: 1; min-width: 0; display: grid; }
+.team-id b { font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.team-id small { font-size: 12.5px; color: var(--muted); }
+.team-pass { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
+.team-pass .field { flex: 1 1 220px; }
+.team-pass .btn { min-height: 50px; }
+
+/* Entrada */
+.login-tabs { margin-bottom: 4px; }
+
 .money { position: relative; }
 .money span { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); font-family: var(--font-mono); color: var(--muted); }
 .money .input { padding-left: 46px; }

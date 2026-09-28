@@ -10,7 +10,9 @@
  *   getSettings() / updateSettings(patch)
  *                                → restaurante, wifi, cardápio, mesas e widgets (editados no painel)
  *   uploadImage(blob, nome)      → URL pública da imagem (logo, capa)
- *   auth.*                       → login da equipe (apenas Supabase)
+ *   auth.estado()                → { temSenha } — se a senha da equipe já foi criada
+ *   auth.entrar(pin) / auth.cadastrar({ nome, pin, senhaEquipe }) / auth.sessao() / auth.sair()
+ *   auth.membros() / auth.remover(id) / auth.trocarSenha(senha)
  */
 (function () {
   const cfg = window.NFC_CONFIG;
@@ -26,7 +28,6 @@
     cardapio: cfg.cardapio,
     mesas: cfg.mesasPadrao,
     widgets: cfg.widgetsPadrao,
-    equipe: { pin: cfg.equipe.pin },
   });
   // Completa o que foi salvo com os valores iniciais (campos novos em versões futuras).
   const mergeSettings = (saved) => {
@@ -52,7 +53,7 @@
     const KEY = 'nfc-demo-db-v1';
     const listeners = new Set();
     const channel = 'BroadcastChannel' in window ? new BroadcastChannel('nfc-demo') : null;
-    const empty = () => ({ chamados: [], comentarios: [], configuracao: null });
+    const empty = () => ({ chamados: [], comentarios: [], configuracao: null, equipe: null });
 
     const read = () => {
       try {
@@ -130,7 +131,8 @@
       },
       async reset() {
         // Preserva a configuração do restaurante — só limpa chamados e comentários.
-        write({ ...empty(), configuracao: read().configuracao });
+        const db = read();
+        write({ ...empty(), configuracao: db.configuracao, equipe: db.equipe });
       },
       async getSettings() {
         return mergeSettings(read().configuracao);
@@ -150,7 +152,77 @@
       async uploadImage(blob) {
         return blobToDataUrl(blob);
       },
-      auth: null,
+      auth: equipeLocal(read, write),
+    };
+  }
+
+  /* Equipe no modo demonstração: tudo neste navegador. */
+  function equipeLocal(read, write) {
+    const SESSAO = 'nfc-equipe-sessao';
+    const hash = async (t) => {
+      const txt = 'vtx-tap:' + t;
+      if (crypto.subtle) {
+        const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(txt));
+        return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+      }
+      let h = 0;
+      for (const c of txt) h = (h * 31 + c.charCodeAt(0)) | 0;
+      return String(h);
+    };
+    const equipe = () => read().equipe || { senhaHash: null, membros: [] };
+    const salvar = (eq) => write({ ...read(), equipe: eq });
+    const falha = (msg) => { throw new Error(msg); };
+    const getSess = () => { try { return JSON.parse(localStorage.getItem(SESSAO)); } catch { return null; } };
+    const abrir = (m) => { try { localStorage.setItem(SESSAO, JSON.stringify({ id: m.id })); } catch {} };
+
+    return {
+      async estado() {
+        return { temSenha: !!equipe().senhaHash };
+      },
+      async entrar(pin) {
+        if (!/^\d{4,8}$/.test(pin)) falha('O PIN tem de 4 a 8 números.');
+        const h = await hash('pin:' + pin);
+        const m = equipe().membros.find((x) => x.pinHash === h);
+        if (!m) falha('PIN não encontrado. Confira ou crie sua conta.');
+        abrir(m);
+        return { nome: m.nome };
+      },
+      async cadastrar({ nome, pin, senhaEquipe }) {
+        nome = String(nome || '').trim().slice(0, 60);
+        if (!nome) falha('Informe seu nome.');
+        if (!/^\d{4,8}$/.test(pin)) falha('O PIN precisa ter de 4 a 8 números.');
+        if (String(senhaEquipe || '').length < 6) falha('A senha da equipe tem pelo menos 6 caracteres.');
+        const eq = equipe();
+        const pinHash = await hash('pin:' + pin);
+        if (eq.membros.some((x) => x.pinHash === pinHash)) falha('Esse PIN já está em uso. Escolha outro.');
+        const senhaHash = await hash('senha:' + senhaEquipe);
+        const primeiraConta = !eq.senhaHash;
+        if (!primeiraConta && eq.senhaHash !== senhaHash) falha('Senha da equipe incorreta. Peça a senha para a gerência.');
+        const m = { id: uid(), nome, pinHash, criado_em: nowIso() };
+        salvar({ senhaHash: eq.senhaHash || senhaHash, membros: [...eq.membros, m] });
+        abrir(m);
+        return { nome, primeiraConta };
+      },
+      async sessao() {
+        const s = getSess();
+        const m = s && equipe().membros.find((x) => x.id === s.id);
+        return m ? { nome: m.nome, id: m.id } : null;
+      },
+      async sair() {
+        try { localStorage.removeItem(SESSAO); } catch {}
+      },
+      async membros() {
+        const s = getSess();
+        return equipe().membros.map((m) => ({ id: m.id, nome: m.nome, criado_em: m.criado_em, voce: !!s && s.id === m.id }));
+      },
+      async remover(id) {
+        const eq = equipe();
+        salvar({ ...eq, membros: eq.membros.filter((m) => m.id !== id) });
+      },
+      async trocarSenha(senha) {
+        if (String(senha || '').length < 6) falha('A senha da equipe precisa ter pelo menos 6 caracteres.');
+        salvar({ ...equipe(), senhaHash: await hash('senha:' + senha) });
+      },
     };
   }
 
@@ -229,9 +301,7 @@
         return mergeSettings(row);
       },
       async updateSettings(patch) {
-        // "equipe" (PIN) só existe no modo demonstração; com servidor o login é por e-mail.
-        const { equipe, ...campos } = patch;
-        must(await sb.from('configuracao').upsert({ id: 'geral', ...campos }));
+        must(await sb.from('configuracao').upsert({ id: 'geral', ...patch }));
         return this.getSettings();
       },
       async uploadImage(blob, nome) {
@@ -241,14 +311,58 @@
         return sb.storage.from('marca').getPublicUrl(path).data.publicUrl;
       },
       auth: {
-        async session() {
-          return (await sb.auth.getSession()).data.session;
+        // Cadastro e login passam pela função "equipe" do Supabase, que confere PIN e senha da equipe.
+        async chamar(acao, dados = {}, logado = false) {
+          const token = logado ? (await sb.auth.getSession()).data.session?.access_token : null;
+          let r;
+          try {
+            r = await fetch(`${supabaseUrl}/functions/v1/equipe`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', apikey: supabaseAnonKey, Authorization: `Bearer ${token || supabaseAnonKey}` },
+              body: JSON.stringify({ acao, ...dados }),
+            });
+          } catch {
+            throw new Error('Sem conexão com o servidor. Confira a internet e tente de novo.');
+          }
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(j.erro || 'Não foi possível concluir agora. Tente de novo.');
+          return j;
         },
-        async signIn(email, password) {
-          must(await sb.auth.signInWithPassword({ email, password }));
+        async estado() {
+          return this.chamar('estado');
         },
-        async signOut() {
+        async entrar(pin) {
+          const r = await this.chamar('entrar', { pin });
+          must(await sb.auth.setSession(r.sessao));
+          return { nome: r.nome };
+        },
+        async cadastrar({ nome, pin, senhaEquipe }) {
+          const r = await this.chamar('cadastrar', { nome, pin, senhaEquipe });
+          must(await sb.auth.setSession(r.sessao));
+          return { nome: r.nome, primeiraConta: r.primeiraConta };
+        },
+        async sessao() {
+          const { data } = await sb.auth.getSession();
+          if (!data.session) return null;
+          // Confere no servidor: quem foi removido da equipe perde o acesso.
+          const { data: u, error } = await sb.auth.getUser();
+          if (error || !u.user) {
+            await sb.auth.signOut();
+            return null;
+          }
+          return { nome: (u.user.user_metadata && u.user.user_metadata.nome) || 'Equipe', id: u.user.id };
+        },
+        async sair() {
           await sb.auth.signOut();
+        },
+        async membros() {
+          return (await this.chamar('membros', {}, true)).membros;
+        },
+        async remover(id) {
+          await this.chamar('remover', { id }, true);
+        },
+        async trocarSenha(senha) {
+          await this.chamar('trocar_senha', { senha }, true);
         },
       },
     };
