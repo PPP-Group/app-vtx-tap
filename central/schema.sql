@@ -31,15 +31,42 @@ create table if not exists public.etiquetas (
 create index if not exists etiquetas_restaurante_idx on public.etiquetas (restaurante_id);
 create index if not exists etiquetas_lote_idx on public.etiquetas (lote);
 
--- Quem opera a central (vocês). Crie o usuário em Authentication › Users e
--- depois rode:
---   insert into public.operadores (user_id, nome)
---   select id, 'Seu nome' from auth.users where email = 'voce@empresa.com';
+-- Quem opera a central (vocês). Veja os convites logo abaixo.
 create table if not exists public.operadores (
   user_id   uuid primary key references auth.users (id) on delete cascade,
   nome      text not null default '' check (char_length(nome) <= 60),
   criado_em timestamptz not null default now()
 );
+
+-- Convites: quem for criado em Authentication com um destes e-mails, já
+-- confirmado (Add user › Auto Confirm User), vira operador na hora. Quem já
+-- existe com o e-mail confirmado é ligado ao rodar este arquivo.
+--   insert into public.operadores_convite (email, nome) values ('voce@empresa.com', 'Seu nome');
+create table if not exists public.operadores_convite (
+  email text primary key check (email = lower(email)),
+  nome  text not null default '' check (char_length(nome) <= 60)
+);
+
+create or replace function public.aceitar_convite_operador() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if new.email_confirmed_at is not null then
+    insert into public.operadores (user_id, nome)
+    select new.id, c.nome from public.operadores_convite c where c.email = lower(new.email)
+    on conflict (user_id) do nothing;
+  end if;
+  return new;
+end $$;
+revoke execute on function public.aceitar_convite_operador() from public, anon, authenticated;
+
+drop trigger if exists operador_por_convite on auth.users;
+create trigger operador_por_convite after insert or update of email, email_confirmed_at on auth.users
+  for each row execute function public.aceitar_convite_operador();
+
+insert into public.operadores (user_id, nome)
+select u.id, c.nome from auth.users u join public.operadores_convite c on c.email = lower(u.email)
+where u.email_confirmed_at is not null
+on conflict (user_id) do nothing;
 
 create or replace function public.eh_operador() returns boolean
 language sql stable security definer set search_path = public as $$
@@ -51,9 +78,11 @@ grant execute on function public.eh_operador() to authenticated;
 alter table public.restaurantes enable row level security;
 alter table public.etiquetas enable row level security;
 alter table public.operadores enable row level security;
+alter table public.operadores_convite enable row level security;
 revoke all on public.restaurantes from anon;
 revoke all on public.etiquetas from anon;
 revoke all on public.operadores from anon;
+revoke all on public.operadores_convite from anon, authenticated;
 
 drop policy if exists "operador gerencia restaurantes" on public.restaurantes;
 create policy "operador gerencia restaurantes" on public.restaurantes

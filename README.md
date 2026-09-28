@@ -104,11 +104,10 @@ Sem as variáveis do Supabase, os dados ficam no navegador e sincronizam só ent
 A pasta `central/` é um segundo app, independente dos restaurantes: o redirecionador (`/t/CODIGO`) e o painel interno para gerar, entregar, imprimir e gravar as plaquinhas.
 
 1. **Supabase da central** (um projeto só de vocês, separado dos restaurantes): execute `central/schema.sql` no *SQL Editor*.
-2. **Operadores:** em *Authentication › Users › Add user*, crie o usuário com e-mail e senha (marque *Auto confirm*). Depois, no SQL Editor:
+2. **Operadores:** convide o e-mail no SQL Editor e depois crie o usuário em *Authentication › Users › Add user › Create new user*, com *Auto Confirm User* marcado. Ele vira operador na hora:
 
    ```sql
-   insert into public.operadores (user_id, nome)
-   select id, 'Seu nome' from auth.users where email = 'voce@empresa.com';
+   insert into public.operadores_convite (email, nome) values ('voce@empresa.com', 'Seu nome');
    ```
 
    Recomendado: desative *Allow new users to sign up* nesse projeto.
