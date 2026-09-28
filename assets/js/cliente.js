@@ -47,6 +47,7 @@
 
   /* ---------------- Topo ---------------- */
   function renderTop() {
+    UI.aplicarCor(R.cor);
     $('#brandName').textContent = R.nome;
     $('#brandDesc').textContent = R.descricao || '';
     document.title = mesa ? `Mesa ${mesa} · ${R.nome}` : R.nome;
