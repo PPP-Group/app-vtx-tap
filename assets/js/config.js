@@ -60,8 +60,6 @@ window.NFC_CONFIG = {
   pagamentos: ['Pix', 'Cartão', 'Dinheiro'],
 
   equipe: {
-    // PIN inicial do modo demonstração (sem servidor). Com servidor, o login é por e-mail e senha.
-    pin: '1234',
     // Minutos até o chamado ficar amarelo e vermelho no painel.
     alertaMin: [2, 5],
   },

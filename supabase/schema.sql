@@ -1,9 +1,9 @@
 -- ============================================================================
 -- Plataforma NFC para restaurantes — esquema do Supabase
--- Cole no SQL Editor do projeto e execute uma vez.
+-- Cole no SQL Editor do projeto e execute. Pode rodar de novo a cada atualização.
 -- ============================================================================
 
-create extension if not exists pgcrypto;
+create extension if not exists pgcrypto with schema extensions;
 
 -- ---------------------------------------------------------------------------
 -- Chamados das mesas
@@ -86,10 +86,127 @@ drop trigger if exists chamados_limite on public.chamados;
 create trigger chamados_limite before insert on public.chamados
   for each row execute function public.limita_chamados();
 
+-- Funções de gatilho não ficam expostas na API (/rest/v1/rpc).
+alter function public.toca_atualizado_em() set search_path = public;
+revoke execute on function public.toca_atualizado_em() from public, anon, authenticated;
+revoke execute on function public.limita_chamados() from public, anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Equipe: cada pessoa entra com um PIN próprio. Criar conta exige a senha
+-- da equipe. Cadastro e login passam pela função "equipe" (Edge Function),
+-- que usa as funções abaixo; nada disso fica exposto para o navegador.
+-- ---------------------------------------------------------------------------
+create schema if not exists private;
+revoke all on schema private from public, anon, authenticated;
+grant usage on schema private to service_role;
+
+create table if not exists private.segredo (
+  id     int primary key default 1 check (id = 1),
+  pepper text not null default encode(extensions.gen_random_bytes(32), 'hex')
+);
+insert into private.segredo (id) values (1) on conflict (id) do nothing;
+
+create table if not exists private.equipe_config (
+  id         int primary key default 1 check (id = 1),
+  senha_hash text
+);
+
+create table if not exists private.tentativas (
+  chave text not null,
+  em    timestamptz not null default now()
+);
+create index if not exists tentativas_chave_em_idx on private.tentativas (chave, em);
+
+create table if not exists public.equipe_membros (
+  id        uuid primary key default gen_random_uuid(),
+  user_id   uuid not null unique references auth.users (id) on delete cascade,
+  nome      text not null check (char_length(nome) between 1 and 60),
+  pin_hmac  text not null unique,
+  criado_em timestamptz not null default now()
+);
+alter table public.equipe_membros enable row level security;
+revoke all on public.equipe_membros from anon, authenticated;
+
+-- Quem está logado e faz parte da equipe (usado nas regras de acesso).
+create or replace function public.eh_equipe() returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.equipe_membros where user_id = auth.uid());
+$$;
+revoke execute on function public.eh_equipe() from public, anon;
+grant execute on function public.eh_equipe() to authenticated;
+
+grant select (id, nome, criado_em) on public.equipe_membros to authenticated;
+drop policy if exists "equipe ve a equipe" on public.equipe_membros;
+create policy "equipe ve a equipe" on public.equipe_membros
+  for select to authenticated using (public.eh_equipe());
+
+create or replace function public.equipe_pin_hmac(p_pin text) returns text
+language sql stable security definer set search_path = public as $$
+  select encode(extensions.hmac(p_pin, (select pepper from private.segredo where id = 1), 'sha256'), 'hex');
+$$;
+
+-- 'ok' | 'errada' | 'definida' (primeira conta: a senha digitada vira a senha da equipe)
+create or replace function public.equipe_conferir_senha(p_senha text) returns text
+language plpgsql security definer set search_path = public as $$
+declare h text;
+begin
+  select senha_hash into h from private.equipe_config where id = 1 for update;
+  if h is null then
+    insert into private.equipe_config (id, senha_hash)
+    values (1, extensions.crypt(p_senha, extensions.gen_salt('bf')))
+    on conflict (id) do update set senha_hash = excluded.senha_hash;
+    return 'definida';
+  end if;
+  return case when extensions.crypt(p_senha, h) = h then 'ok' else 'errada' end;
+end $$;
+
+create or replace function public.equipe_tem_senha() returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from private.equipe_config where id = 1 and senha_hash is not null);
+$$;
+
+create or replace function public.equipe_trocar_senha(p_senha text) returns void
+language sql security definer set search_path = public as $$
+  insert into private.equipe_config (id, senha_hash)
+  values (1, extensions.crypt(p_senha, extensions.gen_salt('bf')))
+  on conflict (id) do update set senha_hash = excluded.senha_hash;
+$$;
+
+-- Freio contra tentativas: true = pode tentar; registra a tentativa.
+create or replace function public.equipe_pode_tentar(p_chave text, p_max int, p_minutos int) returns boolean
+language plpgsql security definer set search_path = public as $$
+declare n int;
+begin
+  delete from private.tentativas where em < now() - interval '1 day';
+  select count(*) into n from private.tentativas
+   where chave = p_chave and em > now() - make_interval(mins => p_minutos);
+  if n >= p_max then return false; end if;
+  insert into private.tentativas (chave) values (p_chave);
+  return true;
+end $$;
+
+create or replace function public.equipe_limpar_tentativas(p_chave text) returns void
+language sql security definer set search_path = public as $$
+  delete from private.tentativas where chave = p_chave;
+$$;
+
+revoke execute on function public.equipe_pin_hmac(text) from public, anon, authenticated;
+revoke execute on function public.equipe_conferir_senha(text) from public, anon, authenticated;
+revoke execute on function public.equipe_tem_senha() from public, anon, authenticated;
+revoke execute on function public.equipe_trocar_senha(text) from public, anon, authenticated;
+revoke execute on function public.equipe_pode_tentar(text, int, int) from public, anon, authenticated;
+revoke execute on function public.equipe_limpar_tentativas(text) from public, anon, authenticated;
+grant execute on function public.equipe_pin_hmac(text) to service_role;
+grant execute on function public.equipe_conferir_senha(text) to service_role;
+grant execute on function public.equipe_tem_senha() to service_role;
+grant execute on function public.equipe_trocar_senha(text) to service_role;
+grant execute on function public.equipe_pode_tentar(text, int, int) to service_role;
+grant execute on function public.equipe_limpar_tentativas(text) to service_role;
+
 -- ---------------------------------------------------------------------------
 -- Segurança (RLS)
 --   anon          = cliente na mesa (sem login)
---   authenticated = equipe (usuários criados manualmente no painel do Supabase)
+--   equipe        = usuário logado que está em equipe_membros (public.eh_equipe())
 -- ---------------------------------------------------------------------------
 alter table public.chamados enable row level security;
 alter table public.comentarios enable row level security;
@@ -120,7 +237,7 @@ create policy "cliente cancela chamado aberto" on public.chamados
 
 drop policy if exists "equipe gerencia chamados" on public.chamados;
 create policy "equipe gerencia chamados" on public.chamados
-  for all to authenticated using (true) with check (true);
+  for all to authenticated using (public.eh_equipe()) with check (public.eh_equipe());
 
 drop policy if exists "cliente envia comentario" on public.comentarios;
 create policy "cliente envia comentario" on public.comentarios
@@ -128,11 +245,11 @@ create policy "cliente envia comentario" on public.comentarios
 
 drop policy if exists "equipe le comentarios" on public.comentarios;
 create policy "equipe le comentarios" on public.comentarios
-  for select to authenticated using (true);
+  for select to authenticated using (public.eh_equipe());
 
 drop policy if exists "equipe marca comentarios" on public.comentarios;
 create policy "equipe marca comentarios" on public.comentarios
-  for update to authenticated using (true) with check (true);
+  for update to authenticated using (public.eh_equipe()) with check (public.eh_equipe());
 
 -- Mesa (cliente) só lê; só a equipe cria e edita quantidade de mesas e widgets.
 drop policy if exists "cliente le configuracao" on public.configuracao;
@@ -141,7 +258,7 @@ create policy "cliente le configuracao" on public.configuracao
 
 drop policy if exists "equipe gerencia configuracao" on public.configuracao;
 create policy "equipe gerencia configuracao" on public.configuracao
-  for all to authenticated using (true) with check (true);
+  for all to authenticated using (public.eh_equipe()) with check (public.eh_equipe());
 
 -- ---------------------------------------------------------------------------
 -- Imagens da marca (logo e foto de capa): leitura pública, envio só pela equipe.
@@ -150,17 +267,21 @@ insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_typ
 values ('marca', 'marca', true, 3145728, array['image/jpeg', 'image/png', 'image/webp'])
 on conflict (id) do update set public = true;
 
+drop policy if exists "equipe ve imagens da marca" on storage.objects;
+create policy "equipe ve imagens da marca" on storage.objects
+  for select to authenticated using (bucket_id = 'marca' and public.eh_equipe());
+
 drop policy if exists "equipe envia imagens da marca" on storage.objects;
 create policy "equipe envia imagens da marca" on storage.objects
-  for insert to authenticated with check (bucket_id = 'marca');
+  for insert to authenticated with check (bucket_id = 'marca' and public.eh_equipe());
 
 drop policy if exists "equipe troca imagens da marca" on storage.objects;
 create policy "equipe troca imagens da marca" on storage.objects
-  for update to authenticated using (bucket_id = 'marca');
+  for update to authenticated using (bucket_id = 'marca' and public.eh_equipe());
 
 drop policy if exists "equipe apaga imagens da marca" on storage.objects;
 create policy "equipe apaga imagens da marca" on storage.objects
-  for delete to authenticated using (bucket_id = 'marca');
+  for delete to authenticated using (bucket_id = 'marca' and public.eh_equipe());
 
 -- ---------------------------------------------------------------------------
 -- Tempo real

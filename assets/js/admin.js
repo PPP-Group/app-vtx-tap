@@ -18,11 +18,11 @@
       cardapio: cfg.cardapio,
       mesas: cfg.mesasPadrao,
       widgets: cfg.widgetsPadrao,
-      equipe: { pin: cfg.equipe.pin },
     },
     widgetEdit: null,
     itemEdit: null,
     ajTab: 'restaurante',
+    loginModo: 'entrar',
     view: 'chamados',
     filtro: 'abertos',
     fbFiltro: 'todos',
@@ -57,58 +57,85 @@
   };
   const firstName = (n) => String(n || '').trim().split(/\s+/)[0];
   const nomeRest = () => S.settings.restaurante.nome || 'Restaurante';
-  const pinEquipe = () => String((S.settings.equipe && S.settings.equipe.pin) || cfg.equipe.pin);
 
   /* ============================== Entrada ============================== */
+  // Entrar: só o PIN. Criar conta: nome, PIN novo e a senha da equipe.
+  let temSenhaEquipe = true;
   function showLogin(msg = '') {
     $('#shell').hidden = true;
     $('#login').hidden = false;
     $('#loginBrand').textContent = nomeRest();
-    const nome = get('nfc-equipe-nome') || '';
-    $('#loginForm').innerHTML = isDemo
-      ? `<label class="field"><span>Seu nome</span><input class="input" id="lgNome" autocomplete="name" required value="${esc(nome)}" placeholder="Como a mesa vai ver você"></label>
-         <label class="field"><span>PIN da equipe</span><input class="input pin-input" id="lgPin" inputmode="numeric" type="password" maxlength="8" autocomplete="off" required></label>
-         <p class="form-error" id="lgErr" role="alert">${esc(msg)}</p>
-         <button class="btn btn-cobalt btn-block" type="submit">Entrar no painel</button>
-         ${pinEquipe() === String(cfg.equipe.pin) ? `<p class="login-hint">Modo demonstração · PIN inicial ${esc(cfg.equipe.pin)}</p>` : ''}`
-      : `<label class="field"><span>Seu nome</span><input class="input" id="lgNome" autocomplete="name" required value="${esc(nome)}" placeholder="Como a mesa vai ver você"></label>
-         <label class="field"><span>E-mail</span><input class="input" id="lgEmail" type="email" autocomplete="username" required></label>
-         <label class="field"><span>Senha</span><input class="input" id="lgSenha" type="password" autocomplete="current-password" required></label>
-         <p class="form-error" id="lgErr" role="alert">${esc(msg)}</p>
-         <button class="btn btn-cobalt btn-block" type="submit">Entrar no painel</button>`;
-    setTimeout(() => (nome ? $('#lgPin, #lgEmail') : $('#lgNome')).focus(), 50);
+    const criar = S.loginModo === 'criar';
+    $('#loginForm').innerHTML = `
+      <div class="seg login-tabs" role="tablist" aria-label="Acesso da equipe">
+        <button type="button" role="tab" aria-selected="${!criar}" data-login="entrar">Entrar</button>
+        <button type="button" role="tab" aria-selected="${criar}" data-login="criar">Criar conta</button>
+      </div>
+      ${criar
+        ? `<label class="field"><span>Seu nome</span><input class="input" id="lgNome" autocomplete="name" maxlength="60" required placeholder="Como a mesa vai ver você"></label>
+           <label class="field"><span>Crie seu PIN</span><input class="input pin-input" id="lgPinNovo" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="new-password" required>
+             <small class="help">De 4 a 8 números. É com ele que você entra daqui para frente.</small></label>
+           <label class="field"><span>${temSenhaEquipe ? 'Senha da equipe' : 'Crie a senha da equipe'}</span><input class="input" id="lgSenha" type="password" autocomplete="${temSenhaEquipe ? 'off' : 'new-password'}" minlength="6" required>
+             <small class="help">${temSenhaEquipe ? 'Peça para a gerência. É a mesma para toda a equipe.' : 'Primeira conta do restaurante: esta senha passa a ser a da equipe. Guarde e compartilhe só com quem trabalha aqui.'}</small></label>
+           <p class="form-error" id="lgErr" role="alert">${esc(msg)}</p>
+           <button class="btn btn-cobalt btn-block" type="submit">Criar conta e entrar</button>`
+        : `<label class="field"><span>Seu PIN</span><input class="input pin-input" id="lgPin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="current-password" required></label>
+           <p class="form-error" id="lgErr" role="alert">${esc(msg)}</p>
+           <button class="btn btn-cobalt btn-block" type="submit">Entrar no painel</button>
+           <p class="login-hint">Primeira vez aqui? Toque em “Criar conta”.</p>`}`;
+    setTimeout(() => ($('#lgPin') || $('#lgNome')).focus(), 50);
   }
+
+  $('#loginForm').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-login]');
+    if (!b || b.dataset.login === S.loginModo) return;
+    S.loginModo = b.dataset.login;
+    showLogin();
+  });
 
   $('#loginForm').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const nome = $('#lgNome').value.trim();
     const err = $('#lgErr');
-    if (!nome) {
-      err.textContent = 'Informe seu nome. Ele aparece para a mesa quando você estiver a caminho.';
-      return $('#lgNome').focus();
-    }
     const btn = e.target.querySelector('[type=submit]');
-    btn.disabled = true;
-    try {
-      if (isDemo) {
-        if ($('#lgPin').value !== pinEquipe()) throw new Error('PIN incorreto. Confira com a gerência.');
-        set('nfc-equipe', JSON.stringify({ nome, exp: Date.now() + 12 * 3600e3 }));
-      } else {
-        await store.auth.signIn($('#lgEmail').value.trim(), $('#lgSenha').value);
+    const falhar = (msg, campo) => {
+      err.textContent = msg;
+      campo && campo.focus();
+    };
+    let r;
+    if (S.loginModo === 'criar') {
+      const nome = $('#lgNome').value.trim();
+      const pin = $('#lgPinNovo').value.trim();
+      const senhaEquipe = $('#lgSenha').value;
+      if (!nome) return falhar('Informe seu nome. Ele aparece para a mesa quando você estiver a caminho.', $('#lgNome'));
+      if (!/^\d{4,8}$/.test(pin)) return falhar('O PIN precisa ter de 4 a 8 números.', $('#lgPinNovo'));
+      if (senhaEquipe.length < 6) return falhar('A senha da equipe tem pelo menos 6 caracteres.', $('#lgSenha'));
+      btn.disabled = true;
+      try {
+        r = await store.auth.cadastrar({ nome, pin, senhaEquipe });
+      } catch (ex) {
+        btn.disabled = false;
+        return falhar(ex.message, /PIN/.test(ex.message) ? $('#lgPinNovo') : /[Ss]enha/.test(ex.message) ? $('#lgSenha') : null);
       }
-      set('nfc-equipe-nome', nome);
-      S.user = { nome };
-      unlockAudio();
-      startApp();
-    } catch (ex) {
-      err.textContent = ex.message === 'Invalid login credentials' ? 'E-mail ou senha incorretos.' : ex.message;
-      btn.disabled = false;
+      if (r.primeiraConta) toast('Conta criada. A senha que você digitou agora é a senha da equipe.', { tone: 'ok', ms: 5000 });
+    } else {
+      const pin = $('#lgPin').value.trim();
+      if (!/^\d{4,8}$/.test(pin)) return falhar('Digite seu PIN (4 a 8 números).', $('#lgPin'));
+      btn.disabled = true;
+      try {
+        r = await store.auth.entrar(pin);
+      } catch (ex) {
+        btn.disabled = false;
+        $('#lgPin').value = '';
+        return falhar(ex.message, $('#lgPin'));
+      }
     }
+    S.user = { nome: r.nome };
+    unlockAudio();
+    startApp();
   });
 
   async function logout() {
-    set('nfc-equipe', null);
-    if (store.auth) await store.auth.signOut();
+    try { await store.auth.sair(); } catch {}
     location.hash = '';
     location.reload();
   }
@@ -344,6 +371,7 @@
     const main = $('#main');
     main.dataset.view = S.view;
     main.innerHTML = { chamados: vChamados, salao: vSalao, comentarios: vComentarios, plaquinhas: vPlaquinhas, ajustes: vAjustes }[S.view]();
+    if (S.view === 'ajustes' && S.ajTab === 'restaurante') carregarEquipe();
   }
 
   /* ---------- Chamados ---------- */
@@ -749,7 +777,6 @@
     const fileBtn = (tipo, tem) => `<label class="btn btn-line btn-sm file-btn">${icon('upload')} ${tem ? 'Trocar' : 'Enviar'}
         <input type="file" class="sr-only" accept="image/jpeg,image/png,image/webp" data-img="${tipo}"></label>
       ${tem ? `<button type="button" class="btn btn-line btn-sm" data-img-del="${tipo}">Remover</button>` : ''}`;
-    const pinAtual = (S.settings.equipe && S.settings.equipe.pin) || cfg.equipe.pin;
 
     return `<div class="aj-grid">
       <section class="panel stack aj-brand" aria-labelledby="hMarca">
@@ -797,15 +824,68 @@
         <small class="help">Pode fechar depois da meia-noite: por exemplo, das 18:00 às 01:00.</small>
       </section>
 
-      ${isDemo ? `<section class="panel stack" aria-labelledby="hPin">
-        <h2 id="hPin">Acesso da equipe</h2>
-        <label class="field field-narrow"><span>PIN para entrar no painel</span><input class="input pin-input" data-pin inputmode="numeric" maxlength="8" pattern="[0-9]{4,8}" value="${esc(pinAtual)}" autocomplete="off"></label>
-        <small class="help">De 4 a 8 números. Quem já está conectado continua entrando normalmente.</small>
-      </section>` : ''}
+      <section class="panel stack" aria-labelledby="hEquipe">
+        <h2 id="hEquipe">Equipe</h2>
+        <ul class="team-list" id="teamList"><li class="muted">Carregando…</li></ul>
+        <small class="help">Cada pessoa cria a própria conta na tela de entrada, usando a senha da equipe, e depois entra só com o PIN.</small>
+        <form class="team-pass" id="teamPassForm">
+          <label class="field"><span>Nova senha da equipe</span><input class="input" id="novaSenhaEquipe" type="password" minlength="6" autocomplete="new-password" required></label>
+          <button type="submit" class="btn btn-line btn-sm">Trocar senha</button>
+        </form>
+        <small class="help">Quem já tem conta continua entrando com o PIN. A senha nova vale para as próximas contas.</small>
+      </section>
 
       <a class="btn btn-line aj-view" href="/?mesa=1" target="_blank" rel="noopener">${icon('external')} Ver a página da mesa como o cliente</a>
     </div>`;
   }
+
+  /* Equipe: quem tem conta no painel */
+  async function carregarEquipe() {
+    const alvo = () => $('#teamList');
+    if (!alvo()) return;
+    try {
+      const lista = await store.auth.membros();
+      if (!alvo()) return;
+      alvo().innerHTML = lista.length
+        ? lista.map((m) => `<li class="team-row">
+            <span class="avatar" aria-hidden="true">${esc((firstName(m.nome)[0] || '?').toUpperCase())}</span>
+            <div class="team-id"><b>${esc(m.nome)}</b><small>Desde ${new Date(m.criado_em).toLocaleDateString('pt-BR')}</small></div>
+            ${m.voce ? '<span class="state-tag">Você</span>' : `<button type="button" class="btn btn-line btn-sm" data-membro-del="${esc(m.id)}" data-nome="${esc(m.nome)}">Remover</button>`}
+          </li>`).join('')
+        : '<li class="muted">Ninguém cadastrado ainda.</li>';
+    } catch (e) {
+      if (alvo()) alvo().innerHTML = `<li class="form-error">${esc(e.message)}</li>`;
+    }
+  }
+  document.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-membro-del]');
+    if (!b) return;
+    if (!confirm(`Remover ${b.dataset.nome} da equipe? A pessoa perde o acesso ao painel na hora.`)) return;
+    b.disabled = true;
+    try {
+      await store.auth.remover(b.dataset.membroDel);
+      toast(`${b.dataset.nome} foi removido da equipe.`, { tone: 'ok' });
+    } catch (ex) {
+      toast(ex.message, { tone: 'error', ms: 4500 });
+    }
+    carregarEquipe();
+  });
+  document.addEventListener('submit', async (e) => {
+    if (e.target.id !== 'teamPassForm') return;
+    e.preventDefault();
+    const campo = $('#novaSenhaEquipe');
+    if (campo.value.length < 6) return toast('A senha da equipe precisa ter pelo menos 6 caracteres.', { tone: 'error' });
+    const btn = e.target.querySelector('[type=submit]');
+    btn.disabled = true;
+    try {
+      await store.auth.trocarSenha(campo.value);
+      campo.value = '';
+      toast('Senha da equipe trocada. Avise quem ainda vai criar conta.', { tone: 'ok', ms: 4000 });
+    } catch (ex) {
+      toast(ex.message, { tone: 'error', ms: 4500 });
+    }
+    btn.disabled = false;
+  });
 
   async function prepararImagem(file, tipo) {
     if (!/^image\//.test(file.type)) throw new Error('Escolha uma imagem JPG, PNG ou WebP.');
@@ -1104,14 +1184,6 @@
       return;
     }
 
-    if (el.matches('[data-pin]')) {
-      const v = el.value.trim();
-      if (!/^\d{4,8}$/.test(v)) {
-        el.value = (S.settings.equipe && S.settings.equipe.pin) || cfg.equipe.pin;
-        return toast('O PIN precisa ter de 4 a 8 números.', { tone: 'error' });
-      }
-      return saveSettings({ equipe: { ...S.settings.equipe, pin: v } });
-    }
 
     if (el.matches('[data-cat-name]')) {
       const ci = +el.closest('.mc').dataset.ci;
@@ -1366,17 +1438,15 @@
     .init({ realtimeAll: true })
     .then(async () => {
       try { S.settings = await store.getSettings(); } catch (e) { console.error(e); }
-      if (isDemo) {
-        let sess = null;
-        try { sess = JSON.parse(get('nfc-equipe')); } catch {}
-        if (sess && sess.exp > Date.now()) {
-          S.user = { nome: sess.nome };
-          return startApp();
-        }
-      } else if (await store.auth.session()) {
-        S.user = { nome: get('nfc-equipe-nome') || 'Equipe' };
+      const sess = await store.auth.sessao().catch(() => null);
+      if (sess) {
+        S.user = { nome: sess.nome };
         return startApp();
       }
+      try {
+        temSenhaEquipe = (await store.auth.estado()).temSenha;
+      } catch {}
+      if (!temSenhaEquipe) S.loginModo = 'criar';
       showLogin();
     })
     .catch((e) => {
