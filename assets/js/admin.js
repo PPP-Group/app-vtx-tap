@@ -746,17 +746,19 @@
     const foraDoTotal = S.etiquetas.filter((e) => e.mesa > total);
     const semMesa = S.etiquetas.filter((e) => !e.mesa);
     const areas = S.settings.mesas.areas;
+    const areaErro = areas.map((a, i) => erroDaArea(a, areas, i, total)).find(Boolean);
     const mesasCfg = `<div class="panel stack" id="mesasCfg">
         <h2>Quantidade de mesas</h2>
         <label class="field" style="max-width:220px"><span>Total no restaurante</span>
           <input class="input mono" id="totalMesas" type="number" min="1" max="300" value="${total}"></label>
         <h2 style="margin-top:6px">Áreas do salão</h2>
         <p class="muted" style="font-size:13px">Dê nome aos grupos de mesa (salão, varanda, mezanino…). Uma mesa fora de qualquer faixa aparece sem área.</p>
-        <div class="arows">${areas.map((a, i) => `<div class="arow" data-area-idx="${i}">
+        ${areaErro ? `<p class="area-erro" role="alert">${icon('alert')} <span>${esc(areaErro)} Corrija a faixa abaixo.</span></p>` : ''}
+        <div class="arows">${areas.map((a, i) => `<div class="arow ${erroDaArea(a, areas, i, total) ? 'is-erro' : ''}" data-area-idx="${i}">
             <input class="input" data-afield="nome" value="${esc(a.nome)}" placeholder="Nome da área" aria-label="Nome da área">
-            <input class="input mono" data-afield="de" type="number" min="1" value="${a.de}" aria-label="Primeira mesa da área">
+            <input class="input mono" data-afield="de" type="number" min="1" max="${total}" value="${a.de}" aria-label="Primeira mesa da área">
             <span class="arow-sep">–</span>
-            <input class="input mono" data-afield="ate" type="number" min="1" value="${a.ate}" aria-label="Última mesa da área">
+            <input class="input mono" data-afield="ate" type="number" min="1" max="${total}" value="${a.ate}" aria-label="Última mesa da área">
             <button type="button" class="icon-btn" data-area="del" aria-label="Remover área">${icon('trash')}</button>
           </div>`).join('') || '<p class="muted">Nenhuma área cadastrada — todas as mesas aparecem sem nome.</p>'}</div>
         <button type="button" class="btn btn-line btn-sm" data-area="add">${icon('plus')} Adicionar área</button>
@@ -801,6 +803,29 @@
         ${semMesa.map((e) => `<button type="button" class="link-cod mono" data-placa="${esc(e.codigo)}">${esc(e.codigo)}</button>`).join(' ')} · toque para escolher a mesa.</span></div>` : ''}
       ${foraDoTotal.length ? `<p class="note">${icon('msg')}<span>${foraDoTotal.length === 1 ? 'Uma plaquinha está ligada' : `${foraDoTotal.length} plaquinhas estão ligadas`} a mesa acima do total (${foraDoTotal.map((e) => `${esc(e.codigo)} → ${e.mesa}`).join(', ')}). Aumente o total ou altere a plaquinha.</span></p>` : ''}
       <ul class="plist">${linhas.join('')}</ul>`;
+  }
+
+  /* Áreas do salão: faixas dentro do total e sem mesa em duas áreas. */
+  function erroDaArea(a, areas, i, total) {
+    if (!(a.de >= 1 && a.ate >= 1)) return 'Use números de mesa a partir de 1.';
+    if (a.de > total || a.ate > total) return `O restaurante tem ${total} mesas: a faixa vai no máximo até a mesa ${total}.`;
+    if (a.de > a.ate) return 'A primeira mesa da faixa precisa ser menor ou igual à última.';
+    const outra = areas.find((b, j) => j !== i && a.de <= b.ate && b.de <= a.ate);
+    if (outra) {
+      const de = Math.max(a.de, outra.de), ate = Math.min(a.ate, outra.ate);
+      return `${de === ate ? `A mesa ${de} já está` : `As mesas ${de} a ${ate} já estão`} em “${outra.nome}”. Cada mesa fica em uma área só.`;
+    }
+    return '';
+  }
+  // Primeira sequência de mesas sem área (para o botão "Adicionar área").
+  function faixaLivre(areas, total) {
+    const ocupada = (n) => areas.some((a) => n >= a.de && n <= a.ate);
+    let de = 1;
+    while (de <= total && ocupada(de)) de++;
+    if (de > total) return null;
+    let ate = de;
+    while (ate < total && !ocupada(ate + 1)) ate++;
+    return { de, ate };
   }
 
   const saveMesas = (patch) => saveSettings({ mesas: { ...S.settings.mesas, ...patch } });
@@ -1039,6 +1064,7 @@
               ${corAtual() !== UI.COR_PADRAO ? '<button type="button" class="btn btn-line btn-sm" data-cor="padrao">Voltar ao azul</button>' : ''}
             </div></div>
         </div>
+        <a class="btn btn-line aj-view" href="/?mesa=1" target="_blank" rel="noopener">${icon('external')} Ver a página da mesa como o cliente</a>
       </section>
 
       <section class="panel stack" aria-labelledby="hInfo">
@@ -1053,12 +1079,25 @@
           <small class="help">Usada na calculadora “Dividir a conta”.</small></label>
       </section>
 
-      <section class="panel stack" aria-labelledby="hWifi">
-        <h2 id="hWifi">Wi-Fi dos clientes</h2>
-        <label class="field"><span>Nome da rede</span><input class="input" data-wf="rede" maxlength="32" value="${esc(w.rede || '')}" autocapitalize="off" spellcheck="false"></label>
-        <label class="field"><span>Senha</span><input class="input mono" data-wf="senha" maxlength="63" value="${esc(aberta ? '' : w.senha || '')}" ${aberta ? 'disabled placeholder="Rede sem senha"' : ''} autocapitalize="off" autocomplete="off" spellcheck="false"></label>
-        <label class="set-inline"><span>Rede aberta, sem senha</span><span class="switch"><input type="checkbox" data-wf="aberta" ${aberta ? 'checked' : ''}><span></span></span></label>
-      </section>
+      <div class="aj-col">
+        <section class="panel stack" aria-labelledby="hWifi">
+          <h2 id="hWifi">Wi-Fi dos clientes</h2>
+          <label class="field"><span>Nome da rede</span><input class="input" data-wf="rede" maxlength="32" value="${esc(w.rede || '')}" autocapitalize="off" spellcheck="false"></label>
+          <label class="field"><span>Senha</span><input class="input mono" data-wf="senha" maxlength="63" value="${esc(aberta ? '' : w.senha || '')}" ${aberta ? 'disabled placeholder="Rede sem senha"' : ''} autocapitalize="off" autocomplete="off" spellcheck="false"></label>
+          <label class="set-inline"><span>Rede aberta, sem senha</span><span class="switch"><input type="checkbox" data-wf="aberta" ${aberta ? 'checked' : ''}><span></span></span></label>
+        </section>
+
+        <section class="panel stack" aria-labelledby="hEquipe">
+          <h2 id="hEquipe">Equipe</h2>
+          <ul class="team-list" id="teamList"><li class="muted">Carregando…</li></ul>
+          <small class="help">Cada pessoa cria a própria conta na tela de entrada, usando a senha da equipe, e depois entra só com o PIN.</small>
+          <form class="team-pass" id="teamPassForm">
+            <label class="field"><span>Nova senha da equipe</span><input class="input" id="novaSenhaEquipe" type="password" minlength="6" autocomplete="new-password" required></label>
+            <button type="submit" class="btn btn-line btn-sm">Trocar senha</button>
+          </form>
+          <small class="help">Quem já tem conta continua entrando com o PIN. A senha nova vale para as próximas contas.</small>
+        </section>
+      </div>
 
       <section class="panel stack" aria-labelledby="hHoras">
         <h2 id="hHoras">Horário de funcionamento</h2>
@@ -1074,19 +1113,6 @@
         }).join('')}</div>
         <small class="help">Pode fechar depois da meia-noite: por exemplo, das 18:00 às 01:00.</small>
       </section>
-
-      <section class="panel stack" aria-labelledby="hEquipe">
-        <h2 id="hEquipe">Equipe</h2>
-        <ul class="team-list" id="teamList"><li class="muted">Carregando…</li></ul>
-        <small class="help">Cada pessoa cria a própria conta na tela de entrada, usando a senha da equipe, e depois entra só com o PIN.</small>
-        <form class="team-pass" id="teamPassForm">
-          <label class="field"><span>Nova senha da equipe</span><input class="input" id="novaSenhaEquipe" type="password" minlength="6" autocomplete="new-password" required></label>
-          <button type="submit" class="btn btn-line btn-sm">Trocar senha</button>
-        </form>
-        <small class="help">Quem já tem conta continua entrando com o PIN. A senha nova vale para as próximas contas.</small>
-      </section>
-
-      <a class="btn btn-line aj-view" href="/?mesa=1" target="_blank" rel="noopener">${icon('external')} Ver a página da mesa como o cliente</a>
     </div>`;
   }
 
@@ -1556,8 +1582,9 @@
     if (aBtn) {
       const areas = S.settings.mesas.areas.slice();
       if (aBtn.dataset.area === 'add') {
-        const lastAte = areas.length ? areas[areas.length - 1].ate : 0;
-        areas.push({ nome: 'Nova área', de: Math.min(lastAte + 1, S.settings.mesas.total), ate: S.settings.mesas.total });
+        const livre = faixaLivre(areas, S.settings.mesas.total);
+        if (!livre) return toast('Todas as mesas já estão em alguma área. Diminua uma faixa ou aumente o total de mesas.', { tone: 'error', ms: 4500 });
+        areas.push({ nome: 'Nova área', ...livre });
       } else {
         const row = aBtn.closest('[data-area-idx]');
         areas.splice(+row.dataset.areaIdx, 1);
@@ -1611,7 +1638,9 @@
     }
     if (e.target.id === 'totalMesas') {
       const n = Math.min(300, Math.max(1, parseInt(e.target.value, 10) || S.settings.mesas.total));
-      saveMesas({ total: n }).then(renderView);
+      // Faixas que passavam do novo total são cortadas; as que ficaram inteiras fora, removidas.
+      const areas = S.settings.mesas.areas.filter((a) => a.de <= n).map((a) => ({ ...a, ate: Math.min(a.ate, n) }));
+      saveMesas({ total: n, areas }).then(renderView);
       return;
     }
     const af = e.target.closest('[data-afield]');
@@ -1620,7 +1649,19 @@
       const areas = S.settings.mesas.areas.slice();
       const i = +row.dataset.areaIdx;
       const field = af.dataset.afield;
-      areas[i] = { ...areas[i], [field]: field === 'nome' ? af.value.trim() || 'Área' : Math.max(1, parseInt(af.value, 10) || 1) };
+      if (field === 'nome') {
+        areas[i] = { ...areas[i], nome: af.value.trim() || 'Área' };
+        saveMesas({ areas });
+        return;
+      }
+      const total = S.settings.mesas.total;
+      const nova = { ...areas[i], [field]: parseInt(af.value, 10) };
+      const erro = erroDaArea(nova, areas, i, total);
+      if (erro) {
+        af.value = areas[i][field];
+        return toast(erro, { tone: 'error', ms: 4500 });
+      }
+      areas[i] = nova;
       saveMesas({ areas });
       return;
     }
