@@ -462,8 +462,8 @@ a.info-row:hover span { color: var(--ink); text-decoration: underline; }
 .sel-total .price { font-size: 20px; }
 .note { display: flex; gap: 10px; padding: 12px 14px; border-radius: 14px; background: var(--surface-2); font-size: 13.5px; color: var(--ink-2); }
 .note .i { width: 18px; height: 18px; margin-top: 1px; }
-.stack { display: grid; gap: 12px; }
-.stack-lg { display: grid; gap: 20px; }
+.stack { display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); }
+.stack-lg { display: grid; gap: 20px; grid-template-columns: minmax(0, 1fr); }
 
 /* ---------- Wi-Fi ---------- */
 .wifi-card { padding: 22px 24px 20px; display: grid; gap: 14px; }

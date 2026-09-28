@@ -779,7 +779,8 @@
           <ol>
             <li>Cole a plaquinha na mesa.</li>
             <li>Encoste o celular nela (ou aponte a câmera para o QR). Na primeira vez aparece <strong>Plaquinha nova</strong>.</li>
-            <li>Toque em <strong>Sou da equipe · configurar</strong>, entre com seu PIN e escolha o número da mesa.</li>
+            <li>Digite o <strong>código de ativação</strong> do restaurante (só na primeira plaquinha: o celular lembra para as próximas).</li>
+            <li>Entre com seu PIN e escolha o número da mesa.</li>
             <li>Pronto: daí em diante, a plaquinha abre direto a página dessa mesa.</li>
           </ol>
           <small class="help">As plaquinhas já vêm gravadas e bloqueadas. Não é preciso app nenhum para configurar.</small>
