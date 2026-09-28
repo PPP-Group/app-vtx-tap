@@ -170,17 +170,94 @@
   }
   document.addEventListener('pointerdown', unlockAudio, { once: true });
 
-  function notify(c) {
+  async function notify(c) {
     if (!('Notification' in window) || Notification.permission !== 'granted' || !document.hidden) return;
+    const titulo = `Mesa ${c.mesa} · ${motivo(c.tipo).label}`;
+    const opcoes = {
+      body: c.nota || (c.pagamento ? `Pagamento: ${c.pagamento}` : 'Toque para abrir o painel'),
+      tag: c.id,
+      icon: '/admin/icons/icon-192.png',
+      badge: '/admin/icons/icon-192.png',
+      vibrate: [200, 100, 200],
+    };
     try {
-      const n = new Notification(`Mesa ${c.mesa} · ${motivo(c.tipo).label}`, {
-        body: c.nota || (c.pagamento ? `Pagamento: ${c.pagamento}` : 'Toque para abrir o painel'),
-        tag: c.id,
-        icon: 'assets/img/icon.svg',
-      });
+      // No Android e no app instalado, a notificação só sai pelo service worker.
+      const reg = 'serviceWorker' in navigator && (await navigator.serviceWorker.getRegistration('/admin/'));
+      if (reg) return await reg.showNotification(titulo, opcoes);
+      const n = new Notification(titulo, opcoes);
       n.onclick = () => { window.focus(); n.close(); };
     } catch {}
   }
+
+  /* ============================== App no celular ============================== */
+  const APP = {
+    pedido: null,
+    instalado: () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true,
+    ios: () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1),
+  };
+  if ('serviceWorker' in navigator) {
+    addEventListener('load', () => navigator.serviceWorker.register('/admin/sw.js', { scope: '/admin/' }).catch(() => {}));
+  }
+  addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    APP.pedido = e;
+    avisoApp();
+    if (S.user && S.view === 'ajustes' && S.ajTab === 'aparelho') renderView();
+  });
+  addEventListener('appinstalled', () => {
+    APP.pedido = null;
+    $('#appAviso')?.remove();
+    toast('App instalado. Abra pelo ícone “Painel” na tela inicial.', { tone: 'ok', ms: 4500 });
+    if (S.user && S.view === 'ajustes' && S.ajTab === 'aparelho') renderView();
+  });
+
+  async function instalarApp() {
+    if (APP.pedido) {
+      const pedido = APP.pedido;
+      APP.pedido = null;
+      pedido.prompt();
+      await pedido.userChoice.catch(() => null);
+      if (S.view === 'ajustes' && S.ajTab === 'aparelho') renderView();
+      return;
+    }
+    S.ajTab = 'aparelho';
+    if (S.view === 'ajustes') renderView();
+    else go('ajustes');
+  }
+
+  function passosIos() {
+    return `<ol class="app-passos">
+        <li>Abra este endereço no <b>Safari</b>.</li>
+        <li>Toque em <b>Compartilhar</b> ${icon('share')}.</li>
+        <li>Escolha <b>Adicionar à Tela de Início</b> e toque em <b>Adicionar</b>.</li>
+      </ol>`;
+  }
+
+  // Convite para instalar: uma vez por aparelho, só em tela de celular.
+  function avisoApp() {
+    if (!S.user || APP.instalado() || $('#appAviso') || get('nfc-app-aviso')) return;
+    if (!APP.pedido && !APP.ios()) return;
+    if (!matchMedia('(max-width: 900px)').matches) return;
+    const el = document.createElement('div');
+    el.className = 'app-aviso';
+    el.id = 'appAviso';
+    el.setAttribute('role', 'region');
+    el.setAttribute('aria-label', 'Instalar o app');
+    el.innerHTML = `<img src="/admin/icons/icon-192.png" alt="" width="40" height="40">
+      <div><b>Painel no celular</b><small>Instale o app e abra direto da tela inicial.</small></div>
+      <button type="button" class="btn btn-cobalt btn-sm" data-app="instalar">${APP.pedido ? 'Instalar' : 'Como instalar'}</button>
+      <button type="button" class="icon-btn" data-app="fechar" aria-label="Agora não">${icon('x')}</button>`;
+    document.body.append(el);
+  }
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-app]');
+    if (!b) return;
+    if (b.closest('#appAviso')) {
+      set('nfc-app-aviso', '1');
+      $('#appAviso').remove();
+    }
+    if (b.dataset.app === 'instalar') instalarApp();
+  });
 
   let wakeLock = null;
   async function applyWakeLock() {
@@ -1013,6 +1090,7 @@
     const tema = temaAtual();
     const perm = 'Notification' in window ? Notification.permission : 'unsupported';
     return `<div class="settings">
+        ${linhaApp()}
         <div class="set-row"><div><h3>Som dos alertas</h3><p>Toca um sino quando uma mesa chama.</p></div>
           <div class="vhead-actions"><button type="button" class="btn btn-quiet btn-sm" data-set="testar">Testar</button>
           <label class="switch"><input type="checkbox" data-set="som" ${S.som ? 'checked' : ''} aria-label="Som dos alertas"><span></span></label></div></div>
@@ -1035,6 +1113,14 @@
         <div class="set-row"><div><h3>${esc(S.user.nome)}</h3><p>Conectado neste aparelho.</p></div>
           <button type="button" class="btn btn-line btn-sm" data-tool="sair">${icon('logout')} Sair</button></div>
       </div>`;
+  }
+
+  function linhaApp() {
+    if (APP.instalado()) return '<div class="set-row"><div><h3>App do painel</h3><p>Instalado neste aparelho.</p></div></div>';
+    if (APP.pedido) return `<div class="set-row"><div><h3>Instalar o app</h3><p>Coloca o painel na tela inicial, abre em tela cheia e avisa dos chamados.</p></div>
+          <button type="button" class="btn btn-cobalt btn-sm" data-app="instalar">${icon('download')} Instalar</button></div>`;
+    if (APP.ios()) return `<div class="set-row wrap"><div><h3>Instalar o app no iPhone</h3><p>Coloca o painel na tela inicial e libera as notificações de chamados.</p></div>${passosIos()}</div>`;
+    return '<div class="set-row"><div><h3>Instalar o app</h3><p>No Android, abra no Chrome e toque em <b>⋮</b> › <b>Instalar app</b>. No computador, use o ícone de instalar na barra de endereço.</p></div></div>';
   }
 
   /* Widgets */
@@ -1432,6 +1518,7 @@
     // Rede de segurança caso o tempo real caia.
     setInterval(refresh, isDemo ? 30e3 : 20e3);
     applyWakeLock();
+    setTimeout(avisoApp, 1500);
   }
 
   store

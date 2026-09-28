@@ -80,6 +80,16 @@ Sem as variáveis do Supabase, os dados ficam no navegador e sincronizam só ent
 6. Faça o deploy. No log deve aparecer `env.js gerado (Supabase: configurado)`.
 7. **Painel**: abra `/admin` e toque em **Criar conta**. A primeira conta define a senha da equipe; as próximas pessoas criam a conta delas com essa senha e depois entram só com o PIN. Preencha *Ajustes* e grave as plaquinhas em *Mesas* (NTAG213/215). Depois de testar, bloqueie as etiquetas contra regravação.
 
+## App do painel no celular
+
+O painel (`/admin`) pode ser instalado como app (PWA), com ícone na tela inicial e abertura em tela cheia.
+
+- **Android (Chrome)**: o painel mostra um convite para instalar. Também dá para instalar em *Ajustes › Aparelho › Instalar* ou pelo menu **⋮ › Instalar app**.
+- **iPhone/iPad**: no Safari, toque em **Compartilhar › Adicionar à Tela de Início**. Os passos também aparecem em *Ajustes › Aparelho*.
+- Exige HTTPS, que o EasyPanel já fornece. Os arquivos ficam em `admin/manifest.webmanifest`, `admin/sw.js` e `admin/icons/`.
+- O app sempre busca a versão mais nova quando há internet; sem internet, abre a última cópia salva.
+- As notificações de chamado aparecem enquanto o app está aberto ou em segundo plano recente. Aviso com o app totalmente fechado exige Web Push, que ainda não está implementado.
+
 ## Personalizar a aparência
 
 Cores e fontes estão nos tokens do topo de `assets/css/base.css` (`--cobalt` é a cor da placa, `--brass` a do sino).
