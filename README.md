@@ -30,9 +30,11 @@ Tudo o que muda no dia a dia do restaurante é editado no painel.
 
 **Plaquinhas genéricas.** Toda plaquinha sai de fábrica com um código único (ex.: `K7P2QXA`). O NFC e o QR têm o **mesmo link**, que aponta para a central de vocês: `https://tap.seudominio.com.br/t/K7P2QXA`. A plaquinha não tem número de mesa impresso.
 
-1. **Fábrica (vocês, na central):** gerar lote → imprimir os QR / exportar CSV → gravar e bloquear o NFC (Chrome no Android).
-2. **Venda (vocês, na central):** cadastrar o restaurante com o endereço do site dele e entregar as plaquinhas a ele.
-3. **Instalação (restaurante):** cola a plaquinha na mesa e encosta o celular. Aparece **Plaquinha nova** → *Sou da equipe · configurar* → PIN → escolhe a mesa. Daí em diante, a plaquinha abre direto aquela mesa.
+1. **Fábrica (vocês, na central):** gerar lote (baixa o PDF para a gráfica) → gravar e bloquear o NFC (Chrome no Android). As plaquinhas saem **sem dono**.
+2. **Implantação (vocês, na central):** cadastrar o restaurante com o endereço do site dele. A central gera o **código de ativação** do restaurante (ex.: `QB7K-2M9P`); passe para a equipe.
+3. **Instalação (restaurante):** cola a plaquinha na mesa e encosta o celular. Aparece **Plaquinha nova** → digita o código de ativação (só na primeira; o celular lembra o restaurante para as próximas) → entra com o PIN → escolhe a mesa. Daí em diante, a plaquinha abre direto aquela mesa.
+
+Não é preciso atribuir plaquinha a restaurante na central: a ativação faz isso. *Atribuir a um restaurante* continua disponível para casos manuais. O código de ativação pode ser trocado em *Restaurantes* (plaquinhas já ativadas não mudam), e errar o código 8 vezes em 10 minutos bloqueia aquela plaquinha por um tempo.
 
 O caminho de cada toque: `central/t/CODIGO` → site do restaurante `/?tag=CODIGO` → o banco do restaurante diz qual é a mesa. A central só sabe *de qual restaurante* é o código; *qual mesa* fica no banco do restaurante. Mudou o domínio do cliente? Troque o endereço na central e todas as plaquinhas dele continuam funcionando.
 
