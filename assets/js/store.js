@@ -7,6 +7,9 @@
  *   listCalls({ desde })         → chamados criados depois de `desde` (Date)
  *   getCall(id) / createCall(d) / updateCall(id, patch)
  *   listFeedback() / createFeedback(d) / updateFeedback(id, patch)
+ *   getSettings() / updateSettings(patch)
+ *                                → restaurante, wifi, cardápio, mesas e widgets (editados no painel)
+ *   uploadImage(blob, nome)      → URL pública da imagem (logo, capa)
  *   auth.*                       → login da equipe (apenas Supabase)
  */
 (function () {
@@ -15,6 +18,34 @@
     (crypto.randomUUID && crypto.randomUUID()) ||
     Date.now().toString(36) + Math.random().toString(36).slice(2);
   const nowIso = () => new Date().toISOString();
+
+  // Valores iniciais, usados enquanto a equipe ainda não salvou nada pelo painel.
+  const seed = () => ({
+    restaurante: cfg.restaurante,
+    wifi: cfg.wifi,
+    cardapio: cfg.cardapio,
+    mesas: cfg.mesasPadrao,
+    widgets: cfg.widgetsPadrao,
+    equipe: { pin: cfg.equipe.pin },
+  });
+  // Completa o que foi salvo com os valores iniciais (campos novos em versões futuras).
+  const mergeSettings = (saved) => {
+    const base = seed();
+    const out = { ...base };
+    for (const k of Object.keys(base)) {
+      const v = saved && saved[k];
+      if (v == null) continue;
+      out[k] = Array.isArray(v) || typeof v !== 'object' ? v : { ...base[k], ...v };
+    }
+    return out;
+  };
+  const blobToDataUrl = (blob) =>
+    new Promise((ok, fail) => {
+      const r = new FileReader();
+      r.onload = () => ok(r.result);
+      r.onerror = () => fail(r.error);
+      r.readAsDataURL(blob);
+    });
 
   /* ---------- Modo demonstração: localStorage + BroadcastChannel ---------- */
   function LocalAdapter() {
@@ -98,22 +129,26 @@
         return patchIn('comentarios', id, patch);
       },
       async reset() {
-        // Preserva a configuração (mesas e widgets) — só limpa chamados e comentários.
+        // Preserva a configuração do restaurante — só limpa chamados e comentários.
         write({ ...empty(), configuracao: read().configuracao });
       },
       async getSettings() {
-        const db = read();
-        if (db.configuracao) return db.configuracao;
-        const seed = { mesas: cfg.mesasPadrao, widgets: cfg.widgetsPadrao };
-        write({ ...db, configuracao: seed });
-        return seed;
+        return mergeSettings(read().configuracao);
       },
       async updateSettings(patch) {
         const db = read();
-        const atual = db.configuracao || { mesas: cfg.mesasPadrao, widgets: cfg.widgetsPadrao };
-        const novo = { ...atual, ...patch };
-        write({ ...db, configuracao: novo });
+        const novo = { ...mergeSettings(db.configuracao), ...patch };
+        try {
+          localStorage.setItem(KEY, JSON.stringify({ ...db, configuracao: novo }));
+        } catch {
+          throw new Error('Sem espaço para salvar. Use imagens menores.');
+        }
+        emit();
+        channel && channel.postMessage('changed');
         return novo;
+      },
+      async uploadImage(blob) {
+        return blobToDataUrl(blob);
       },
       auth: null,
     };
@@ -190,16 +225,20 @@
         must(await sb.from('comentarios').update(patch).eq('id', id));
       },
       async getSettings() {
-        const row = must(await sb.from('configuracao').select('mesas, widgets').eq('id', 'geral').maybeSingle());
-        if (row) return row;
-        const seed = { mesas: cfg.mesasPadrao, widgets: cfg.widgetsPadrao };
-        // Sem RLS de insert para anon nesta tabela: só a equipe semeia na primeira vez que abre o painel.
-        try { must(await sb.from('configuracao').upsert({ id: 'geral', ...seed })); } catch {}
-        return seed;
+        const row = must(await sb.from('configuracao').select('restaurante, wifi, cardapio, mesas, widgets').eq('id', 'geral').maybeSingle());
+        return mergeSettings(row);
       },
       async updateSettings(patch) {
-        must(await sb.from('configuracao').upsert({ id: 'geral', ...patch }));
+        // "equipe" (PIN) só existe no modo demonstração; com servidor o login é por e-mail.
+        const { equipe, ...campos } = patch;
+        must(await sb.from('configuracao').upsert({ id: 'geral', ...campos }));
         return this.getSettings();
+      },
+      async uploadImage(blob, nome) {
+        const ext = (blob.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
+        const path = `${nome}-${Date.now()}.${ext}`;
+        must(await sb.storage.from('marca').upload(path, blob, { contentType: blob.type, cacheControl: '31536000', upsert: false }));
+        return sb.storage.from('marca').getPublicUrl(path).data.publicUrl;
       },
       auth: {
         async session() {

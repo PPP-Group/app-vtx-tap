@@ -40,14 +40,22 @@ create table if not exists public.comentarios (
 create index if not exists comentarios_criado_em_idx on public.comentarios (criado_em desc);
 
 -- ---------------------------------------------------------------------------
--- Configuração do restaurante (mesas e widgets), editada pelo painel.
--- Uma única linha, id fixo 'geral'.
+-- Configuração do restaurante, editada pelo painel: dados da loja, Wi-Fi,
+-- cardápio, mesas e widgets. Uma única linha, id fixo 'geral'.
+-- Colunas vazias usam os valores iniciais de demonstração.
 -- ---------------------------------------------------------------------------
 create table if not exists public.configuracao (
-  id      text primary key default 'geral',
-  mesas   jsonb not null default '{"total": 24, "areas": []}'::jsonb,
-  widgets jsonb not null default '[]'::jsonb
+  id text primary key default 'geral'
 );
+alter table public.configuracao add column if not exists restaurante jsonb;
+alter table public.configuracao add column if not exists wifi        jsonb;
+alter table public.configuracao add column if not exists cardapio    jsonb;
+alter table public.configuracao add column if not exists mesas       jsonb;
+alter table public.configuracao add column if not exists widgets     jsonb;
+alter table public.configuracao alter column mesas drop not null;
+alter table public.configuracao alter column widgets drop not null;
+alter table public.configuracao alter column mesas drop default;
+alter table public.configuracao alter column widgets drop default;
 
 -- ---------------------------------------------------------------------------
 -- Gatilhos
@@ -136,8 +144,37 @@ create policy "equipe gerencia configuracao" on public.configuracao
   for all to authenticated using (true) with check (true);
 
 -- ---------------------------------------------------------------------------
+-- Imagens da marca (logo e foto de capa): leitura pública, envio só pela equipe.
+-- ---------------------------------------------------------------------------
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('marca', 'marca', true, 3145728, array['image/jpeg', 'image/png', 'image/webp'])
+on conflict (id) do update set public = true;
+
+drop policy if exists "equipe envia imagens da marca" on storage.objects;
+create policy "equipe envia imagens da marca" on storage.objects
+  for insert to authenticated with check (bucket_id = 'marca');
+
+drop policy if exists "equipe troca imagens da marca" on storage.objects;
+create policy "equipe troca imagens da marca" on storage.objects
+  for update to authenticated using (bucket_id = 'marca');
+
+drop policy if exists "equipe apaga imagens da marca" on storage.objects;
+create policy "equipe apaga imagens da marca" on storage.objects
+  for delete to authenticated using (bucket_id = 'marca');
+
+-- ---------------------------------------------------------------------------
 -- Tempo real
 -- ---------------------------------------------------------------------------
-alter publication supabase_realtime add table public.chamados;
-alter publication supabase_realtime add table public.comentarios;
-alter publication supabase_realtime add table public.configuracao;
+-- Pode rodar o arquivo de novo sem erro: só adiciona o que ainda não está publicado.
+do $$
+declare t text;
+begin
+  foreach t in array array['chamados', 'comentarios', 'configuracao'] loop
+    if not exists (
+      select 1 from pg_publication_tables
+      where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t
+    ) then
+      execute format('alter publication supabase_realtime add table public.%I', t);
+    end if;
+  end loop;
+end $$;

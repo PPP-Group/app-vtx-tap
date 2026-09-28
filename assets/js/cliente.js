@@ -1,16 +1,17 @@
 /* Página da mesa — tudo o que o cliente vê depois de encostar o celular na plaquinha. */
 (function () {
   const cfg = window.NFC_CONFIG;
-  const R = cfg.restaurante;
-  const { $, $$, esc, brl, pad, norm, icon, toast, copyText, qrSvg, clock, openSheet, closeSheet, closeAllSheets } = UI;
+  const { $, $$, esc, brl, pad, norm, icon, toast, copyText, qrSvg, clock, openSheet, closeSheet, closeAllSheets,
+    instagramHandle, instagramUrl, mapsUrl, googleReviewUrl, initials, safeUrl } = UI;
   const store = Store.create();
 
   const safeGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
   const safeSet = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} };
 
-  /* ---------------- Mesas e widgets: vêm do painel, não do config.js ---------------- */
-  // Valor provisório até o painel carregar; boot() reaplica o número da mesa com o total real.
-  let live = { mesas: cfg.mesasPadrao, widgets: cfg.widgetsPadrao };
+  /* ---------------- Dados do restaurante: vêm do painel da equipe ---------------- */
+  // Valor provisório até carregar; boot() reaplica tudo com os dados salvos.
+  let live = { restaurante: cfg.restaurante, wifi: cfg.wifi, cardapio: cfg.cardapio, mesas: cfg.mesasPadrao, widgets: cfg.widgetsPadrao };
+  let R = live.restaurante;
 
   const readMesaBruta = () => {
     const p = new URLSearchParams(location.search);
@@ -38,7 +39,16 @@
   /* ---------------- Topo ---------------- */
   function renderTop() {
     $('#brandName').textContent = R.nome;
+    $('#brandDesc').textContent = R.descricao || '';
     document.title = mesa ? `Mesa ${mesa} · ${R.nome}` : R.nome;
+    const logo = $('#heroLogo');
+    const logoUrl = safeUrl(R.logo);
+    logo.classList.toggle('is-initials', !logoUrl);
+    logo.innerHTML = logoUrl ? `<img src="${esc(logoUrl)}" alt="Logo ${esc(R.nome)}">` : `<span aria-hidden="true">${esc(initials(R.nome))}</span>`;
+    const cover = $('#heroCover');
+    const capaUrl = safeUrl(R.capa);
+    cover.classList.toggle('has-img', !!capaUrl);
+    cover.style.backgroundImage = capaUrl ? `url("${capaUrl.replace(/"/g, '%22')}")` : '';
     const h = new Date().getHours();
     $('#greeting').textContent = h < 5 ? 'Boa noite' : h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite';
     const st = openState();
@@ -68,17 +78,13 @@
   /* ---------------- Placa ---------------- */
   function renderPlate() {
     const el = $('#plate');
-    const rivets = '<span class="rivet r1"></span><span class="rivet r2"></span><span class="rivet r3"></span><span class="rivet r4"></span>';
     el.classList.toggle('plate--empty', !mesa);
-    el.innerHTML = `${rivets}
-      <div>
-        <div class="plate-label">Mesa</div>
-        <div class="plate-num">${mesa ? pad(mesa) : '?'}</div>
-      </div>
-      <div class="plate-meta">
-        ${mesa ? `<span class="plate-area">${esc(areaDe(mesa))}</span>` : ''}
-        <span class="plate-nfc">${icon('nfc')} ${mesa ? 'Conectado pela plaquinha' : 'Aguardando a mesa'}</span>
-      </div>`;
+    const area = mesa ? areaDe(mesa) : '';
+    el.setAttribute('aria-label', mesa ? `Mesa ${mesa}${area ? `, ${area}` : ''}` : 'Mesa não identificada');
+    el.title = area;
+    el.innerHTML = `<span class="rivet r1"></span><span class="rivet r2"></span>
+      <span class="plate-label" aria-hidden="true">Mesa</span>
+      <span class="plate-num" aria-hidden="true">${mesa ? pad(mesa) : '?'}</span>`;
     $('#tablePicker').hidden = !!mesa;
     $('#menuMesa').textContent = mesa ? `Mesa ${pad(mesa)}` : '';
   }
@@ -327,19 +333,17 @@
   });
 
   /* ---------------- Atalhos ---------------- */
-  const menuCount = cfg.cardapio.reduce((n, c) => n + c.itens.length, 0);
-  const googleUrl = R.googlePlaceId
-    ? `https://search.google.com/local/writereview?placeid=${encodeURIComponent(R.googlePlaceId)}`
-    : `https://www.google.com/search?q=${encodeURIComponent(R.nome + ' ' + R.endereco)}`;
+  const menuCount = () => live.cardapio.reduce((n, c) => n + c.itens.length, 0);
+  const googleUrl = () => googleReviewUrl(R);
 
   const TONES = ['cobalt', 'brass', 'leaf', 'pepper'];
   function widgetTile(w, i) {
     const tone = TONES[i % TONES.length];
     switch (w.tipo) {
       case 'cardapio': {
-        const cats = cfg.cardapio.map((c) => c.nome).join(' · ');
+        const cats = live.cardapio.map((c) => c.nome).join(' · ');
         return `<button type="button" class="tile tile--menu" data-open="sh-menu">
-          <span class="tile-menu-count">${icon('book')} ${menuCount} itens</span>
+          <span class="tile-menu-count">${icon('book')} ${menuCount()} itens</span>
           <div><h3>Cardápio</h3><p>${esc(cats)}</p></div>
           <span class="tile-go">${icon('arrow')}</span>
         </button>`;
@@ -347,7 +351,7 @@
       case 'wifi':
         return `<button type="button" class="tile" data-open="sh-wifi">
           <span class="tile-ico ico-${tone}">${icon('wifi')}</span>
-          <div><h3>Wi-Fi</h3><p>${esc(cfg.wifi.rede)}</p></div>
+          <div><h3>Wi-Fi</h3><p>${esc(live.wifi.rede)}</p></div>
         </button>`;
       case 'dividir':
         return `<button type="button" class="tile" data-open="sh-split">
@@ -355,7 +359,7 @@
           <div><h3>Dividir a conta</h3><p>Por pessoa, com serviço</p></div>
         </button>`;
       case 'google':
-        return `<a class="tile" href="${googleUrl}" target="_blank" rel="noopener">
+        return `<a class="tile" href="${esc(googleUrl())}" target="_blank" rel="noopener">
           <span class="tile-ico ico-${tone}">${icon('star')}</span>
           <span class="tile-go">${icon('external')}</span>
           <div><h3>Avaliar no Google</h3><p>Leva um minuto</p></div>
@@ -392,12 +396,12 @@
       return h ? `${h.abre} – ${h.fecha}` : 'Fechado';
     };
     $('#info').innerHTML = `
-      <a class="info-row" href="${esc(R.mapsUrl)}" target="_blank" rel="noopener">${icon('pin')}<span>${esc(R.endereco)}</span></a>
+      ${R.endereco ? `<a class="info-row" href="${esc(mapsUrl(R))}" target="_blank" rel="noopener">${icon('pin')}<span>${esc(R.endereco)}</span></a>` : ''}
       <details class="info-row-wrap">
         <summary class="info-row">${icon('clock')}<span>Hoje: ${hoursOf(today)} · ver semana</span></summary>
         <div class="hours">${[1, 2, 3, 4, 5, 6, 0].map((d) => `<span class="${d === today ? 'is-today' : ''}">${dias[d]}</span><span class="${d === today ? 'is-today' : ''}">${hoursOf(d)}</span>`).join('')}</div>
       </details>
-      ${R.instagram ? `<a class="info-row" href="https://instagram.com/${esc(R.instagram)}" target="_blank" rel="noopener">${icon('instagram')}<span>@${esc(R.instagram)}</span></a>` : ''}
+      ${instagramHandle(R.instagram) ? `<a class="info-row" href="${esc(instagramUrl(R.instagram))}" target="_blank" rel="noopener">${icon('instagram')}<span>@${esc(instagramHandle(R.instagram))}</span></a>` : ''}
       <p class="info-foot">Nenhum cadastro é necessário para usar esta página.</p>`;
   }
 
@@ -406,7 +410,7 @@
   let sel = {};
   const loadSel = () => { try { sel = JSON.parse(safeGet(selKey())) || {}; } catch { sel = {}; } };
   const saveSel = () => safeSet(selKey(), JSON.stringify(sel));
-  const allItems = () => cfg.cardapio.flatMap((c) => c.itens);
+  const allItems = () => live.cardapio.flatMap((c) => c.itens);
   const itemById = (id) => allItems().find((i) => i.id === id);
   const selLines = () => Object.entries(sel).filter(([, q]) => q > 0).map(([id, q]) => ({ item: itemById(id), q })).filter((l) => l.item);
   const selTotal = () => selLines().reduce((s, l) => s + l.item.preco * l.q, 0);
@@ -422,7 +426,7 @@
 
   function renderMenu() {
     const q = norm($('#menuSearch').value.trim());
-    const cats = cfg.cardapio
+    const cats = live.cardapio
       .map((c) => ({ ...c, itens: c.itens.filter((i) => !q || norm(`${i.nome} ${i.desc || ''}`).includes(q)) }))
       .filter((c) => c.itens.length);
 
@@ -565,7 +569,7 @@
 
   /* ---------------- Wi-Fi ---------------- */
   function renderWifi() {
-    const w = cfg.wifi;
+    const w = live.wifi;
     const open = w.seguranca === 'nopass' || !w.senha;
     const escWifi = (s) => String(s).replace(/([\\;,:"])/g, '\\$1');
     const qrData = `WIFI:T:${open ? 'nopass' : w.seguranca};S:${escWifi(w.rede)};${open ? '' : `P:${escWifi(w.senha)};`};`;
@@ -590,7 +594,7 @@
   $('#sh-wifi').addEventListener('sheet:open', renderWifi);
   $('#wifiBody').addEventListener('click', async (e) => {
     if (e.target.closest('#copyPass, #copyPass2')) {
-      const ok = await copyText(cfg.wifi.senha);
+      const ok = await copyText(live.wifi.senha);
       toast(ok ? 'Senha copiada.' : 'Não foi possível copiar. Selecione a senha e copie manualmente.', { tone: ok ? 'ok' : 'error' });
     }
   });
@@ -684,7 +688,7 @@
       <span class="done-mark">${icon('check')}</span>
       <h3>Recebido</h3>
       <p class="muted">${recent ? 'Você já enviou um comentário há pouco. Obrigado por contar como foi.' : 'Obrigado por contar como foi. Seu comentário chegou à gerência.'}</p>
-      <a class="btn btn-line" href="${googleUrl}" target="_blank" rel="noopener">${icon('star')} Avaliar também no Google</a>
+      <a class="btn btn-line" href="${esc(googleUrl())}" target="_blank" rel="noopener">${icon('star')} Avaliar também no Google</a>
       <button type="button" class="btn btn-quiet" data-close>Fechar</button>
     </div>`;
   }
@@ -767,7 +771,10 @@
       toast('Sem conexão com o restaurante. Algumas funções podem não responder.', { tone: 'error', ms: 5000 });
     })
     .then(() => store.getSettings().catch(() => live))
-    .then((s) => { if (s) live = s; })
+    .then((s) => {
+      if (s) live = s;
+      R = live.restaurante;
+    })
     .finally(() => {
       boot();
       renderTiles();

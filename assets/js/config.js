@@ -1,18 +1,21 @@
 /*
- * Configuração do restaurante.
- * Este é o único arquivo que precisa ser editado para adaptar o template
- * a um novo restaurante: nome, Wi-Fi, mesas, cardápio e backend.
+ * Dados iniciais de demonstração.
+ * Na primeira vez que o painel abre, estes valores são copiados para o banco;
+ * a partir daí tudo (restaurante, logo, capa, Wi-Fi, horários, cardápio, mesas
+ * e widgets) é editado pelo painel da equipe, em Ajustes e Mesas.
  */
+(function () {
+const env = window.NFC_ENV || {};
 window.NFC_CONFIG = {
   restaurante: {
     nome: 'Quintal Bistrô',
     descricao: 'Cozinha de brasa e horta',
     endereco: 'Rua dos Pinheiros, 412 — Pinheiros, São Paulo',
-    mapsUrl: 'https://maps.google.com/?q=Rua+dos+Pinheiros+412+Sao+Paulo',
     instagram: 'quintalbistro',
-    // Place ID do Google (https://developers.google.com/maps/documentation/places/web-service/place-id).
-    // Vazio = abre uma busca pelo nome do restaurante no Google.
-    googlePlaceId: '',
+    // Link "Pedir avaliações" do Perfil da Empresa no Google. Vazio = busca pelo nome.
+    googleUrl: '',
+    logo: '',
+    capa: '',
     // Taxa de serviço sugerida (%) usada na calculadora de divisão da conta.
     taxaServico: 10,
     // Dias: 0 = domingo ... 6 = sábado. Fechamento "00:00" ou depois da meia-noite é aceito.
@@ -29,9 +32,6 @@ window.NFC_CONFIG = {
     seguranca: 'WPA', // WPA | WEP | nopass
   },
 
-  // Valores iniciais de mesas e widgets. Depois do primeiro uso, a equipe
-  // edita isso pelo painel (abas "Mesas" e "Ajustes") — mexer aqui não
-  // muda mais nada, pois o painel passa a guardar sua própria cópia.
   mesasPadrao: {
     total: 24,
     areas: [
@@ -40,9 +40,7 @@ window.NFC_CONFIG = {
     ],
   },
 
-  // tipo: 'cardapio' | 'wifi' | 'dividir' | 'google' | 'comentario' (embutidos,
-  // só dá pra ativar/desativar e reordenar) ou 'link' (personalizado, a
-  // equipe pode adicionar quantos quiser com título, ícone e URL próprios).
+  // Embutidos (cardapio, wifi, dividir, google, comentario) ou 'link' personalizado.
   widgetsPadrao: [
     { id: 'cardapio', tipo: 'cardapio', label: 'Cardápio', ativo: true, embutido: true },
     { id: 'wifi', tipo: 'wifi', label: 'Wi-Fi', ativo: true, embutido: true },
@@ -62,18 +60,17 @@ window.NFC_CONFIG = {
   pagamentos: ['Pix', 'Cartão', 'Dinheiro'],
 
   equipe: {
-    // PIN do modo demonstração. Em produção use o modo Supabase (login com e-mail e senha).
+    // PIN inicial do modo demonstração (sem servidor). Com servidor, o login é por e-mail e senha.
     pin: '1234',
     // Minutos até o chamado ficar amarelo e vermelho no painel.
     alertaMin: [2, 5],
   },
 
+  // Vem das variáveis de ambiente do servidor (env.js). Sem elas: modo demonstração.
   backend: {
-    // 'local'    → demonstração: dados no navegador, sincroniza entre abas do mesmo aparelho.
-    // 'supabase' → produção: tempo real entre o celular do cliente e o painel da equipe.
-    tipo: 'local',
-    supabaseUrl: '',
-    supabaseAnonKey: '',
+    tipo: env.SUPABASE_URL && env.SUPABASE_ANON_KEY ? 'supabase' : 'local',
+    supabaseUrl: env.SUPABASE_URL || '',
+    supabaseAnonKey: env.SUPABASE_ANON_KEY || '',
   },
 
   tags: {
@@ -135,3 +132,4 @@ window.NFC_CONFIG = {
     },
   ],
 };
+})();
