@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0E1330">
+  <meta name="robots" content="noindex">
+  <title>Painel da equipe</title>
+  <link rel="icon" href="assets/img/icon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800;900&family=IBM+Plex+Mono:wght@500&family=Schibsted+Grotesk:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="assets/css/base.css">
+  <link rel="stylesheet" href="assets/css/admin.css">
+  <script>
+    try { var t = localStorage.getItem('nfc-tema'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+  </script>
+</head>
+<body class="painel">
+  <!-- Entrada -->
+  <div class="login" id="login" hidden>
+    <div class="login-card">
+      <div class="plate login-plate">
+        <span class="rivet r1"></span><span class="rivet r2"></span>
+        <span class="login-kicker">Painel da equipe</span>
+        <strong class="login-name" id="loginBrand"></strong>
+      </div>
+      <form class="stack" id="loginForm" novalidate></form>
+    </div>
+  </div>
+
+  <!-- Aplicativo -->
+  <div class="shell" id="shell" hidden>
+    <aside class="side" aria-label="Menu principal">
+      <div class="side-brand">
+        <span class="side-mark" aria-hidden="true"></span>
+        <div><strong id="sideBrand"></strong><small>Painel da equipe</small></div>
+      </div>
+      <nav class="side-nav" id="sideNav"></nav>
+      <div class="side-foot" id="sideFoot"></div>
+    </aside>
+
+    <header class="mtop">
+      <h1 class="mtop-title" id="mtopTitle"></h1>
+      <div class="mtop-actions" id="mtopActions"></div>
+    </header>
+
+    <main class="main" id="main" tabindex="-1"></main>
+
+    <nav class="tabbar" id="tabbar" aria-label="Menu principal"></nav>
+  </div>
+
+  <!-- Detalhe da mesa -->
+  <div class="sheet" id="sh-mesa" role="dialog" aria-modal="true" aria-labelledby="mesaTitle" hidden>
+    <div class="sheet-backdrop" data-close></div>
+    <div class="sheet-panel" tabindex="-1">
+      <div class="sheet-grip"></div>
+      <header class="sheet-head"><h2 id="mesaTitle">Mesa</h2><button class="icon-btn" type="button" data-close aria-label="Fechar"></button></header>
+      <div class="sheet-body" id="mesaBody"></div>
+    </div>
+  </div>
+
+  <!-- QR de uma mesa -->
+  <div class="sheet" id="sh-qr" role="dialog" aria-modal="true" aria-labelledby="qrTitle" hidden>
+    <div class="sheet-backdrop" data-close></div>
+    <div class="sheet-panel" tabindex="-1">
+      <div class="sheet-grip"></div>
+      <header class="sheet-head"><h2 id="qrTitle">QR da mesa</h2><button class="icon-btn" type="button" data-close aria-label="Fechar"></button></header>
+      <div class="sheet-body" id="qrBody"></div>
+    </div>
+  </div>
+
+  <div class="print-area" id="printArea" aria-hidden="true"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js" defer></script>
+  <script src="assets/js/config.js" defer></script>
+  <script src="assets/js/store.js" defer></script>
+  <script src="assets/js/ui.js" defer></script>
+  <script src="assets/js/admin.js" defer></script>
+</body>
+</html>

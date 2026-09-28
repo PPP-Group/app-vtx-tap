@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#F2F4F8" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#090D20" media="(prefers-color-scheme: dark)">
+  <meta name="description" content="Chame o garçom, veja o cardápio e conecte-se ao Wi-Fi direto da sua mesa.">
+  <title>Sua mesa</title>
+  <link rel="icon" href="assets/img/icon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800;900&family=IBM+Plex+Mono:wght@500&family=Schibsted+Grotesk:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="assets/css/base.css">
+  <link rel="stylesheet" href="assets/css/cliente.css">
+  <script>
+    (function () {
+      var t = 'light';
+      try { t = localStorage.getItem('nfc-tema') || 'light'; } catch (e) {}
+      document.documentElement.setAttribute('data-theme', t);
+    })();
+  </script>
+</head>
+<body class="cliente">
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-name" id="brandName"></span>
+        <span class="brand-sub" id="greeting"></span>
+      </div>
+      <span class="open-pill" id="openPill"></span>
+      <button class="icon-btn theme-toggle" id="themeToggle" type="button" aria-label="Alternar modo claro/escuro"></button>
+    </header>
+
+    <section class="plate-stage" aria-label="Sua mesa">
+      <div class="plate plate--hero" id="plate"></div>
+      <form class="table-picker" id="tablePicker" hidden>
+        <p><strong>Encoste o celular na plaquinha da mesa</strong> ou digite o número dela.</p>
+        <div class="table-picker-row">
+          <label class="sr-only" for="tableInput">Número da mesa</label>
+          <input class="input" id="tableInput" type="number" inputmode="numeric" min="1" placeholder="Nº da mesa" required>
+          <button class="btn btn-primary" type="submit">Continuar</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="call" id="call" aria-labelledby="callTitle">
+      <div class="call-panel" id="callPanel">
+        <div class="call-head">
+          <h1 id="callTitle">Precisa de algo?</h1>
+          <p class="muted">Escolha o motivo e segure o sino. A equipe recebe na hora.</p>
+        </div>
+        <div class="reasons" id="reasons" role="radiogroup" aria-label="Motivo do chamado"></div>
+        <div class="reason-extra" id="reasonExtra"></div>
+        <div class="bell-zone">
+          <button class="bell" id="bell" type="button" aria-describedby="bellHint">
+            <svg class="bell-ring" viewBox="0 0 120 120" aria-hidden="true">
+              <circle class="bell-track" cx="60" cy="60" r="56"/>
+              <circle class="bell-prog" id="bellProg" cx="60" cy="60" r="56" pathLength="100"/>
+            </svg>
+            <span class="bell-face"></span>
+            <span class="bell-waves" aria-hidden="true"><i></i><i></i><i></i></span>
+          </button>
+          <div class="bell-label">
+            <strong id="bellText">Chamar garçom</strong>
+            <span id="bellHint">Segure o sino por 1 segundo</span>
+          </div>
+        </div>
+      </div>
+      <div class="call-status" id="callStatus" hidden aria-live="polite"></div>
+    </section>
+
+    <nav class="tiles" id="tiles" aria-label="Serviços"></nav>
+
+    <footer class="info" id="info"></footer>
+  </div>
+
+  <!-- Cardápio -->
+  <div class="sheet sheet--full" id="sh-menu" role="dialog" aria-modal="true" aria-labelledby="menuTitle" hidden>
+    <div class="sheet-backdrop" data-close></div>
+    <div class="sheet-panel" tabindex="-1">
+      <div class="menu-head">
+        <div class="menu-bar">
+          <button class="icon-btn" type="button" data-close aria-label="Voltar"></button>
+          <h2 id="menuTitle">Cardápio</h2>
+          <span class="menu-mesa" id="menuMesa"></span>
+        </div>
+        <label class="menu-search">
+          <span class="sr-only">Buscar no cardápio</span>
+          <span class="menu-search-icon"></span>
+          <input class="input" id="menuSearch" type="search" placeholder="Buscar prato ou bebida" autocomplete="off" enterkeyhint="search">
+        </label>
+        <div class="cat-tabs" id="catTabs" role="tablist" aria-label="Categorias"></div>
+      </div>
+      <div class="sheet-body menu-body" id="menuBody"></div>
+      <div class="sel-bar" id="selBar" hidden></div>
+    </div>
+  </div>
+
+  <!-- Minha lista -->
+  <div class="sheet" id="sh-sel" role="dialog" aria-modal="true" aria-labelledby="selTitle" hidden>
+    <div class="sheet-backdrop" data-close></div>
+    <div class="sheet-panel" tabindex="-1">
+      <div class="sheet-grip"></div>
+      <header class="sheet-head"><h2 id="selTitle">Sua lista</h2><button class="icon-btn" type="button" data-close aria-label="Fechar"></button></header>
+      <div class="sheet-body" id="selBody"></div>
+    </div>
+  </div>
+
+  <!-- Wi-Fi -->
+  <div class="sheet" id="sh-wifi" role="dialog" aria-modal="true" aria-labelledby="wifiTitle" hidden>
+    <div class="sheet-backdrop" data-close></div>
+    <div class="sheet-panel" tabindex="-1">
+      <div class="sheet-grip"></div>
+      <header class="sheet-head"><h2 id="wifiTitle">Wi-Fi</h2><button class="icon-btn" type="button" data-close aria-label="Fechar"></button></header>
+      <div class="sheet-body" id="wifiBody"></div>
+    </div>
+  </div>
+
+  <!-- Dividir a conta -->
+  <div class="sheet" id="sh-split" role="dialog" aria-modal="true" aria-labelledby="splitTitle" hidden>
+    <div class="sheet-backdrop" data-close></div>
+    <div class="sheet-panel" tabindex="-1">
+      <div class="sheet-grip"></div>
+      <header class="sheet-head"><h2 id="splitTitle">Dividir a conta</h2><button class="icon-btn" type="button" data-close aria-label="Fechar"></button></header>
+      <div class="sheet-body" id="splitBody"></div>
+    </div>
+  </div>
+
+  <!-- Comentário anônimo -->
+  <div class="sheet" id="sh-feedback" role="dialog" aria-modal="true" aria-labelledby="fbTitle" hidden>
+    <div class="sheet-backdrop" data-close></div>
+    <div class="sheet-panel" tabindex="-1">
+      <div class="sheet-grip"></div>
+      <header class="sheet-head"><h2 id="fbTitle">Comentário anônimo</h2><button class="icon-btn" type="button" data-close aria-label="Fechar"></button></header>
+      <div class="sheet-body" id="fbBody"></div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js" defer></script>
+  <script src="assets/js/config.js" defer></script>
+  <script src="assets/js/store.js" defer></script>
+  <script src="assets/js/ui.js" defer></script>
+  <script src="assets/js/cliente.js" defer></script>
+</body>
+</html>
