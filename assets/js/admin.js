@@ -379,7 +379,7 @@
       ? `<div class="empty"><span class="empty-ico">${icon('bell')}</span><h2>Nenhuma mesa chamando</h2>
           <p>Quando um cliente segurar o sino na página da mesa, você ouve um aviso e o chamado aparece aqui.</p>
           ${isDemo ? `<div class="vhead-actions"><button type="button" class="btn btn-cobalt" data-demo="simular">${icon('sparkle')} Simular um chamado</button>
-            <a class="btn btn-line" href="index.html?mesa=7" target="_blank" rel="noopener">${icon('external')} Abrir a mesa 7</a></div>` : ''}</div>`
+            <a class="btn btn-line" href="/?mesa=7" target="_blank" rel="noopener">${icon('external')} Abrir a mesa 7</a></div>` : ''}</div>`
       : `<div class="empty"><span class="empty-ico">${icon('inbox')}</span><h2>Nada concluído ainda</h2><p>Os chamados resolvidos nas últimas 16 horas aparecem aqui.</p></div>`;
 
     return `
@@ -484,7 +484,9 @@
   }
 
   /* ---------- Plaquinhas ---------- */
-  const defaultBase = () => new URL('index.html', location.href).href.split('#')[0];
+  // Página da mesa (cliente) fica na raiz do site, sem extensão na URL —
+  // não em 'index.html' relativo, pois o painel agora mora em /admin/.
+  const defaultBase = () => new URL('/', location.origin).href;
   const baseUrl = () => get('nfc-base-url') || defaultBase();
   const tableUrl = (n) => {
     const u = new URL(baseUrl(), location.href);
