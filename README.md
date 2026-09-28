@@ -11,7 +11,7 @@ O cliente encosta o celular na plaquinha da mesa e abre uma página com:
 - **Avaliar no Google** (link direto para a avaliação).
 - **Comentário anônimo**: estrelas, marcações e texto, sem pedir nome, e-mail ou telefone.
 
-O **painel da equipe** (`admin.html`) funciona no celular (abas embaixo) e no desktop (menu lateral):
+O **painel da equipe** (`/admin`) funciona no celular (abas embaixo) e no desktop (menu lateral):
 
 - **Chamados** em tempo real, com sino sonoro, vibração, notificação do sistema e cronômetro que fica amarelo e vermelho conforme o tempo passa.
 - **Salão**: mapa das mesas com quem está chamando.
@@ -22,8 +22,8 @@ O **painel da equipe** (`admin.html`) funciona no celular (abas embaixo) e no de
 ## Estrutura
 
 ```
-index.html              página da mesa (cliente)  →  index.html?mesa=12
-admin.html              painel da equipe
+index.html              página da mesa (cliente)  →  seusite.com/?mesa=12
+admin/index.html        painel da equipe          →  seusite.com/admin
 assets/js/config.js     ← edite aqui: nome, Wi-Fi, cardápio, backend (ponto de partida)
 assets/js/store.js      dados: modo demonstração (local) ou Supabase — também guarda mesas e widgets
 assets/js/ui.js         utilitários, ícones e folhas deslizantes
@@ -33,7 +33,7 @@ assets/css/             base.css (tokens e componentes), cliente.css, admin.css
 supabase/schema.sql     tabelas, segurança e tempo real para produção
 ```
 
-Não há etapa de build: são arquivos estáticos.
+Não há etapa de build: são arquivos estáticos. O painel mora em `admin/index.html` (não `admin.html`) de propósito: assim a URL fica `/admin`, sem extensão nenhuma — todo host estático (Netlify, Vercel, Cloudflare Pages, EasyPanel, nginx…) serve `index.html` automaticamente quando a pasta é acessada, sem precisar configurar nada.
 
 ## Testar agora (modo demonstração)
 
@@ -41,8 +41,8 @@ Não há etapa de build: são arquivos estáticos.
 python -m http.server 5500
 ```
 
-1. Abra `http://localhost:5500/admin.html`, entre com seu nome e o PIN `1234`.
-2. Em outra aba, abra `http://localhost:5500/index.html?mesa=12`.
+1. Abra `http://localhost:5500/admin`, entre com seu nome e o PIN `1234`.
+2. Em outra aba, abra `http://localhost:5500/?mesa=12`.
 3. Segure o sino na aba da mesa: o chamado aparece no painel com som. Toque em “Estou indo” e veja a mesa atualizar.
 
 No modo demonstração os dados ficam no navegador e sincronizam só entre abas do mesmo aparelho. O painel tem um botão “Simular chamado” para testes.
