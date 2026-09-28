@@ -48,6 +48,7 @@
     trash: '<path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
     list: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
     sparkle: '<path d="M12 3l1.9 5.8L20 11l-6.1 2.2L12 19l-1.9-5.8L4 11l6.1-2.2z"/>',
+    upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/>',
     chevronUp: '<path d="m6 15 6-6 6 6"/>',
     chevronDown: '<path d="m6 9 6 6 6-6"/>',
     edit: '<path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/>',
@@ -236,8 +237,24 @@
     window.addEventListener('pointercancel', up);
   });
 
+  /* Links do restaurante, montados a partir do que a equipe digita no painel. */
+  const instagramHandle = (v) =>
+    String(v || '').trim().replace(/^https?:\/\/(www\.)?instagram\.com\//i, '').replace(/^@/, '').replace(/[/?#].*$/, '');
+  const instagramUrl = (v) => (instagramHandle(v) ? `https://instagram.com/${encodeURIComponent(instagramHandle(v))}` : '');
+  const mapsUrl = (r) =>
+    r.endereco ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${r.nome || ''} ${r.endereco}`.trim())}` : '';
+  const googleReviewUrl = (r) => {
+    if (r.googleUrl) return r.googleUrl;
+    if (r.googlePlaceId) return `https://search.google.com/local/writereview?placeid=${encodeURIComponent(r.googlePlaceId)}`;
+    return `https://www.google.com/search?q=${encodeURIComponent(`${r.nome || ''} ${r.endereco || ''}`.trim())}`;
+  };
+  const initials = (nome) =>
+    String(nome || '?').trim().split(/\s+/).filter((w) => w.length > 2 || /^[A-ZÀ-Ú]/.test(w)).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '?';
+  const safeUrl = (u) => (/^(https?:|data:image\/)/i.test(String(u || '')) ? u : '');
+
   window.UI = {
     $, $$, esc, brl, pad, norm, icon, toast, copyText, qrSvg,
+    instagramHandle, instagramUrl, mapsUrl, googleReviewUrl, initials, safeUrl,
     clock, ago, hhmm, secondsSince,
     openSheet, closeSheet, closeAllSheets,
     get sheetDepth() {

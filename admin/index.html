@@ -13,7 +13,9 @@
   <link rel="stylesheet" href="../assets/css/base.css">
   <link rel="stylesheet" href="../assets/css/admin.css">
   <script>
-    try { var t = localStorage.getItem('nfc-tema'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+    var t = 'light';
+    try { t = localStorage.getItem('nfc-tema-painel') || 'light'; } catch (e) {}
+    if (t !== 'auto') document.documentElement.dataset.theme = t;
   </script>
 </head>
 <body class="painel">
@@ -70,9 +72,20 @@
     </div>
   </div>
 
+  <!-- Prato do cardápio -->
+  <div class="sheet" id="sh-item" role="dialog" aria-modal="true" aria-labelledby="itemTitle" hidden>
+    <div class="sheet-backdrop" data-close></div>
+    <div class="sheet-panel" tabindex="-1">
+      <div class="sheet-grip"></div>
+      <header class="sheet-head"><h2 id="itemTitle">Prato</h2><button class="icon-btn" type="button" data-close aria-label="Fechar"></button></header>
+      <div class="sheet-body" id="itemBody"></div>
+    </div>
+  </div>
+
   <div class="print-area" id="printArea" aria-hidden="true"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js" defer></script>
+  <script src="../env.js" defer></script>
   <script src="../assets/js/config.js" defer></script>
   <script src="../assets/js/store.js" defer></script>
   <script src="../assets/js/ui.js" defer></script>

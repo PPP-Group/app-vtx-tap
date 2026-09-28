@@ -23,17 +23,25 @@
 </head>
 <body class="cliente">
   <div class="app">
-    <header class="topbar">
-      <div class="brand">
-        <span class="brand-name" id="brandName"></span>
-        <span class="brand-sub" id="greeting"></span>
+    <header class="hero">
+      <div class="hero-cover" id="heroCover">
+        <button class="hero-theme" id="themeToggle" type="button" aria-label="Alternar modo claro/escuro"></button>
       </div>
-      <span class="open-pill" id="openPill"></span>
-      <button class="icon-btn theme-toggle" id="themeToggle" type="button" aria-label="Alternar modo claro/escuro"></button>
+      <div class="hero-row">
+        <div class="hero-logo" id="heroLogo"></div>
+        <div class="hero-id">
+          <h1 class="hero-name" id="brandName"></h1>
+          <p class="hero-desc" id="brandDesc"></p>
+        </div>
+        <div class="plate hero-plate" id="plate" role="img"></div>
+      </div>
+      <div class="hero-status">
+        <span class="hero-greeting" id="greeting"></span>
+        <span class="open-pill" id="openPill"></span>
+      </div>
     </header>
 
     <section class="plate-stage" aria-label="Sua mesa">
-      <div class="plate plate--hero" id="plate"></div>
       <form class="table-picker" id="tablePicker" hidden>
         <p><strong>Encoste o celular na plaquinha da mesa</strong> ou digite o número dela.</p>
         <div class="table-picker-row">
@@ -47,7 +55,7 @@
     <section class="call" id="call" aria-labelledby="callTitle">
       <div class="call-panel" id="callPanel">
         <div class="call-head">
-          <h1 id="callTitle">Precisa de algo?</h1>
+          <h2 id="callTitle">Precisa de algo?</h2>
           <p class="muted">Escolha o motivo e segure o sino. A equipe recebe na hora.</p>
         </div>
         <div class="reasons" id="reasons" role="radiogroup" aria-label="Motivo do chamado"></div>
@@ -138,6 +146,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js" defer></script>
+  <script src="env.js" defer></script>
   <script src="assets/js/config.js" defer></script>
   <script src="assets/js/store.js" defer></script>
   <script src="assets/js/ui.js" defer></script>
