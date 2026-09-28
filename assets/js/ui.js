@@ -254,7 +254,19 @@
     String(nome || '?').trim().split(/\s+/).filter((w) => w.length > 2 || /^[A-ZÀ-Ú]/.test(w)).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '?';
   const safeUrl = (u) => (/^(https?:|data:image\/)/i.test(String(u || '')) ? u : '');
 
+  // Endereço sem restaurante (subdomínio inexistente ou desativado).
+  function semRestaurante() {
+    document.documentElement.classList.remove('is-locked');
+    document.body.className = 'sem-restaurante';
+    document.body.innerHTML = `<main class="sem-rest">
+      <span class="sem-rest-ico">${icon('pin')}</span>
+      <h1>Restaurante não encontrado</h1>
+      <p>Confira o endereço. Se você encostou o celular numa plaquinha ou leu o QR, tente de novo.</p>
+    </main>`;
+  }
+
   window.UI = {
+    semRestaurante,
     $, $$, esc, brl, pad, norm, icon, toast, copyText, qrSvg,
     instagramHandle, instagramUrl, mapsUrl, googleReviewUrl, initials, safeUrl,
     clock, ago, hhmm, secondsSince,

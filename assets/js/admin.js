@@ -91,7 +91,7 @@
            <label class="field"><span>Crie seu PIN</span><input class="input pin-input" id="lgPinNovo" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="new-password" required>
              <small class="help">De 4 a 8 números. É com ele que você entra daqui para frente.</small></label>
            <label class="field"><span>${temSenhaEquipe ? 'Senha da equipe' : 'Crie a senha da equipe'}</span><input class="input" id="lgSenha" type="password" autocomplete="${temSenhaEquipe ? 'off' : 'new-password'}" minlength="6" required>
-             <small class="help">${temSenhaEquipe ? 'Peça para a gerência. É a mesma para toda a equipe.' : 'Primeira conta do restaurante: esta senha passa a ser a da equipe. Guarde e compartilhe só com quem trabalha aqui.'}</small></label>
+             <small class="help">${temSenhaEquipe ? 'Peça para a gerência. É a mesma para toda a equipe.' : 'Demonstração: esta senha passa a ser a da equipe neste navegador.'}</small></label>
            <p class="form-error" id="lgErr" role="alert">${esc(msg)}</p>
            <button class="btn btn-cobalt btn-block" type="submit">Criar conta e entrar</button>`
         : `<label class="field"><span>Seu PIN</span><input class="input pin-input" id="lgPin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="current-password" required></label>
@@ -743,6 +743,7 @@
     const semPlaca = [];
     for (let n = 1; n <= total; n++) if (!placasDa(n).length) semPlaca.push(n);
     const foraDoTotal = S.etiquetas.filter((e) => e.mesa > total);
+    const semMesa = S.etiquetas.filter((e) => !e.mesa);
     const areas = S.settings.mesas.areas;
     const mesasCfg = `<div class="panel stack" id="mesasCfg">
         <h2>Quantidade de mesas</h2>
@@ -779,7 +780,8 @@
           <ol>
             <li>Cole a plaquinha na mesa.</li>
             <li>Encoste o celular nela (ou aponte a câmera para o QR). Na primeira vez aparece <strong>Plaquinha nova</strong>.</li>
-            <li>Toque em <strong>Sou da equipe · configurar</strong>, entre com seu PIN e escolha o número da mesa.</li>
+            <li>Digite o <strong>código de ativação</strong> do restaurante (só na primeira plaquinha: o celular lembra para as próximas).</li>
+            <li>Entre com seu PIN e escolha o número da mesa.</li>
             <li>Pronto: daí em diante, a plaquinha abre direto a página dessa mesa.</li>
           </ol>
           <small class="help">As plaquinhas já vêm gravadas e bloqueadas. Não é preciso app nenhum para configurar.</small>
@@ -794,6 +796,8 @@
         </form>
       </div>
       <div class="toolbar"><p class="muted" style="font-size:14px">${S.etiquetas.length} ${S.etiquetas.length === 1 ? 'plaquinha ligada' : 'plaquinhas ligadas'}${semPlaca.length ? ` · ${semPlaca.length} ${semPlaca.length === 1 ? 'mesa sem plaquinha' : 'mesas sem plaquinha'}` : ''}</p></div>
+      ${semMesa.length ? `<div class="note">${icon('nfc')}<span><b>${semMesa.length === 1 ? 'Plaquinha ativada sem mesa' : `${semMesa.length} plaquinhas ativadas sem mesa`}:</b>
+        ${semMesa.map((e) => `<button type="button" class="link-cod mono" data-placa="${esc(e.codigo)}">${esc(e.codigo)}</button>`).join(' ')} · toque para escolher a mesa.</span></div>` : ''}
       ${foraDoTotal.length ? `<p class="note">${icon('msg')}<span>${foraDoTotal.length === 1 ? 'Uma plaquinha está ligada' : `${foraDoTotal.length} plaquinhas estão ligadas`} a mesa acima do total (${foraDoTotal.map((e) => `${esc(e.codigo)} → ${e.mesa}`).join(', ')}). Aumente o total ou altere a plaquinha.</span></p>` : ''}
       <ul class="plist">${linhas.join('')}</ul>`;
   }
@@ -1697,11 +1701,16 @@
       try {
         temSenhaEquipe = (await store.auth.estado()).temSenha;
       } catch {}
-      if (!temSenhaEquipe) S.loginModo = 'criar';
-      showLogin();
+      // Demonstração: a primeira conta define a senha. Produção: a senha vem da central.
+      if (!temSenhaEquipe && isDemo) S.loginModo = 'criar';
+      showLogin(temSenhaEquipe || isDemo ? '' : 'A senha da equipe deste restaurante ainda não foi definida. Fale com a Vortex.');
     })
     .catch((e) => {
       console.error(e);
+      if (e.code === 'SEM_RESTAURANTE') return UI.semRestaurante();
       showLogin('Não foi possível conectar ao servidor. Verifique a internet e recarregue.');
+      // Sem o restaurante carregado não dá para entrar: troca o botão por "Recarregar".
+      const b = $('#loginForm [type=submit]');
+      if (b) { b.type = 'button'; b.textContent = 'Recarregar'; b.onclick = () => location.reload(); }
     });
 })();

@@ -7,7 +7,7 @@
  */
 (function () {
   const { $, $$, esc, icon, toast, qrSvg, ago, openSheet, closeSheet, copyText } = UI;
-  const env = window.CENTRAL_ENV || {};
+  const env = window.CENTRAL_ENV || window.NFC_ENV || {};
   const online = !!(env.SUPABASE_URL && env.SUPABASE_ANON_KEY);
   const api = online ? supabaseApi() : localApi();
 
@@ -27,8 +27,18 @@
   };
 
   // Local (python -m http.server na raiz): /central/t.html?c=CODIGO. Publicado: /t/CODIGO.
-  const local = location.pathname.startsWith('/central/');
-  const tagUrl = (c) => (local ? new URL(`/central/t.html?c=${c}`, location.origin).href : new URL(`/t/${c}`, location.origin).href);
+  // Link gravado nas plaquinhas: sempre o endereço fixo da central (CENTRAL_HOST),
+  // mesmo que a central esteja aberta por outro endereço. Sem ele (teste local):
+  // o redirecionador deste mesmo servidor.
+  const BASE = String(env.BASE_DOMAIN || '').toLowerCase();
+  const tagUrl = (c) => (env.CENTRAL_HOST
+    ? `https://${env.CENTRAL_HOST}/t/${c}`
+    : new URL(`/central/t.html?c=${c}`, location.origin).href);
+  // Endereço do restaurante: subdomínio do domínio base (ou ?r= no teste local).
+  const siteDe = (r) => (BASE ? `https://${r.slug}.${BASE}/` : new URL(`/?r=${r.slug}`, location.origin).href);
+  const siteCurto = (r) => siteDe(r).replace(/^https?:\/\//, '').replace(/\/$/, '');
+  const slugOk = (v) => /^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$/.test(v) && !['tap', 'www', 'admin', 'api', 'app', 'central', 'mail', 'ftp', 'painel'].includes(v);
+  const paraSlug = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
   const restDe = (id) => S.rests.find((r) => r.id === id);
   const nomeArq = (t) => String(t || 'plaquinhas').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9-]+/g, '-').replace(/^-|-$/g, '').toLowerCase() || 'plaquinhas';
   // PDF para a gráfica: uma plaquinha de 12 × 6 cm por página (central/placa.js).
@@ -38,10 +48,15 @@
     await Placa.baixarPdf(lista.map((c) => ({ codigo: c, url: tagUrl(c) })), `${nomeArq(titulo)}.pdf`);
   }
   const fmtAtivacao = (c) => { c = String(c || ''); return c.length > 4 ? `${c.slice(0, 4)}-${c.slice(4)}` : c; };
-  function mostrarAtivacao(r, novo) {
+  function mostrarAtivacao(r, novo, senha) {
     $('#shTitle').textContent = novo ? 'Restaurante criado' : 'Código de ativação';
     $('#shBody').innerHTML = `<div class="stack ativ-sheet">
-      <p>Passe este código para a equipe de <b>${esc(r.nome)}</b>:</p>
+      ${novo ? `<dl class="ativ-dados">
+        <dt>Endereço</dt><dd><a class="mono" href="${esc(siteDe(r))}" target="_blank" rel="noopener">${esc(siteCurto(r))}</a></dd>
+        <dt>Painel da equipe</dt><dd class="mono">${esc(siteCurto(r))}/admin</dd>
+        ${senha ? `<dt>Senha da equipe</dt><dd class="mono">${esc(senha)}</dd>` : ''}
+      </dl>` : ''}
+      <p>Código de ativação das plaquinhas de <b>${esc(r.nome)}</b>:</p>
       <b class="ativ-grande mono">${fmtAtivacao(r.codigo_ativacao)}</b>
       <ol class="ativ-passos">
         <li>Cole a plaquinha na mesa e encoste o celular nela (ou leia o QR).</li>
@@ -73,8 +88,9 @@
       async entrar() {},
       async sair() {},
       async listRestaurantes() { return read().restaurantes; },
-      async salvarRestaurante(r) {
+      async salvarRestaurante({ senha, ...r }) {
         const db = read();
+        if (db.restaurantes.some((x) => x.slug === r.slug && x.id !== r.id)) throw new Error('Esse subdomínio já está em uso. Escolha outro.');
         let salvo;
         if (r.id) db.restaurantes = db.restaurantes.map((x) => (x.id === r.id ? (salvo = { ...x, ...r }) : x));
         else db.restaurantes.push((salvo = { ...r, id: id(), codigo_ativacao: novoCodigo() + novoCodigo()[0], criado_em: new Date().toISOString() }));
@@ -140,7 +156,7 @@
           const ult = tags.map((e) => e.ultima_leitura).filter(Boolean).sort().pop() || null;
           return {
             id: r.id, nome: r.nome, ativo: r.ativo !== false,
-            n: soma(doR.filter(noPer)), anterior: soma(doR.filter(noAnt)),
+            n: soma(doR.filter(noPer)), anterior: soma(doR.filter(noAnt)), chamados: 0, resposta_s: null,
             etiquetas: tags.length, lidas: new Set(doR.filter(noPer).map((l) => l.codigo)).size,
             nunca_lidas: tags.filter((e) => !e.leituras).length, ultima: ult,
           };
@@ -177,10 +193,12 @@
       async listRestaurantes() {
         return must(await sb.from('restaurantes').select('*').order('nome'));
       },
-      async salvarRestaurante(r) {
-        const { id, ...dados } = r;
-        if (id) return must(await sb.from('restaurantes').update(dados).eq('id', id).select().single());
-        return must(await sb.from('restaurantes').insert(dados).select().single());
+      async salvarRestaurante({ id, senha, ...dados }) {
+        if (!id) return must(await sb.rpc('criar_restaurante', { p_nome: dados.nome, p_slug: dados.slug, p_senha_equipe: senha }));
+        const { data, error } = await sb.from('restaurantes').update(dados).eq('id', id).select().single();
+        if (error) throw error.code === '23505' ? new Error('Esse subdomínio já está em uso. Escolha outro.') : error;
+        if (senha) must(await sb.rpc('central_senha_equipe', { p_restaurante: id, p_senha: senha }));
+        return data;
       },
       async trocarCodigo(rid) {
         return must(await sb.rpc('trocar_codigo_ativacao', { p_restaurante: rid }));
@@ -313,13 +331,12 @@
     const ativos = rs.filter((r) => r.n > 0).length;
     const entregues = S.tags.filter((t) => t.restaurante_id);
     const nunca = entregues.filter((t) => !t.leituras).length;
-    const media = m.total / m.por_dia.length;
     const parados = rs.filter((r) => r.ativo && r.etiquetas && (diasSem(r.ultima) === null || diasSem(r.ultima) >= 7));
     return `<div class="vhead"><div><h1>Visão geral</h1><p>Leituras são os toques no NFC e as leituras do QR que passam pela central. Chamados, cardápio e comentários ficam no sistema de cada restaurante.</p></div>
         <div class="seg" role="radiogroup" aria-label="Período">${[7, 30, 90].map((d) => `<button type="button" role="radio" aria-checked="${S.dias === d}" data-dias="${d}">${d} dias</button>`).join('')}</div></div>
       <dl class="strip">
         <div><dt>Leituras em ${S.dias} dias</dt><dd>${num(m.total)} ${variacao(m.total, m.total_anterior)}</dd></div>
-        <div><dt>Média por dia</dt><dd>${media < 10 ? media.toFixed(1).replace('.', ',') : num(Math.round(media))}</dd></div>
+        <div><dt>Chamados no período</dt><dd>${num(m.chamados || 0)}</dd></div>
         <div><dt>Restaurantes com leitura</dt><dd>${ativos}<small>/${rs.length}</small></dd></div>
         <div><dt>Ativadas nunca lidas</dt><dd>${nunca}<small>/${entregues.length}</small></dd></div>
       </dl>
@@ -330,7 +347,7 @@
       ${parados.length ? `<p class="note">${icon('msg')}<span><b>Atenção:</b> ${parados.map((r) => esc(r.nome)).join(', ')} ${parados.length === 1 ? 'está' : 'estão'} sem nenhuma leitura há 7 dias ou mais. Plaquinhas não instaladas, retiradas ou site fora do ar?</span></p>` : ''}
       <section class="card-sec"><h2>Restaurantes — mais acessados no período</h2>
         ${rs.length ? `<div class="tabela"><table>
-          <thead><tr><th>#</th><th>Restaurante</th><th class="num">Leituras</th><th class="num">vs. período anterior</th><th class="num">Plaquinhas lidas</th><th class="num">Nunca lidas</th><th>Última leitura</th></tr></thead>
+          <thead><tr><th>#</th><th>Restaurante</th><th class="num">Leituras</th><th class="num">vs. período anterior</th><th class="num">Plaquinhas lidas</th><th class="num">Nunca lidas</th><th class="num">Chamados</th><th class="num">Resposta média</th><th>Última leitura</th></tr></thead>
           <tbody>${rs.map((r, i) => {
             const ds = diasSem(r.ultima);
             return `<tr>
@@ -340,6 +357,8 @@
               <td class="num">${variacao(r.n, r.anterior) || '<span class="muted">—</span>'}</td>
               <td class="num">${r.lidas}/${r.etiquetas}</td>
               <td class="num">${r.nunca_lidas ? `<span class="warn">${r.nunca_lidas}</span>` : '0'}</td>
+              <td class="num">${num(r.chamados)}</td>
+              <td class="num">${r.resposta_s == null ? '<span class="muted">—</span>' : r.resposta_s < 60 ? `${r.resposta_s} s` : `${Math.floor(r.resposta_s / 60)} min ${String(r.resposta_s % 60).padStart(2, '0')} s`}</td>
               <td>${r.ultima ? `${ago(r.ultima)}${ds >= 7 ? ' <span class="pill pill--warn">parado</span>' : ''}` : '<span class="muted">nunca</span>'}</td>
             </tr>`;
           }).join('')}</tbody></table></div>`
@@ -410,7 +429,7 @@
     return `<div class="vhead"><div><h1>Restaurantes</h1><p>Cada restaurante tem um <b>código de ativação</b>: a equipe dele digita na primeira leitura de uma plaquinha nova, e ela passa a ser do restaurante. Mudou o domínio? Troque o endereço aqui e todas as plaquinhas continuam funcionando.</p></div>
         <button type="button" class="btn btn-cobalt" data-abrir="rest">${icon('plus')} Novo restaurante</button></div>
       ${S.rests.length ? `<div class="rests">${S.rests.map((r) => `<article class="rcard ${r.ativo === false ? 'is-off' : ''}">
-          <div><h3>${esc(r.nome)}</h3><a href="${esc(r.destino)}" target="_blank" rel="noopener" class="mono">${esc(r.destino.replace(/^https?:\/\//, ''))}</a>
+          <div><h3>${esc(r.nome)}</h3><a href="${esc(siteDe(r))}" target="_blank" rel="noopener" class="mono">${esc(siteCurto(r))}</a>
             ${r.observacao ? `<p>${esc(r.observacao)}</p>` : ''}</div>
           <div class="ativ"><small>Código de ativação</small><b class="mono">${fmtAtivacao(r.codigo_ativacao)}</b>
             <span class="rcard-acts"><button type="button" class="btn btn-quiet btn-sm" data-copiar-atv="${r.id}">${icon('copy')} Copiar</button>
@@ -440,19 +459,22 @@
     $('#shBody').innerHTML = S.rests.length ? `<form class="stack" id="fVender" novalidate>
       <p>${S.sel.size} ${S.sel.size === 1 ? 'plaquinha' : 'plaquinhas'} passam a abrir o site do restaurante escolhido.</p>
       ${jaVendidas ? `<p class="note">${icon('msg')}<span>${jaVendidas} já ${jaVendidas === 1 ? 'estava entregue' : 'estavam entregues'} a outro restaurante e ${jaVendidas === 1 ? 'será transferida' : 'serão transferidas'}.</span></p>` : ''}
-      <label class="field"><span>Restaurante</span><select class="input" id="vRest" required>${S.rests.filter((r) => r.ativo !== false).map((r) => `<option value="${r.id}">${esc(r.nome)} — ${esc(r.destino.replace(/^https?:\/\//, ''))}</option>`).join('')}</select></label>
+      <label class="field"><span>Restaurante</span><select class="input" id="vRest" required>${S.rests.filter((r) => r.ativo !== false).map((r) => `<option value="${r.id}">${esc(r.nome)} — ${esc(siteCurto(r))}</option>`).join('')}</select></label>
       <button type="submit" class="btn btn-cobalt btn-block">${icon('check')} Entregar</button>
     </form>` : `<div class="stack"><p>Cadastre o restaurante primeiro.</p><button type="button" class="btn btn-cobalt" data-abrir="rest">${icon('plus')} Novo restaurante</button></div>`;
     openSheet('sh');
   }
   function abrirRest(id) {
-    const r = id ? restDe(id) : { nome: '', destino: 'https://', observacao: '', ativo: true };
+    const r = id ? restDe(id) : { nome: '', slug: '', observacao: '', ativo: true };
     S.editRest = id || null;
     $('#shTitle').textContent = id ? 'Editar restaurante' : 'Novo restaurante';
     $('#shBody').innerHTML = `<form class="stack" id="fRestForm" novalidate>
       <label class="field"><span>Nome</span><input class="input" id="rNome" maxlength="80" required value="${esc(r.nome)}"></label>
-      <label class="field"><span>Endereço do site</span><input class="input mono" id="rDestino" type="url" required value="${esc(r.destino)}" spellcheck="false" autocapitalize="off">
-        <small class="help">O endereço onde o sistema do restaurante está publicado (subdomínio de vocês ou domínio próprio). A plaquinha abre <code>endereço/?tag=CÓDIGO</code>.</small></label>
+      <label class="field"><span>Endereço (subdomínio)</span>
+        <span class="slug-campo"><input class="input mono" id="rSlug" maxlength="40" required value="${esc(r.slug || '')}" spellcheck="false" autocapitalize="off" autocomplete="off" placeholder="quintal"><span class="slug-base mono">.${esc(BASE || 'seu-dominio')}</span></span>
+        <small class="help">Letras minúsculas, números e hífen. O sistema do restaurante fica em <b id="rSite">${esc(r.slug ? siteCurto(r) : '…')}</b>, sem configurar nada no DNS.${id ? ' Trocar o subdomínio muda o endereço; as plaquinhas continuam funcionando.' : ''}</small></label>
+      <label class="field"><span>${id ? 'Nova senha da equipe (opcional)' : 'Senha da equipe'}</span><input class="input" id="rSenha" type="text" minlength="6" maxlength="60" autocomplete="off" ${id ? 'placeholder="Deixe em branco para manter"' : 'required'}>
+        <small class="help">A equipe usa esta senha para criar a conta no painel (cada pessoa depois entra com o próprio PIN).</small></label>
       <label class="field"><span>Observação (opcional)</span><input class="input" id="rObs" maxlength="300" value="${esc(r.observacao || '')}"></label>
       <label class="check"><input type="checkbox" id="rAtivo" ${r.ativo !== false ? 'checked' : ''}> Ativo (desmarcado: as plaquinhas mostram “desativada”)</label>
       <p class="form-error" id="rErr" role="alert"></p>
@@ -784,6 +806,15 @@
     if (t.id === 'fLote') { S.lote = t.value; return render(); }
     if (t.id === 'fRest') { S.rest = t.value; return render(); }
   });
+  document.addEventListener('input', (e) => {
+    if (e.target.id === 'rNome' && !S.editRest && !$('#rSlug').dataset.mexeu) $('#rSlug').value = paraSlug(e.target.value);
+    if (e.target.id === 'rSlug') { e.target.dataset.mexeu = '1'; e.target.value = e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''); }
+    if (e.target.id === 'rNome' || e.target.id === 'rSlug') {
+      const v = $('#rSlug').value;
+      $('#rSite').textContent = v ? siteCurto({ slug: v }) : '…';
+    }
+  });
+
   let buscaT;
   document.addEventListener('input', (e) => {
     if (e.target.id !== 'fBusca') return;
@@ -824,15 +855,16 @@
         closeSheet();
         toast(`${lista.length} ${lista.length === 1 ? 'plaquinha entregue' : 'plaquinhas entregues'} a ${restDe(rid).nome}.`, { tone: 'ok' });
       } else {
-        let destino = $('#rDestino').value.trim().replace(/\/+$/, '') + '/';
-        if (!/^https?:\/\//i.test(destino)) destino = 'https://' + destino;
-        try { new URL(destino); } catch { throw new Error('Endereço do site inválido.'); }
         const nome = $('#rNome').value.trim();
+        const slug = $('#rSlug').value.trim().toLowerCase();
+        const senha = $('#rSenha').value.trim();
         if (!nome) throw new Error('Informe o nome.');
-        const salvo = await api.salvarRestaurante({ ...(S.editRest ? { id: S.editRest } : {}), nome, destino, observacao: $('#rObs').value.trim() || null, ativo: $('#rAtivo').checked });
+        if (!slugOk(slug)) throw new Error('Subdomínio inválido: use letras minúsculas, números e hífen (sem acento nem espaço).');
+        if ((!S.editRest || senha) && senha.length < 6) throw new Error('A senha da equipe precisa ter pelo menos 6 caracteres.');
+        const salvo = await api.salvarRestaurante({ ...(S.editRest ? { id: S.editRest } : {}), nome, slug, senha, observacao: $('#rObs').value.trim() || null, ativo: $('#rAtivo').checked });
         if (!S.editRest && salvo) {
           S.rests.push(salvo);
-          mostrarAtivacao(salvo, true);
+          mostrarAtivacao(salvo, true, senha);
         } else {
           closeSheet();
           toast('Restaurante salvo.', { tone: 'ok' });
