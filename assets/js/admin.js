@@ -435,7 +435,7 @@
     const logo = safeUrl(S.settings.restaurante.logo);
     const mark = $('.side-mark');
     mark.classList.toggle('has-logo', !!logo);
-    mark.innerHTML = logo ? `<img src="${esc(logo)}" alt="">` : '';
+    mark.innerHTML = logo ? `<img src="${esc(logo)}" alt="">` : esc(initials(nomeRest()));
     const lista = views();
     $('#sideNav').innerHTML = lista.map(
       (v) => `<a class="nav-item" href="#${v.id}" ${S.view === v.id ? 'aria-current="page"' : ''}>${icon(v.icon)}<span>${v.label}</span>${badgeFor(v.id, n)}</a>`
