@@ -1,22 +1,22 @@
 /* ==========================================================================
-   Tokens — "placa esmaltada": cobalto de placa de mesa, esmalte branco,
+   Tokens — "placa esmaltada": roxo VTX (a cor padrão; o restaurante pode trocar), esmalte branco,
    latão do sino de balcão. Um tema escuro para salões à noite.
    ========================================================================== */
 :root {
-  --bg: #F2F4F8;
+  --bg: #F4F2F9;
   --surface: #FFFFFF;
-  --surface-2: #E9EDF5;
-  --ink: #0F1430;
-  --ink-2: #2A3050;
-  --muted: #596080;
-  --line: #DCE1EC;
+  --surface-2: #EDE9F6;
+  --ink: #160E33;
+  --ink-2: #2F2752;
+  --muted: #625A80;
+  --line: #E1DCEE;
 
-  --cobalt: #1B3A9E;
-  --cobalt-hi: #2D52C8;
-  --cobalt-lo: #112874;
-  --cobalt-ink: #1B3A9E;
-  --cobalt-soft: #E2E8F8;
-  --cobalt-rgb: 27, 58, 158;
+  --cobalt: #7D27FC;
+  --cobalt-hi: #9550FF;
+  --cobalt-lo: #5512C4;
+  --cobalt-ink: #6A1BE0;
+  --cobalt-soft: #EEE5FF;
+  --cobalt-rgb: 125, 39, 252;
   --enamel: #FBFBF7;
 
   --brass: #C9962D;
@@ -33,8 +33,8 @@
   --r-lg: 22px;
   --r: 16px;
   --r-sm: 11px;
-  --shadow-1: 0 1px 2px rgba(15, 20, 48, .06), 0 6px 18px -10px rgba(15, 20, 48, .22);
-  --shadow-2: 0 2px 6px rgba(15, 20, 48, .08), 0 22px 48px -18px rgba(15, 20, 48, .35);
+  --shadow-1: 0 1px 2px rgba(22, 14, 51, .06), 0 6px 18px -10px rgba(22, 14, 51, .22);
+  --shadow-2: 0 2px 6px rgba(22, 14, 51, .08), 0 22px 48px -18px rgba(22, 14, 51, .35);
 
   --font-display: 'Big Shoulders Display', 'Oswald', 'Arial Narrow', Impact, sans-serif;
   --font-body: 'Schibsted Grotesk', system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -49,15 +49,15 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #090D20;
-    --surface: #111735;
-    --surface-2: #19204A;
-    --ink: #ECEFFA;
-    --ink-2: #C9CEE6;
-    --muted: #97A0C4;
-    --line: #242C58;
-    --cobalt-ink: #93A9FF;
-    --cobalt-soft: #1A2560;
+    --bg: #0C0820;
+    --surface: #161034;
+    --surface-2: #221949;
+    --ink: #EFECFA;
+    --ink-2: #CFC9E6;
+    --muted: #A298C6;
+    --line: #30275C;
+    --cobalt-ink: #BB97FF;
+    --cobalt-soft: #2C1766;
     --brass-soft: #372B12;
     --pepper: #FF6B52;
     --pepper-soft: #3E1812;
@@ -71,15 +71,15 @@
   }
 }
 :root[data-theme="dark"] {
-  --bg: #090D20;
-  --surface: #111735;
-  --surface-2: #19204A;
-  --ink: #ECEFFA;
-  --ink-2: #C9CEE6;
-  --muted: #97A0C4;
-  --line: #242C58;
-  --cobalt-ink: #93A9FF;
-  --cobalt-soft: #1A2560;
+  --bg: #0C0820;
+  --surface: #161034;
+  --surface-2: #221949;
+  --ink: #EFECFA;
+  --ink-2: #CFC9E6;
+  --muted: #A298C6;
+  --line: #30275C;
+  --cobalt-ink: #BB97FF;
+  --cobalt-soft: #2C1766;
   --brass-soft: #372B12;
   --pepper: #FF6B52;
   --pepper-soft: #3E1812;
@@ -131,7 +131,7 @@ img, svg { display: block; }
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, .28),
     inset 0 -2px 0 rgba(0, 0, 0, .25),
-    0 1px 1px rgba(10, 20, 70, .3),
+    0 1px 1px rgba(40, 10, 90, .3),
     0 18px 40px -20px rgba(var(--cobalt-rgb), .6);
 }
 /* filete de esmalte branco, como nas placas de rua */
