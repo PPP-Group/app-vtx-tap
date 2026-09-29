@@ -18,7 +18,7 @@
     { id: 'premios', label: 'Prêmios' },
     { id: 'regras', label: 'Regras' },
   ];
-  const TIPO = { compra: 'Compra', indicacao: 'Indicação', boas_vindas: 'Boas-vindas', manual: 'Lançamento', resgate: 'Troca', estorno: 'Estorno', ajuste: 'Ajuste' };
+  const TIPO = { nivel: 'Bônus de nível', compra: 'Compra', indicacao: 'Indicação', boas_vindas: 'Boas-vindas', manual: 'Lançamento', resgate: 'Troca', estorno: 'Estorno', ajuste: 'Ajuste' };
   const STATUS = { pendente: 'Conferir', creditada: 'Creditada', recusada: 'Recusada', estornada: 'Estornada', entregue: 'Entregue', cancelado: 'Cancelado' };
 
   let ctx = null;
@@ -41,6 +41,33 @@
   const nomeDe = (x) => (x.fid_clientes && x.fid_clientes.nome) || x.nome || cpfOculto(x.cpf);
   const erroMsg = (e) => (e && e.message && !/fetch|network/i.test(e.message) ? e.message : 'Sem conexão. Confira a internet e tente de novo.');
   const regras = () => F.PADRAO && { ...F.PADRAO, ...(ctx.S.settings.fidelidade || {}) };
+  // Datas e horas sempre no formato brasileiro (o campo nativo segue o idioma do navegador).
+  const dataBr = (iso) => (/^\d{4}-\d{2}-\d{2}$/.test(iso || '') ? iso.split('-').reverse().join('/') : '');
+  // '' → null; inválida → undefined; válida → 'AAAA-MM-DD'.
+  const dataIso = (br) => {
+    const t = String(br || '').trim();
+    if (!t) return null;
+    const m = t.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (!m) return undefined;
+    const d = new Date(+m[3], +m[2] - 1, +m[1]);
+    return d.getDate() === +m[1] && d.getMonth() === +m[2] - 1 && +m[3] >= 2000 ? `${m[3]}-${m[2]}-${m[1]}` : undefined;
+  };
+  const horaOk = (h) => !h || /^([01]\d|2[0-3]):[0-5]\d$/.test(h);
+  const campoData = (name, iso, rotulo) => `<label class="field"><span>${rotulo}</span><input class="input mono" name="${name}" inputmode="numeric" maxlength="10" placeholder="dd/mm/aaaa" autocomplete="off" data-fp-mask="data" value="${esc(dataBr(iso))}"></label>`;
+  const campoHora = (name, h, rotulo) => `<label class="field"><span>${rotulo}</span><input class="input mono" name="${name}" inputmode="numeric" maxlength="5" placeholder="hh:mm" autocomplete="off" data-fp-mask="hora" value="${esc(h || '')}"></label>`;
+  const niveisCfg = () => F.niveis(regras());
+  const seloNivel = (id, extra = '') => {
+    const l = niveisCfg().find((x) => x.id === id);
+    return l ? `<span class="fp-selo ${extra}" style="--nv:${esc(l.cor)}">${esc(l.nome)}</span>` : '';
+  };
+  const CORES_NIVEL = ['#b45309', '#64748b', '#ca8a04', '#0f766e', '#1d4ed8', '#7e22ce', '#be185d', '#111827'];
+  const MULTS = [[1, 'Sem bônus'], [1.05, '+5%'], [1.1, '+10%'], [1.15, '+15%'], [1.2, '+20%'], [1.25, '+25%'], [1.5, '+50%'], [2, 'Dobro']];
+  const MODELO_NIVEIS = [
+    { nome: 'Bronze', descricao: 'Todo mundo começa aqui', cor: '#b45309', minimo: 0, mult: 1, bonus: 0, beneficios: ['Pontos em todas as compras'] },
+    { nome: 'Prata', descricao: 'Cliente da casa', cor: '#64748b', minimo: 500, mult: 1.1, bonus: 50, beneficios: ['Sobremesa no aniversário'] },
+    { nome: 'Ouro', descricao: 'Os mais fiéis', cor: '#ca8a04', minimo: 1500, mult: 1.25, bonus: 150, beneficios: ['Prêmios exclusivos', 'Prioridade na reserva'] },
+  ];
+  const novoId = (nome) => `${String(nome || 'nivel').normalize('NFD').replace(/[^A-Za-z0-9]/g, '').toLowerCase().slice(0, 12) || 'nivel'}-${Math.random().toString(36).slice(2, 6)}`;
   const linkPrograma = () => new URL('/?fidelidade', location.origin).href;
   const sefazDe = (n) => n.url || null;
 
@@ -89,6 +116,9 @@
   /* ============================== Tela ============================== */
   function html() {
     const tab = P.tab;
+    // Redesenho (ex.: atualização automática) no meio da edição: guarda o que já foi digitado.
+    if (tab === 'regras' && $('#fpRegras') && !P.jaLido) lerRegras();
+    P.jaLido = false;
     const r = regras();
     const intro = {
       hoje: 'Prêmios para entregar, notas para conferir e o arquivo de notas do caixa.',
@@ -178,7 +208,7 @@
         ${url ? `<a class="link fp-sefaz" href="${esc(url)}" target="_blank" rel="noopener">${icon('external')} Abrir na SEFAZ</a>` : '<small class="muted">Chave digitada: confira pela chave no portal da SEFAZ.</small>'}</div>
       <form class="fp-aprovar" data-fp-aprovar="${esc(n.chave)}" novalidate>
         <label class="field"><span>Valor total</span><input class="input mono" name="valor" inputmode="decimal" placeholder="0,00" value="${n.valor_informado ? String(n.valor_informado).replace('.', ',') : ''}" required></label>
-        <label class="field"><span>Data da compra</span><input class="input" name="data" type="date" max="${new Date().toISOString().slice(0, 10)}" value="${mesDaChave(n.chave)}"></label>
+        ${campoData('data', mesDaChave(n.chave), 'Data da compra')}
         <button type="submit" class="btn btn-cobalt btn-sm">${icon('check')} Aprovar</button>
         <button type="button" class="btn btn-quiet btn-sm" data-fp-recusar="${esc(n.chave)}">Recusar</button>
       </form>
@@ -207,7 +237,7 @@
         : `<div class="fp-tabela" role="table">
             <div class="fp-linha fp-linha--h" role="row"><span>Nome</span><span>Celular</span><span>Desde</span><span>Pontos</span></div>
             ${lista.map((c) => `<button type="button" class="fp-linha" role="row" data-fp-cliente="${esc(c.cpf)}">
-              <span><b>${esc(c.nome)}</b><small class="mono">${cpfOculto(c.cpf)}</small></span>
+              <span><b>${esc(c.nome)} ${seloNivel(c.nivel, 'fp-selo--sm')}</b><small class="mono">${cpfOculto(c.cpf)}</small></span>
               <span>${esc(tel(c.telefone))}</span><span>${data(c.criado_em)}</span><b class="mono">${num(c.pontos)}</b></button>`).join('')}
           </div>${lista.length >= 300 ? '<p class="help">Mostrando os 300 mais recentes. Use a busca para achar os outros.</p>' : ''}`}`;
   }
@@ -235,6 +265,8 @@
     $('#fpTitle').textContent = c.nome;
     $('#fpBody').innerHTML = `<div class="stack-lg fp-ficha">
       <div class="fp-saldo"><b class="mono">${num(c.pontos)}</b><span>pontos</span></div>
+      ${c.nivel_atual ? `<div class="fp-nivel-ficha" style="--nv:${esc(c.nivel_atual.cor)}"><span class="fp-selo">${esc(c.nivel_atual.nome)}</span>
+        <small>${num(c.nivel_atual.pontos_nivel)} pontos de nível${c.nivel_atual.proximo ? ` · faltam ${num(c.nivel_atual.proximo.falta)} para ${esc(c.nivel_atual.proximo.nome)}` : ' · nível mais alto'}</small></div>` : ''}
       ${editando ? `<form class="stack" id="fpEditar" novalidate>
           <label class="field"><span>Nome completo</span><input class="input" name="nome" maxlength="80" value="${esc(c.nome)}" required></label>
           <label class="field"><span>E-mail</span><input class="input" name="email" type="email" maxlength="120" value="${esc(c.email || '')}"></label>
@@ -288,7 +320,7 @@
           ${!lista ? '<p class="muted">Carregando…</p>' : !lista.length ? '<p class="muted">Nenhum prêmio ainda. Comece por algo simples, como uma bebida ou uma sobremesa.</p>'
             : `<ul class="fp-premios">${lista.map((p) => `<li class="fp-premio ${p.ativo ? '' : 'is-off'}">
                 <div class="fp-premio-img">${p.imagem ? `<img src="${esc(p.imagem)}" alt="" loading="lazy">` : icon('gift')}</div>
-                <div class="fp-item-body"><b>${esc(p.nome)}</b><small>${pts(p.pontos)}${p.ativo ? '' : ' · escondido'}${p.descricao ? ` · ${esc(p.descricao)}` : ''}</small></div>
+                <div class="fp-item-body"><b>${esc(p.nome)} ${p.nivel_min ? seloNivel(p.nivel_min, 'fp-selo--sm') : ''}</b><small>${pts(p.pontos)}${p.ativo ? '' : ' · escondido'}${p.descricao ? ` · ${esc(p.descricao)}` : ''}</small></div>
                 <button type="button" class="icon-btn" data-fp-premio="${esc(p.id)}" aria-label="Editar ${esc(p.nome)}">${icon('edit')}</button>
               </li>`).join('')}</ul>`}
         </section>
@@ -307,8 +339,12 @@
       <label class="field"><span>Descrição (opcional)</span><input class="input" name="descricao" maxlength="160" value="${esc(p.descricao || '')}"></label>
       <div class="fp-manual-row">
         <label class="field"><span>Pontos</span><input class="input mono" name="pontos" type="number" min="1" max="1000000" required value="${esc(p.pontos || '')}"></label>
-        <label class="field"><span>Ordem</span><input class="input mono" name="ordem" type="number" min="0" max="999" value="${esc(p.ordem || 0)}"></label>
+        ${niveisCfg().length ? `<label class="field"><span>Quem pode trocar</span><select class="input" name="nivel_min">
+          <option value="">Todos os clientes</option>
+          ${niveisCfg().slice(1).map((l) => `<option value="${esc(l.id)}" ${p.nivel_min === l.id ? 'selected' : ''}>Nível ${esc(l.nome)} em diante</option>`).join('')}
+        </select></label>` : ''}
       </div>
+      <small class="help">Os prêmios aparecem para o cliente do que custa menos para o que custa mais.</small>
       <label class="check"><input type="checkbox" name="ativo" ${p.ativo !== false ? 'checked' : ''}> <span>Mostrar para os clientes</span></label>
       <div class="vhead-actions">
         <button type="submit" class="btn btn-cobalt btn-sm">Salvar prêmio</button>
@@ -335,13 +371,14 @@
             <small class="help">Só notas emitidas por estes CNPJs valem pontos. Um por linha, se o restaurante tiver mais de um.</small></label>
           <div class="fp-manual-row">
             <label class="field"><span>Prazo para ler a nota (dias)</span><input class="input mono" name="prazoDias" type="number" min="1" max="90" value="${esc(r.prazoDias)}"></label>
-            <label class="field"><span>Vale para compras desde</span><input class="input" name="inicio" type="date" value="${esc(r.inicio || '')}"></label>
+            ${campoData('inicio', r.inicio, 'Vale para compras desde')}
           </div>
         </section>
         <section class="panel stack">
           <div class="fp-h"><h2>Dias com mais pontos</h2><button type="button" class="btn btn-line btn-sm" data-fp-boost="novo">${icon('plus')} Adicionar</button></div>
           ${(r.boosts || []).length ? r.boosts.map(boostForm).join('') : '<p class="muted">Ex.: terça com pontos em dobro, ou happy hour com 1,5x.</p>'}
         </section>
+        ${niveisForm(r)}
       </div>
       <div class="aj-col">
         <section class="panel stack">
@@ -366,10 +403,52 @@
           <div class="vhead-actions"><a class="link mono" href="${esc(link)}" target="_blank" rel="noopener">${esc(link)}</a>
             <button type="button" class="btn btn-line btn-sm" data-fp-copiar="${esc(link)}">${icon('copy')} Copiar</button></div>
         </section>
-        <div class="fp-salvar"><button type="submit" class="btn btn-cobalt">${icon('check')} Salvar regras</button>
-          <button type="button" class="btn btn-quiet" data-fp-regras="desfazer">Desfazer mudanças</button></div>
       </div>
+      <div class="fp-salvar" ${P.regrasSujas ? '' : 'hidden'}><span class="fp-salvar-txt">Mudanças não salvas</span><button type="submit" class="btn btn-cobalt">${icon('check')} Salvar regras</button>
+        <button type="button" class="btn btn-quiet" data-fp-regras="desfazer">Desfazer</button></div>
     </form>`;
+  }
+  function niveisForm(r) {
+    const n = r.niveis || { ativo: false, base: 'sempre', meses: 12, lista: [] };
+    const lista = n.lista || [];
+    return `<section class="panel stack fp-niveis">
+      <div class="set-row fp-row"><div><h3>Níveis do clube</h3><p>Ex.: Bronze, Prata e Ouro. O cliente sobe de nível com os pontos que ganha nas compras e ganha vantagens em cada um.</p></div>
+        <label class="switch"><input type="checkbox" name="nvAtivo" ${n.ativo ? 'checked' : ''} aria-label="Níveis do clube"><span></span></label></div>
+      <div class="fp-manual-row">
+        <label class="field"><span>Contar os pontos</span><select class="input" name="nvBase">
+          <option value="sempre" ${n.base !== 'meses' ? 'selected' : ''}>Desde o cadastro (nunca cai de nível)</option>
+          <option value="meses" ${n.base === 'meses' ? 'selected' : ''}>Só dos últimos meses (pode cair de nível)</option></select></label>
+        <label class="field fp-meses" ${n.base === 'meses' ? '' : 'hidden'}><span>Meses</span><input class="input mono" name="nvMeses" type="number" min="1" max="60" value="${esc(n.meses || 12)}"></label>
+      </div>
+      <small class="help">Contam os pontos das compras (com os bônus de nível e dos dias com mais pontos). Bônus de indicação e de nível não contam, e trocar pontos por prêmios não faz o cliente cair.</small>
+      ${lista.map((l, i) => nivelForm(l, i, lista.length)).join('')}
+      <div class="vhead-actions">
+        ${lista.length < 6 ? `<button type="button" class="btn btn-line btn-sm" data-fp-nivel="novo">${icon('plus')} Adicionar nível</button>` : ''}
+        ${!lista.length ? '<button type="button" class="btn btn-quiet btn-sm" data-fp-nivel="modelo">Usar o modelo Bronze, Prata e Ouro</button>' : ''}
+      </div>
+    </section>`;
+  }
+  function nivelForm(l, i, total) {
+    return `<fieldset class="fp-nivel" data-nidx="${i}" style="--nv:${esc(l.cor || '#8C6416')}">
+      <div class="fp-nivel-h"><span class="fp-selo" data-fp-previa>${esc(l.nome || 'Nível ' + (i + 1))}</span>
+        <small class="muted">${i === 0 ? 'Nível de entrada: todo cliente começa aqui' : `Nível ${i + 1} de ${total}`}</small>
+        <button type="button" class="icon-btn" data-fp-nivel-del="${i}" aria-label="Remover nível">${icon('trash')}</button></div>
+      <div class="fp-manual-row">
+        <label class="field"><span>Nome</span><input class="input" name="n-nome" maxlength="30" value="${esc(l.nome || '')}" placeholder="Ex.: Ouro" required></label>
+        <label class="field"><span>Frase curta (opcional)</span><input class="input" name="n-descricao" maxlength="80" value="${esc(l.descricao || '')}" placeholder="Ex.: Os mais fiéis"></label>
+      </div>
+      <div class="fp-cores" role="group" aria-label="Cor do nível">
+        ${CORES_NIVEL.map((c) => `<button type="button" class="fp-cor ${String(l.cor).toLowerCase() === c ? 'is-on' : ''}" style="--c:${c}" data-fp-cor="${c}" aria-label="Cor ${c}"></button>`).join('')}
+        <label class="fp-cor fp-cor--livre" title="Outra cor"><input type="color" name="n-cor" value="${esc(/^#[0-9a-f]{6}$/i.test(l.cor || '') ? l.cor : '#8c6416')}" aria-label="Outra cor"></label>
+      </div>
+      <div class="fp-manual-row">
+        <label class="field"><span>A partir de (pontos)</span><input class="input mono" name="n-minimo" type="number" min="0" max="10000000" value="${i === 0 ? 0 : esc(l.minimo || '')}" ${i === 0 ? 'disabled' : ''}></label>
+        <label class="field"><span>Bônus nas compras</span><select class="input" name="n-mult">${MULTS.map(([m, t]) => `<option value="${m}" ${+l.mult === m ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+        <label class="field"><span>Pontos ao chegar</span><input class="input mono" name="n-bonus" type="number" min="0" max="100000" value="${esc(l.bonus || 0)}"></label>
+      </div>
+      <label class="field"><span>Vantagens (uma por linha)</span><textarea class="input" name="n-beneficios" rows="3" maxlength="700" placeholder="Ex.: Sobremesa no aniversário">${esc((l.beneficios || []).join('\n'))}</textarea>
+        <small class="help">Aparecem para o cliente. O bônus nas compras e os pontos ao chegar já entram sozinhos na lista. Prêmios exclusivos do nível: marque na aba Prêmios.</small></label>
+    </fieldset>`;
   }
   function boostForm(b, i) {
     return `<fieldset class="fp-boost" data-bidx="${i}">
@@ -379,10 +458,10 @@
       </div>
       <div class="fp-dias" role="group" aria-label="Dias">${DIAS.map(([d, l]) => `<label><input type="checkbox" name="b-dia" value="${d}" ${(b.dias || []).includes(d) ? 'checked' : ''}><span>${l}</span></label>`).join('')}</div>
       <div class="fp-manual-row">
-        <label class="field"><span>Das</span><input class="input" name="b-de" type="time" value="${esc(b.de || '')}"></label>
-        <label class="field"><span>Até</span><input class="input" name="b-ate" type="time" value="${esc(b.ate || '')}"></label>
-        <label class="field"><span>Começa</span><input class="input" name="b-inicio" type="date" value="${esc(b.inicio || '')}"></label>
-        <label class="field"><span>Termina</span><input class="input" name="b-fim" type="date" value="${esc(b.fim || '')}"></label>
+        ${campoHora('b-de', b.de, 'Das')}
+        ${campoHora('b-ate', b.ate, 'Até')}
+        ${campoData('b-inicio', b.inicio, 'Começa')}
+        ${campoData('b-fim', b.fim, 'Termina')}
       </div>
       <div class="fp-boost-foot"><small class="help">Sem dias marcados vale todo dia; sem horário, o dia inteiro.</small>
         <button type="button" class="btn btn-quiet btn-sm" data-fp-boost-del="${i}">${icon('trash')} Remover</button></div>
@@ -400,7 +479,13 @@
     r.pontosPorReal = Math.max(0, +String(v('pontosPorReal').value).replace(',', '.') || 0);
     r.cnpjs = [...new Set(v('cnpjs').value.split(/[\n,;]+/).map(F.soDigitos).filter(Boolean))];
     r.prazoDias = Math.round(+v('prazoDias').value || 7);
-    r.inicio = v('inicio').value || null;
+    const invalidas = [];
+    const di = (valor, rotulo) => {
+      const x = dataIso(valor);
+      if (x === undefined) invalidas.push(rotulo);
+      return x || '';
+    };
+    r.inicio = di(v('inicio').value, 'Vale para compras desde') || null;
     r.indicacao = { ativo: v('indAtivo').checked, indicador: Math.round(+v('indIndicador').value || 0), indicado: Math.round(+v('indIndicado').value || 0) };
     r.manual = v('manual').checked;
     r.regulamento = v('regulamento').value.trim();
@@ -410,12 +495,43 @@
         id: (r.boosts[i] && r.boosts[i].id) || Math.random().toString(36).slice(2, 10),
         nome: q('b-nome').value.trim().slice(0, 40), mult: +q('b-mult').value,
         dias: [...el.querySelectorAll('[name="b-dia"]:checked')].map((x) => +x.value),
-        de: q('b-de').value, ate: q('b-ate').value, inicio: q('b-inicio').value, fim: q('b-fim').value, ativo: true,
+        de: q('b-de').value.trim(), ate: q('b-ate').value.trim(),
+        inicio: di(q('b-inicio').value, `${q('b-nome').value.trim() || 'Dia com mais pontos'}: começa`),
+        fim: di(q('b-fim').value, `${q('b-nome').value.trim() || 'Dia com mais pontos'}: termina`), ativo: true,
       };
     });
+    const antes = (r.niveis && r.niveis.lista) || [];
+    r.niveis = {
+      ativo: v('nvAtivo').checked, base: v('nvBase').value === 'meses' ? 'meses' : 'sempre', meses: Math.round(+v('nvMeses').value || 12),
+      lista: [...f.querySelectorAll('.fp-nivel')].map((el, i) => {
+        const q = (n) => el.querySelector(`[name="${n}"]`);
+        const nome = q('n-nome').value.trim().slice(0, 30);
+        return {
+          id: (antes[i] && antes[i].id) || novoId(nome), nome, descricao: q('n-descricao').value.trim().slice(0, 80), cor: q('n-cor').value,
+          minimo: i === 0 ? 0 : Math.round(+q('n-minimo').value || 0), mult: +q('n-mult').value || 1, bonus: Math.round(+q('n-bonus').value || 0),
+          beneficios: q('n-beneficios').value.split('\n').map((x) => x.trim().slice(0, 80)).filter(Boolean).slice(0, 8),
+        };
+      }),
+    };
+    P.regrasInvalidas = invalidas;
     return r;
   }
   function validarRegras(r) {
+    if ((P.regrasInvalidas || []).length) return `Data inválida em “${P.regrasInvalidas[0]}”. Use dd/mm/aaaa.`;
+    for (const b of r.boosts) {
+      if (!horaOk(b.de) || !horaOk(b.ate)) return `${b.nome || 'Dia com mais pontos'}: horário inválido. Use hh:mm, de 00:00 a 23:59.`;
+    }
+    const nv = r.niveis;
+    if (nv.ativo && !nv.lista.length) return 'Crie pelo menos um nível, ou desligue os níveis do clube.';
+    if (nv.base === 'meses' && !(nv.meses >= 1 && nv.meses <= 60)) return 'Os meses dos níveis vão de 1 a 60.';
+    const nomes = new Set();
+    for (const [i, l] of nv.lista.entries()) {
+      if (!l.nome) return `Dê um nome ao nível ${i + 1}.`;
+      if (nomes.has(l.nome.toLowerCase())) return `Há dois níveis chamados “${l.nome}”.`;
+      nomes.add(l.nome.toLowerCase());
+      if (i > 0 && !(l.minimo > nv.lista[i - 1].minimo)) return `O nível ${l.nome} precisa de mais pontos que o ${nv.lista[i - 1].nome} (${num(nv.lista[i - 1].minimo)}).`;
+      if (l.bonus < 0 || l.bonus > 100000) return `${l.nome}: pontos ao chegar vão de 0 a 100.000.`;
+    }
     if (!(r.pontosPorReal > 0 && r.pontosPorReal <= 100)) return 'Informe quantos pontos vale cada R$ 1 (entre 0,01 e 100).';
     const ruim = r.cnpjs.find((c) => c.length !== 14);
     if (ruim) return `CNPJ incompleto: ${ruim}. São 14 números.`;
@@ -434,6 +550,11 @@
     const s = String(t || '').trim().replace(/[^\d,.]/g, '');
     const v = /,\d{1,2}$/.test(s) ? +s.replace(/\./g, '').replace(',', '.') : +s.replace(/,/g, '');
     return Number.isFinite(v) ? Math.round(v * 100) / 100 : NaN;
+  };
+  // Redesenha as regras a partir de P.regras (já lidas ou alteradas aqui), sem reler o formulário antigo.
+  const redesenhar = () => {
+    P.jaLido = true;
+    ctx.rerender();
   };
   const recarregar = async () => {
     await atualizar();
@@ -549,7 +670,7 @@
     const pr = t.closest('[data-fp-premio]');
     if (pr) {
       const v = pr.dataset.fpPremio;
-      P.premioEdit = v === 'fechar' ? null : v === 'novo' ? { nome: '', descricao: '', pontos: '', imagem: '', ativo: true, ordem: (P.premios || []).length + 1 } : { ...(P.premios || []).find((p) => p.id === v) };
+      P.premioEdit = v === 'fechar' ? null : v === 'novo' ? { nome: '', descricao: '', pontos: '', imagem: '', ativo: true, ordem: 0, nivel_min: null } : { ...(P.premios || []).find((p) => p.id === v) };
       ctx.rerender();
       if (P.premioEdit) setTimeout(() => { const i = $('#fpPremioForm [name=nome]'); i && i.focus(); }, 60);
       return;
@@ -573,21 +694,58 @@
       return ctx.rerender();
     }
 
+    const nvb = t.closest('[data-fp-nivel]');
+    if (nvb) {
+      lerRegras();
+      const n = P.regras.niveis;
+      if (nvb.dataset.fpNivel === 'modelo') {
+        n.lista = MODELO_NIVEIS.map((l) => ({ ...l, id: novoId(l.nome) }));
+        n.ativo = true;
+      } else {
+        const ult = n.lista[n.lista.length - 1];
+        n.lista.push({ id: '', nome: '', descricao: '', cor: CORES_NIVEL[n.lista.length % CORES_NIVEL.length], minimo: ult ? ult.minimo + 500 : 0, mult: 1, bonus: 0, beneficios: [] });
+        n.ativo = true;
+      }
+      P.regrasSujas = true;
+      redesenhar();
+      setTimeout(() => { const i = [...document.querySelectorAll('.fp-nivel [name="n-nome"]')].find((x) => !x.value); i && i.focus(); }, 60);
+      return;
+    }
+    const nvd = t.closest('[data-fp-nivel-del]');
+    if (nvd) {
+      lerRegras();
+      const l = P.regras.niveis.lista[+nvd.dataset.fpNivelDel];
+      if (l && l.nome && !confirm(`Remover o nível ${l.nome}? Os clientes dele passam para o nível abaixo quando você salvar.`)) return;
+      P.regras.niveis.lista.splice(+nvd.dataset.fpNivelDel, 1);
+      P.regrasSujas = true;
+      return redesenhar();
+    }
+    const cor = t.closest('[data-fp-cor]');
+    if (cor) {
+      const fs = cor.closest('.fp-nivel');
+      fs.querySelector('[name="n-cor"]').value = cor.dataset.fpCor;
+      fs.style.setProperty('--nv', cor.dataset.fpCor);
+      fs.querySelectorAll('[data-fp-cor]').forEach((b) => b.classList.toggle('is-on', b === cor));
+      return marcarSujo();
+    }
     const bo = t.closest('[data-fp-boost]');
     if (bo) {
+      P.regrasSujas = true;
       lerRegras();
       P.regras.boosts.push({ id: Math.random().toString(36).slice(2, 10), nome: '', mult: 2, dias: [], de: '', ate: '', inicio: '', fim: '', ativo: true });
-      return ctx.rerender();
+      return redesenhar();
     }
     const bd = t.closest('[data-fp-boost-del]');
     if (bd) {
+      P.regrasSujas = true;
       lerRegras();
       P.regras.boosts.splice(+bd.dataset.fpBoostDel, 1);
-      return ctx.rerender();
+      return redesenhar();
     }
     if (t.closest('[data-fp-regras="desfazer"]')) {
       P.regras = null;
-      return ctx.rerender();
+      P.regrasSujas = false;
+      return redesenhar();
     }
   }
 
@@ -620,13 +778,18 @@
     if (!f) return P.premioEdit;
     const v = (n) => f.elements[n];
     Object.assign(P.premioEdit, {
-      nome: v('nome').value, descricao: v('descricao').value, pontos: v('pontos').value, ordem: v('ordem').value, ativo: v('ativo').checked,
+      nome: v('nome').value, descricao: v('descricao').value, pontos: v('pontos').value, ativo: v('ativo').checked,
+      nivel_min: v('nivel_min') ? v('nivel_min').value || null : P.premioEdit.nivel_min || null,
     });
     return P.premioEdit;
   }
 
   async function onChange(e) {
     const t = e.target;
+    if (t.closest('#fpRegras')) {
+      marcarSujo();
+      if (t.name === 'nvBase') $('.fp-meses').hidden = t.value !== 'meses';
+    }
     if (t.matches('[data-fp-xml]')) {
       const files = [...(t.files || [])];
       t.value = '';
@@ -650,9 +813,31 @@
     }
   }
 
+  // A barra de salvar só aparece depois de alguma mudança nas regras.
+  function marcarSujo() {
+    P.regrasSujas = true;
+    const b = $('.fp-salvar');
+    if (b) b.hidden = false;
+  }
+  const mascara = (t) => {
+    const d = t.value.replace(/\D/g, '');
+    if (t.dataset.fpMask === 'data') t.value = d.slice(0, 8).replace(/^(\d{2})(\d)/, '$1/$2').replace(/^(\d{2}\/\d{2})(\d)/, '$1/$2');
+    else t.value = d.slice(0, 4).replace(/^(\d{2})(\d)/, '$1:$2');
+  };
+
   let buscaT = 0;
   function onInput(e) {
     const t = e.target;
+    if (t.dataset.fpMask && !(e.inputType || '').startsWith('delete')) mascara(t);
+    if (t.closest('#fpRegras')) {
+      marcarSujo();
+      if (t.name === 'n-nome') t.closest('.fp-nivel').querySelector('[data-fp-previa]').textContent = t.value || 'Nível';
+      if (t.name === 'n-cor') {
+        const fs = t.closest('.fp-nivel');
+        fs.style.setProperty('--nv', t.value);
+        fs.querySelectorAll('[data-fp-cor]').forEach((b) => b.classList.remove('is-on'));
+      }
+    }
     if (t.id === 'fpBusca') {
       clearTimeout(buscaT);
       buscaT = setTimeout(async () => {
@@ -681,7 +866,9 @@
       if (id === 'aprovar') {
         const valor = valorDe(f.elements.valor.value);
         if (!(valor > 0)) throw new Error('Informe o valor total da nota.');
-        const d = f.elements.data.value;
+        const d = dataIso(f.elements.data.value);
+        if (d === undefined) throw new Error('Data da compra inválida. Use dd/mm/aaaa.');
+        if (d && d > new Date().toISOString().slice(0, 10)) throw new Error('A data da compra não pode ser no futuro.');
         const pontos = await ctx.store.fidAprovarNota(f.dataset.fpAprovar, valor, d ? new Date(`${d}T12:00:00-03:00`).toISOString() : null);
         toast(`Nota aprovada: +${pts(pontos || 0)}.`, { tone: 'ok' });
         return recarregar();
@@ -694,8 +881,9 @@
         await ctx.store.updateSettings({ fidelidade: novo });
         ctx.S.settings.fidelidade = novo;
         P.regras = null;
+        P.regrasSujas = false;
         toast('Regras salvas. Já valem para os clientes.', { tone: 'ok' });
-        ctx.rerender();
+        redesenhar();
         return;
       }
       if (id === 'fpPremioForm') {

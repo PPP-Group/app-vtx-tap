@@ -18,11 +18,11 @@
   let prog = null;
   let chave = 'fid';
   let nomeRest = '';
-  const S = { cpf: null, nome: null, pontos: null, pendentes: 0, token: null, conta: null, tela: 'inicio', indicacao: '', indicador: null, aviso: null, premio: null, resgate: null, ocupado: false };
+  const S = { cpf: null, nome: null, pontos: null, nivel: null, pendentes: 0, token: null, conta: null, tela: 'inicio', indicacao: '', indicador: null, aviso: null, premio: null, resgate: null, ocupado: false };
 
   const ler = () => { try { return JSON.parse(localStorage.getItem(chave)) || {}; } catch { return {}; } };
-  const gravar = () => { try { localStorage.setItem(chave, JSON.stringify({ cpf: S.cpf, nome: S.nome, pontos: S.pontos, token: S.token })); } catch {} };
-  const esquecer = () => { Object.assign(S, { cpf: null, nome: null, pontos: null, pendentes: 0, token: null, conta: null }); try { localStorage.removeItem(chave); } catch {} };
+  const gravar = () => { try { localStorage.setItem(chave, JSON.stringify({ cpf: S.cpf, nome: S.nome, pontos: S.pontos, nivel: S.nivel, token: S.token })); } catch {} };
+  const esquecer = () => { Object.assign(S, { cpf: null, nome: null, pontos: null, nivel: null, pendentes: 0, token: null, conta: null }); try { localStorage.removeItem(chave); } catch {} };
 
   const fmtCpf = (c) => F.soDigitos(c).slice(0, 11).replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d{1,2})$/, '$1-$2');
   const fmtTel = (t) => {
@@ -69,7 +69,7 @@
     const agora = boostAgora();
     const conhecido = S.cpf && S.pontos != null;
     return `<button type="button" class="tile tile--fid" data-fid-abrir>
-      <span class="tile-fid-top">${icon('gift')} ${esc(prog.nome)}</span>
+      <span class="tile-fid-top">${icon('gift')} ${esc(prog.nome)}${conhecido && S.nivel ? ` <span class="fid-selo" style="--nv:${esc(S.nivel.cor)}">${esc(S.nivel.nome)}</span>` : ''}</span>
       <div><h3>${conhecido ? pts(S.pontos) : 'Ganhe pontos'}</h3>
         <p>${conhecido ? `Olá, ${esc(S.nome || '')}! Leia a nota e troque por prêmios.` : `${esc(regraTexto())} e troque por prêmios.`}${agora ? ` <b>Agora: ${multTexto(agora.mult)}!</b>` : ''}</p></div>
       <span class="tile-go">${icon('arrow')}</span>
@@ -85,10 +85,10 @@
   function render() {
     const html = {
       inicio: tInicio, cadastro: tCadastro, conta: tConta, pin: tPin, resultado: tResultado,
-      resgatar: tResgatar, codigo: tCodigo, indicar: tIndicar, regulamento: tRegulamento,
+      resgatar: tResgatar, codigo: tCodigo, indicar: tIndicar, regulamento: tRegulamento, niveis: tNiveis,
     }[S.tela]();
     corpo().innerHTML = html;
-    $('#fidTitle').textContent = S.tela === 'inicio' ? nomeRest || 'Fidelidade' : prog.nome;
+    $('#fidTitle').textContent = S.tela === 'inicio' ? nomeRest || 'Fidelidade' : S.tela === 'niveis' ? 'Níveis do clube' : prog.nome;
     const foco = corpo().querySelector('[data-foco]');
     if (foco) setTimeout(() => foco.focus(), 60);
   }
@@ -97,18 +97,60 @@
   const boosts = () => (prog.boosts || []).length
     ? `<ul class="fid-boosts">${prog.boosts.map((b) => `<li>${icon('sparkle')}<span>${b.nome ? `<b>${esc(b.nome)}</b> · ` : ''}${esc(boostTexto(b))}</span></li>`).join('')}</ul>` : '';
 
+  /* ---------- Níveis do clube ---------- */
+  const temNiveis = () => !!(prog.niveis && prog.niveis.ativo && (prog.niveis.lista || []).length);
+  const pct = (m) => Math.round((m - 1) * 100);
+  const vantagens = (l) => [
+    ...(l.mult > 1 ? [`${pct(l.mult)}% a mais de pontos em cada compra`] : []),
+    ...(l.bonus > 0 ? [`${pts(l.bonus)} de bônus ao chegar`] : []),
+    ...(l.beneficios || []),
+  ];
+  const nivelDoId = (id) => (prog.niveis.lista || []).findIndex((l) => l.id === id);
+  // Cartão do nível atual com a barra até o próximo.
+  function meuNivel(link = true) {
+    const n = S.nivel;
+    if (!temNiveis() || !n) return '';
+    const prox = n.proximo;
+    const feito = prox ? Math.max(3, Math.min(100, Math.round(((n.pontos_nivel - n.minimo) / Math.max(prox.minimo - n.minimo, 1)) * 100))) : 100;
+    const tag = link ? 'button' : 'div';
+    return `<${tag} ${link ? 'type="button" data-fid-ir="niveis"' : ''} class="fid-nivel" style="--nv:${esc(n.cor)}">
+      <span class="fid-nivel-top"><span class="fid-selo">${esc(n.nome)}</span>${n.descricao ? `<small>${esc(n.descricao)}</small>` : ''}${link ? icon('arrow') : ''}</span>
+      ${prox ? `<span class="fid-barra fid-barra--nv"><i style="width:${feito}%"></i></span>
+        <small>Faltam <b>${pts(prox.falta)}</b> para <b style="color:${esc(prox.cor)}">${esc(prox.nome)}</b></small>`
+        : '<small>Você está no nível mais alto do clube. Obrigado pela preferência!</small>'}
+    </${tag}>`;
+  }
+  function tNiveis() {
+    const n = prog.niveis;
+    const atual = S.nivel ? S.nivel.id : null;
+    return `<div class="stack-lg fid">
+      <p class="muted">Os níveis sobem com os pontos que você ganha nas compras${n.base === 'meses' ? ` nos últimos ${n.meses} ${n.meses === 1 ? 'mês' : 'meses'}` : ''}. Trocar pontos por prêmios não faz você cair de nível.${n.base === 'meses' ? ' Compras mais antigas deixam de contar.' : ''}</p>
+      ${meuNivel(false)}
+      <ol class="fid-niveis">${n.lista.map((l) => `<li class="${l.id === atual ? 'is-atual' : ''}" style="--nv:${esc(l.cor)}">
+        <div class="fid-niveis-h"><span class="fid-selo">${esc(l.nome)}</span><small>${l.minimo ? `a partir de ${pts(l.minimo)}` : 'ao se cadastrar'}</small>${l.id === atual ? '<b class="fid-voce">Você</b>' : ''}</div>
+        ${l.descricao ? `<p>${esc(l.descricao)}</p>` : ''}
+        ${vantagens(l).length ? `<ul>${vantagens(l).map((v) => `<li>${icon('check')} ${esc(v)}</li>`).join('')}</ul>` : ''}
+      </li>`).join('')}</ol>
+      <button type="button" class="btn btn-quiet btn-block" data-fid-ir="${S.cpf && S.nome ? 'conta' : 'inicio'}">Voltar</button>
+    </div>`;
+  }
+
   function premiosHtml(comBotao) {
     const lista = prog.premios || [];
     if (!lista.length) return '<p class="muted fid-vazio">Os prêmios aparecem aqui em breve.</p>';
     const saldo = S.pontos || 0;
+    const meuIdx = S.nivel ? S.nivel.indice : -1;
     return `<div class="fid-premios">${lista.map((p) => {
       const falta = p.pontos - saldo;
+      const iMin = temNiveis() && p.nivel_min ? nivelDoId(p.nivel_min) : -1;
+      const nvMin = iMin >= 0 ? prog.niveis.lista[iMin] : null;
+      const bloqueado = nvMin && meuIdx < iMin;
       const pct = Math.max(4, Math.min(100, Math.round((saldo / p.pontos) * 100)));
       return `<article class="fid-premio">
         <div class="fid-premio-img ${p.imagem ? '' : 'is-vazia'}">${p.imagem ? `<img src="${esc(p.imagem)}" alt="" loading="lazy">` : icon('gift')}</div>
-        <div class="fid-premio-info"><h4>${esc(p.nome)}</h4>${p.descricao ? `<p>${esc(p.descricao)}</p>` : ''}
+        <div class="fid-premio-info">${nvMin ? `<span class="fid-selo fid-selo--sm" style="--nv:${esc(nvMin.cor)}">${icon('lock')} ${esc(nvMin.nome)}</span>` : ''}<h4>${esc(p.nome)}</h4>${p.descricao ? `<p>${esc(p.descricao)}</p>` : ''}
           <b class="fid-premio-pts">${pts(p.pontos)}</b>
-          ${comBotao ? (falta > 0
+          ${comBotao && bloqueado ? `<small class="muted">Exclusivo do nível ${esc(nvMin.nome)} em diante</small>` : comBotao ? (falta > 0
             ? `<span class="fid-barra" aria-label="Faltam ${falta} pontos"><i style="width:${pct}%"></i></span><small class="muted">Faltam ${pts(falta)}</small>`
             : `<button type="button" class="btn btn-cobalt btn-sm" data-fid-resgatar="${esc(p.id)}">Trocar</button>`) : ''}
         </div>
@@ -133,6 +175,9 @@
         <li><b>Leia o QR Code</b> da nota aqui. Os pontos entram depois que o restaurante confere a nota.</li>
         <li>Troque os pontos por <b>prêmios</b>.</li>
       </ol>
+      ${temNiveis() ? `<section class="stack"><h3 class="fid-h3">Níveis do clube</h3>
+        <div class="fid-niveis-mini">${prog.niveis.lista.map((l) => `<span class="fid-selo" style="--nv:${esc(l.cor)}">${esc(l.nome)}</span>`).join('<span aria-hidden="true">›</span>')}</div>
+        <button type="button" class="link fid-link" data-fid-ir="niveis">Ver as vantagens de cada nível</button></section>` : ''}
       <section class="stack"><h3 class="fid-h3">Prêmios</h3>${premiosHtml(false)}</section>
       ${prog.regulamento ? '<button type="button" class="link fid-link" data-fid-ir="regulamento">Regulamento do programa</button>' : ''}
     </div>`;
@@ -166,6 +211,7 @@
         <b class="fid-pontos">${num(S.pontos)}<span>${Math.abs(S.pontos) === 1 ? 'ponto' : 'pontos'}</span></b>
         ${notasPend ? `<p>${notasPend} ${notasPend === 1 ? 'nota em conferência' : 'notas em conferência'}</p>` : ''}
       </div>
+      ${meuNivel()}
       ${agora ? `<p class="note fid-agora">${icon('sparkle')}<span><b>Agora vale ${agora.mult === 2 ? 'o dobro' : `${String(agora.mult).replace('.', ',')}x`}!</b>${agora.nome ? ` ${esc(agora.nome)}.` : ''}</span></p>` : ''}
       <div class="fid-acoes">
         <button type="button" class="btn btn-cobalt" data-fid-nota>${icon('receipt')} Ler nota fiscal</button>
@@ -283,7 +329,7 @@
     if (S.token) {
       const c = await store.fidConta(S.token).catch(() => null);
       if (c && c.status === 'ok') {
-        Object.assign(S, { conta: c, nome: c.nome.split(' ')[0], pontos: c.pontos, pendentes: c.notas.filter((n) => n.status === 'pendente').length });
+        Object.assign(S, { conta: c, nome: c.nome.split(' ')[0], pontos: c.pontos, nivel: c.nivel || null, pendentes: c.notas.filter((n) => n.status === 'pendente').length });
         gravar();
         atualizarTile();
         return true;
@@ -293,7 +339,7 @@
     if (!S.cpf) return false;
     const r = await store.fidConsultar(S.cpf).catch(() => null);
     if (r && r.status === 'ok') {
-      Object.assign(S, { nome: r.nome, pontos: r.pontos, pendentes: r.pendentes });
+      Object.assign(S, { nome: r.nome, pontos: r.pontos, nivel: r.nivel || null, pendentes: r.pendentes });
       gravar();
       atualizarTile();
       return true;
@@ -309,7 +355,7 @@
     if (r.status === 'inativo') return erro('O programa está pausado no momento.');
     S.cpf = F.soDigitos(cpf);
     if (r.status === 'novo') return ir('cadastro');
-    Object.assign(S, { nome: r.nome, pontos: r.pontos, pendentes: r.pendentes, token: null, conta: null });
+    Object.assign(S, { nome: r.nome, pontos: r.pontos, nivel: r.nivel || null, pendentes: r.pendentes, token: null, conta: null });
     gravar();
     atualizarTile();
     ir('conta');
@@ -448,7 +494,7 @@
     nomeRest = o.nomeRestaurante || '';
     chave = `fid:${o.slug || 'demo'}`;
     const salvo = ler();
-    Object.assign(S, { cpf: salvo.cpf || null, nome: salvo.nome || null, pontos: salvo.pontos ?? null, token: salvo.token || null });
+    Object.assign(S, { cpf: salvo.cpf || null, nome: salvo.nome || null, pontos: salvo.pontos ?? null, nivel: salvo.nivel || null, token: salvo.token || null });
     try {
       prog = await store.fidPrograma();
     } catch (e) {

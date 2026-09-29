@@ -67,6 +67,7 @@ A central libera por restaurante (Editar restaurante → Módulos contratados �
 - **Conferência das notas**: a SEFAZ-MG não deixa consultar a nota automaticamente (tem verificação anti-robô). A chave da nota é validada na hora: dígito, modelo 65, CNPJ do restaurante, prazo e se já foi usada. Os pontos entram:
   - pelo **XML do caixa**: credita sozinho toda nota com CPF de cliente cadastrado, estorna as canceladas e corrige o valor de aprovações manuais;
   - ou pela **aprovação da equipe**.
+- **Níveis do clube** (Regras → Níveis do clube): até 6 níveis, com nome, frase curta, cor, pontos mínimos, bônus nas compras (+5% a dobro), pontos ao chegar e vantagens. Os pontos contam desde o cadastro ou só nos últimos N meses. Prêmios podem ser exclusivos de um nível em diante.
 - Link direto do programa: `https://<restaurante>.<domínio>/?fidelidade`.
 
 ### Central (painel da Vortex)

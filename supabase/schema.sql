@@ -201,6 +201,10 @@ begin
     widgets     = case when p_patch ? 'widgets'     then p_patch -> 'widgets'     else widgets end,
     fidelidade  = case when p_patch ? 'fidelidade'  then f                        else fidelidade end
   where id = r;
+  -- Regras novas: atualiza o nível guardado de cada cliente (o bônus de nível sai na próxima compra).
+  if p_patch ? 'fidelidade' then
+    perform public.fid_atualizar_nivel(r, c.cpf, false) from public.fid_clientes c where c.restaurante_id = r;
+  end if;
 end $$;
 
 create or replace function public.equipe_pin_hmac(p_restaurante uuid, p_pin text) returns text
@@ -868,7 +872,8 @@ language sql stable security definer set search_path = public as $$
   select jsonb_build_object(
     'ativo', false, 'nome', 'Clube de pontos', 'pontosPorReal', 1, 'boosts', '[]'::jsonb,
     'cnpjs', '[]'::jsonb, 'prazoDias', 7, 'inicio', null, 'manual', false, 'regulamento', '',
-    'fuso', 'America/Sao_Paulo', 'indicacao', jsonb_build_object('ativo', true, 'indicador', 50, 'indicado', 20)
+    'fuso', 'America/Sao_Paulo', 'indicacao', jsonb_build_object('ativo', true, 'indicador', 50, 'indicado', 20),
+    'niveis', jsonb_build_object('ativo', false, 'base', 'sempre', 'meses', 12, 'lista', '[]'::jsonb)
   ) || coalesce((select fidelidade from public.restaurantes where id = p_restaurante), '{}'::jsonb);
 $$;
 
@@ -946,15 +951,81 @@ begin
   return jsonb_build_object('mult', melhor, 'nome', nome);
 end $$;
 
-create or replace function public.fid_calcular(p_restaurante uuid, p_valor numeric, p_quando timestamptz) returns jsonb
+drop function if exists public.fid_calcular(uuid, numeric, timestamptz);
+
+-- Níveis do clube (ex.: Bronze, Prata, Ouro). Lista arrumada pelo mínimo de pontos;
+-- o primeiro nível é a porta de entrada e começa em 0. Vazia = sem níveis.
+-- Nível: { id, nome, descricao, cor '#RRGGBB', minimo, mult (bônus nas compras), bonus (pontos ao chegar), beneficios [] }.
+create or replace function public.fid_niveis(p_restaurante uuid) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare n jsonb := public.fid_cfg(p_restaurante) -> 'niveis'; v_out jsonb;
+begin
+  if jsonb_typeof(n) is distinct from 'object' or coalesce(n ->> 'ativo', '') <> 'true' or jsonb_typeof(n -> 'lista') is distinct from 'array' then
+    return '[]'::jsonb;
+  end if;
+  select coalesce(jsonb_agg(x order by (x ->> 'minimo')::int), '[]'::jsonb) into v_out from (
+    select jsonb_build_object(
+      'id', left(regexp_replace(l ->> 'id', '[^A-Za-z0-9_-]', '', 'g'), 24),
+      'nome', left(btrim(l ->> 'nome'), 30),
+      'descricao', left(btrim(coalesce(l ->> 'descricao', '')), 80),
+      'cor', case when coalesce(l ->> 'cor', '') ~ '^#[0-9A-Fa-f]{6}$' then l ->> 'cor' else '#8C6416' end,
+      'minimo', least(greatest(public.num_ou(l ->> 'minimo', 0), 0), 10000000)::int,
+      'mult', round(least(greatest(public.num_ou(l ->> 'mult', 1), 1), 5), 2),
+      'bonus', least(greatest(public.num_ou(l ->> 'bonus', 0), 0), 100000)::int,
+      'beneficios', coalesce((select jsonb_agg(left(btrim(b.v), 80)) from (
+          select v from jsonb_array_elements_text(case when jsonb_typeof(l -> 'beneficios') = 'array' then l -> 'beneficios' else '[]'::jsonb end) v
+           where btrim(v) <> '' limit 8) b), '[]'::jsonb)) x
+    from jsonb_array_elements(n -> 'lista') with ordinality t(l, i)
+    where i <= 6 and btrim(coalesce(l ->> 'nome', '')) <> '' and coalesce(l ->> 'id', '') ~ '[A-Za-z0-9]'
+  ) s;
+  if jsonb_array_length(v_out) > 0 then v_out := jsonb_set(v_out, '{0,minimo}', '0'::jsonb); end if;
+  return v_out;
+end $$;
+
+-- Pontos que contam para o nível: os ganhos em compras (com estornos e ajustes),
+-- desde sempre ou nos últimos N meses. Bônus e trocas não contam.
+create or replace function public.fid_pontos_nivel(p_restaurante uuid, p_cpf text) returns int
+language plpgsql stable security definer set search_path = public as $$
+declare n jsonb := public.fid_cfg(p_restaurante) -> 'niveis'; v_meses int;
+begin
+  v_meses := case when jsonb_typeof(n) = 'object' and n ->> 'base' = 'meses'
+                  then least(greatest(public.num_ou(n ->> 'meses', 12), 1), 60)::int end;
+  return greatest(coalesce((select sum(pontos) from public.fid_movimentos
+    where restaurante_id = p_restaurante and cpf = p_cpf
+      and (tipo in ('compra', 'manual') or (tipo in ('estorno', 'ajuste') and resgate_id is null))
+      and (v_meses is null or criado_em > now() - make_interval(months => v_meses))), 0), 0)::int;
+end $$;
+
+-- Nível atual do cliente e quanto falta para o próximo. null = programa sem níveis.
+create or replace function public.fid_nivel(p_restaurante uuid, p_cpf text) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare lista jsonb := public.fid_niveis(p_restaurante); q int; atual jsonb; prox jsonb; v_i int := 0; k int;
+begin
+  if jsonb_array_length(lista) = 0 then return null; end if;
+  q := public.fid_pontos_nivel(p_restaurante, p_cpf);
+  for k in 0 .. jsonb_array_length(lista) - 1 loop
+    if ((lista -> k) ->> 'minimo')::int <= q then atual := lista -> k; v_i := k;
+    else prox := lista -> k; exit;
+    end if;
+  end loop;
+  return atual || jsonb_build_object('indice', v_i, 'pontos_nivel', q, 'proximo',
+    case when prox is null then null else jsonb_build_object('id', prox ->> 'id', 'nome', prox ->> 'nome', 'cor', prox ->> 'cor',
+      'minimo', (prox ->> 'minimo')::int, 'falta', (prox ->> 'minimo')::int - q) end);
+end $$;
+
+-- Pontos de uma compra: valor x pontos por real x dia com mais pontos x bônus do nível.
+create or replace function public.fid_calcular(p_restaurante uuid, p_valor numeric, p_quando timestamptz, p_cpf text default null) returns jsonb
 language plpgsql stable security definer set search_path = public as $$
 declare
   ppr numeric := least(greatest(public.num_ou(public.fid_cfg(p_restaurante) ->> 'pontosPorReal', 1), 0), 1000);
   b jsonb := public.fid_boost(p_restaurante, p_quando);
+  nv jsonb := case when p_cpf is null then null else public.fid_nivel(p_restaurante, p_cpf) end;
+  mn numeric := coalesce((nv ->> 'mult')::numeric, 1);
+  m numeric := round((b ->> 'mult')::numeric * mn, 2);
 begin
   return jsonb_build_object(
-    'pontos', floor(greatest(coalesce(p_valor, 0), 0) * ppr * (b ->> 'mult')::numeric)::int,
-    'mult', (b ->> 'mult')::numeric, 'boost', b ->> 'nome');
+    'pontos', floor(greatest(coalesce(p_valor, 0), 0) * ppr * m)::int,
+    'mult', m, 'boost', b ->> 'nome', 'nivel', case when mn > 1 then nv ->> 'nome' end);
 end $$;
 
 create or replace function public.brl(p numeric) returns text
@@ -974,10 +1045,14 @@ create table if not exists public.fid_clientes (
   indicado_por    text check (indicado_por ~ '^[0-9]{11}$'),
   bonus_indicacao boolean not null default false,
   marketing       boolean not null default false,
+  nivel           text,
+  niveis_bonus    text[] not null default '{}',
   criado_em       timestamptz not null default now(),
   primary key (restaurante_id, cpf),
   unique (restaurante_id, codigo)
 );
+alter table public.fid_clientes add column if not exists nivel text;
+alter table public.fid_clientes add column if not exists niveis_bonus text[] not null default '{}';
 create index if not exists fid_clientes_indicado_idx on public.fid_clientes (restaurante_id, indicado_por);
 
 create table if not exists private.fid_pins (
@@ -1003,7 +1078,7 @@ create table if not exists public.fid_movimentos (
   id             bigint generated always as identity primary key,
   restaurante_id uuid not null,
   cpf            text not null,
-  tipo           text not null check (tipo in ('compra', 'indicacao', 'boas_vindas', 'manual', 'resgate', 'estorno', 'ajuste')),
+  tipo           text not null,
   pontos         int  not null,
   valor          numeric(12, 2),
   mult           numeric(5, 2),
@@ -1014,6 +1089,9 @@ create table if not exists public.fid_movimentos (
   criado_em      timestamptz not null default now(),
   foreign key (restaurante_id, cpf) references public.fid_clientes (restaurante_id, cpf) on delete cascade
 );
+alter table public.fid_movimentos drop constraint if exists fid_movimentos_tipo_check;
+alter table public.fid_movimentos add constraint fid_movimentos_tipo_check
+  check (tipo in ('compra', 'indicacao', 'boas_vindas', 'manual', 'resgate', 'estorno', 'ajuste', 'nivel'));
 create index if not exists fid_movimentos_cliente_idx on public.fid_movimentos (restaurante_id, cpf, criado_em desc);
 create index if not exists fid_movimentos_rest_idx on public.fid_movimentos (restaurante_id, criado_em desc);
 
@@ -1062,8 +1140,10 @@ create table if not exists public.fid_premios (
   imagem         text not null default '' check (char_length(imagem) <= 600),
   ativo          boolean not null default true,
   ordem          int  not null default 0,
+  nivel_min      text check (char_length(nivel_min) <= 24),
   criado_em      timestamptz not null default now()
 );
+alter table public.fid_premios add column if not exists nivel_min text check (char_length(nivel_min) <= 24);
 create index if not exists fid_premios_rest_idx on public.fid_premios (restaurante_id, ordem);
 
 -- Resgates: o cliente troca os pontos e mostra o código ao garçom.
@@ -1095,7 +1175,33 @@ begin
   update public.fid_clientes set pontos = pontos + p_pontos
    where restaurante_id = p_restaurante and cpf = p_cpf
   returning pontos into saldo;
+  if p_tipo in ('compra', 'manual', 'estorno', 'ajuste') then
+    perform public.fid_atualizar_nivel(p_restaurante, p_cpf);
+    select pontos into saldo from public.fid_clientes where restaurante_id = p_restaurante and cpf = p_cpf;
+  end if;
   return saldo;
+end $$;
+
+-- Guarda o nível do cliente e paga o bônus de cada nível alcançado (uma vez por nível,
+-- mesmo que o cliente caia e volte). p_bonus = false só atualiza o nível guardado.
+create or replace function public.fid_atualizar_nivel(p_restaurante uuid, p_cpf text, p_bonus boolean default true) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare nv jsonb := public.fid_nivel(p_restaurante, p_cpf); cli public.fid_clientes; l jsonb;
+begin
+  select * into cli from public.fid_clientes where restaurante_id = p_restaurante and cpf = p_cpf for update;
+  if not found then return nv; end if;
+  if cli.nivel is distinct from nv ->> 'id' then
+    update public.fid_clientes set nivel = nv ->> 'id' where restaurante_id = p_restaurante and cpf = p_cpf;
+  end if;
+  if nv is null or not p_bonus then return nv; end if;
+  for l in select * from jsonb_array_elements(public.fid_niveis(p_restaurante)) loop
+    if (l ->> 'minimo')::int <= (nv ->> 'pontos_nivel')::int and (l ->> 'bonus')::int > 0 and not ((l ->> 'id') = any (cli.niveis_bonus)) then
+      cli.niveis_bonus := cli.niveis_bonus || (l ->> 'id');
+      update public.fid_clientes set niveis_bonus = cli.niveis_bonus where restaurante_id = p_restaurante and cpf = p_cpf;
+      perform public.fid_mover(p_restaurante, p_cpf, 'nivel', (l ->> 'bonus')::int, 'Bônus: chegou ao nível ' || (l ->> 'nome'));
+    end if;
+  end loop;
+  return nv;
 end $$;
 
 -- Indicação: na primeira compra conferida do indicado, os dois ganham.
@@ -1127,16 +1233,16 @@ declare n public.fid_notas; calc jsonb; pts int;
 begin
   select * into n from public.fid_notas where chave = p_chave for update;
   if not found or n.status <> 'pendente' then return null; end if;
-  calc := public.fid_calcular(n.restaurante_id, p_valor, coalesce(p_emitida, n.lida_em));
+  calc := public.fid_calcular(n.restaurante_id, p_valor, coalesce(p_emitida, n.lida_em), n.cpf);
   pts := (calc ->> 'pontos')::int;
   update public.fid_notas
      set status = 'creditada', valor = p_valor, emitida_em = coalesce(p_emitida, n.emitida_em, n.lida_em),
          pontos = pts, mult = (calc ->> 'mult')::numeric, conferida_em = now(), conferida_por = left(p_por, 60), motivo = null
    where chave = p_chave;
   perform public.fid_mover(n.restaurante_id, n.cpf, 'compra', pts,
-    'Compra de ' || public.brl(p_valor) || coalesce(' · ' || (calc ->> 'boost'), '')
+    'Compra de ' || public.brl(p_valor) || coalesce(' · ' || (calc ->> 'boost'), '') || coalesce(' · nível ' || (calc ->> 'nivel'), '')
       || case when (calc ->> 'mult')::numeric > 1
-              then ' (' || replace(trim(to_char((calc ->> 'mult')::numeric, 'FM990.##'), '.'), '.', ',') || 'x)' else '' end,
+              then ' (' || replace(rtrim(rtrim(to_char((calc ->> 'mult')::numeric, 'FM990.99'), '0'), '.'), '.', ',') || 'x)' else '' end,
     p_valor, (calc ->> 'mult')::numeric, p_chave, null, p_por);
   perform public.fid_bonus_indicacao(n.restaurante_id, n.cpf);
   return pts;
@@ -1249,7 +1355,13 @@ begin
         from jsonb_array_elements(case when jsonb_typeof(c -> 'boosts') = 'array' then c -> 'boosts' else '[]'::jsonb end) b
        where coalesce(b ->> 'ativo', 'true') <> 'false' and public.num_ou(b ->> 'mult', 1) > 1
          and not (coalesce(b ->> 'fim', '') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' and (b ->> 'fim')::date < hoje)), '[]'::jsonb),
-    'premios', coalesce((select jsonb_agg(jsonb_build_object('id', id, 'nome', nome, 'descricao', descricao, 'pontos', pontos, 'imagem', imagem) order by ordem, pontos, nome)
+    'niveis', case when jsonb_array_length(public.fid_niveis(p_restaurante)) > 0 then jsonb_build_object('ativo', true,
+        'base', case when c -> 'niveis' ->> 'base' = 'meses' then 'meses' else 'sempre' end,
+        'meses', least(greatest(public.num_ou(c -> 'niveis' ->> 'meses', 12), 1), 60)::int,
+        'lista', public.fid_niveis(p_restaurante))
+      else jsonb_build_object('ativo', false) end,
+    'premios', coalesce((select jsonb_agg(jsonb_build_object('id', id, 'nome', nome, 'descricao', descricao, 'pontos', pontos, 'imagem', imagem,
+          'nivel_min', nivel_min) order by ordem, pontos, nome)
         from public.fid_premios where restaurante_id = p_restaurante and ativo), '[]'::jsonb));
 end $$;
 
@@ -1266,6 +1378,7 @@ begin
   select * into cli from public.fid_clientes where restaurante_id = p_restaurante and cpf = v_cpf;
   if not found then return jsonb_build_object('status', 'novo'); end if;
   return jsonb_build_object('status', 'ok', 'nome', split_part(cli.nome, ' ', 1), 'pontos', cli.pontos,
+    'nivel', public.fid_nivel(p_restaurante, v_cpf),
     'pendentes', (select count(*) from public.fid_notas where restaurante_id = p_restaurante and cpf = v_cpf and status = 'pendente'),
     'tem_pin', exists (select 1 from private.fid_pins where restaurante_id = p_restaurante and cpf = v_cpf));
 end $$;
@@ -1384,6 +1497,7 @@ begin
   return jsonb_build_object('status', 'ok',
     'cpf', cli.cpf, 'nome', cli.nome, 'email', cli.email, 'telefone', cli.telefone, 'pontos', cli.pontos,
     'codigo', cli.codigo, 'marketing', cli.marketing, 'criado_em', cli.criado_em,
+    'nivel', public.fid_atualizar_nivel(v_r, v_cpf, false),
     'indicacoes', (select count(*) from public.fid_clientes where restaurante_id = v_r and indicado_por = v_cpf),
     'notas', coalesce((select jsonb_agg(jsonb_build_object('chave', n.chave, 'status', n.status, 'valor', coalesce(n.valor, n.valor_informado),
           'pontos', n.pontos, 'lida_em', n.lida_em, 'motivo', n.motivo) order by n.lida_em desc)
@@ -1454,7 +1568,7 @@ create or replace function public.fid_resgatar(p_token uuid, p_premio uuid) retu
 language plpgsql security definer set search_path = public as $$
 declare
   v_r uuid; v_cpf text; cli public.fid_clientes; p public.fid_premios;
-  v_id uuid; v_cod text; b bytea;
+  v_id uuid; v_cod text; b bytea; nv jsonb; v_min int;
 begin
   select s.restaurante_id, s.cpf into v_r, v_cpf from private.fid_sessoes s
    where s.token_hash = public.hash_token(p_token) and s.criado_em > now() - interval '180 days';
@@ -1462,6 +1576,15 @@ begin
   if not public.fid_no_ar(v_r) then return jsonb_build_object('status', 'inativo'); end if;
   select * into p from public.fid_premios where id = p_premio and restaurante_id = v_r and ativo;
   if not found then return jsonb_build_object('status', 'erro', 'mensagem', 'Este prêmio não está mais disponível.'); end if;
+  -- Prêmio exclusivo de um nível (se o nível não existe mais, vale para todos).
+  if p.nivel_min is not null then
+    select (i - 1)::int into v_min from jsonb_array_elements(public.fid_niveis(v_r)) with ordinality t(l, i) where l ->> 'id' = p.nivel_min;
+    nv := public.fid_nivel(v_r, v_cpf);
+    if v_min is not null and coalesce((nv ->> 'indice')::int, -1) < v_min then
+      return jsonb_build_object('status', 'erro', 'mensagem', 'Este prêmio é exclusivo do nível '
+        || (select l ->> 'nome' from jsonb_array_elements(public.fid_niveis(v_r)) l where l ->> 'id' = p.nivel_min) || ' em diante.');
+    end if;
+  end if;
   select * into cli from public.fid_clientes where restaurante_id = v_r and cpf = v_cpf for update;
   if cli.pontos < p.pontos then
     return jsonb_build_object('status', 'erro', 'mensagem', 'Faltam ' || (p.pontos - cli.pontos) || ' pontos para este prêmio.');
@@ -1607,7 +1730,7 @@ begin
         end if;
         continue;
       end if;
-      calc := public.fid_calcular(r, round(v_valor, 2), v_emit);
+      calc := public.fid_calcular(r, round(v_valor, 2), v_emit, n.cpf);
       dif := (calc ->> 'pontos')::int - coalesce(n.pontos, 0);
       update public.fid_notas set valor = round(v_valor, 2), emitida_em = v_emit, pontos = (calc ->> 'pontos')::int,
              mult = (calc ->> 'mult')::numeric, conferida_em = now(), conferida_por = 'XML da nota'
@@ -1668,12 +1791,22 @@ begin
   if not exists (select 1 from public.fid_clientes where restaurante_id = r and cpf = p_cpf) then raise exception 'Cliente não encontrado.'; end if;
   if p_valor is null or p_valor <= 0 or p_valor >= 100000 then raise exception 'Informe o valor da compra.'; end if;
   if v_desc = '' then raise exception 'Informe o motivo (ex.: pedido do delivery nº 123).'; end if;
-  calc := public.fid_calcular(r, p_valor, now());
+  calc := public.fid_calcular(r, p_valor, now(), p_cpf);
   pts := (calc ->> 'pontos')::int;
   perform public.fid_mover(r, p_cpf, 'manual', pts, 'Lançado: ' || v_desc || ' · ' || public.brl(p_valor),
     round(p_valor, 2), (calc ->> 'mult')::numeric, null, null, public.fid_quem());
   perform public.fid_bonus_indicacao(r, p_cpf);
   return pts;
+end $$;
+
+-- Nível atual de um cliente (ficha da equipe); atualiza o nível guardado.
+create or replace function public.fid_nivel_cliente(p_cpf text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare r uuid := public.meu_restaurante();
+begin
+  if r is null then raise exception 'Acesso negado.'; end if;
+  if not exists (select 1 from public.fid_clientes where restaurante_id = r and cpf = p_cpf) then return null; end if;
+  return public.fid_atualizar_nivel(r, p_cpf, false);
 end $$;
 
 create or replace function public.fid_redefinir_pin(p_cpf text) returns void
@@ -1756,7 +1889,8 @@ begin
     'public.num_ou(text, numeric)', 'public.ip_do_pedido()', 'public.cpf_valido(text)', 'public.chave_valida(text)',
     'public.brl(numeric)', 'public.fid_cfg(uuid)', 'public.fid_liberado(uuid)', 'public.fid_no_ar(uuid)',
     'public.fid_fuso(uuid)', 'public.fid_prazo(uuid)', 'public.fid_inicio(uuid)', 'public.fid_boost(uuid, timestamptz)',
-    'public.fid_calcular(uuid, numeric, timestamptz)',
+    'public.fid_calcular(uuid, numeric, timestamptz, text)', 'public.fid_niveis(uuid)',
+    'public.fid_pontos_nivel(uuid, text)', 'public.fid_nivel(uuid, text)', 'public.fid_atualizar_nivel(uuid, text, boolean)',
     'public.fid_mover(uuid, text, text, int, text, numeric, numeric, text, uuid, text)',
     'public.fid_bonus_indicacao(uuid, text)', 'public.fid_creditar(text, numeric, timestamptz, text)',
     'public.fid_conferir_xml(text)', 'public.fid_auto_creditar(text)', 'public.fid_chave_problema(uuid, text)',
@@ -1795,7 +1929,7 @@ begin
     'public.atribuir_etiquetas(text[], uuid)', 'public.marcar_gravadas(text[], boolean)', 'public.metricas(int)',
     'public.fid_resumo()', 'public.fid_aprovar_nota(text, numeric, timestamptz)', 'public.fid_recusar_nota(text, text)',
     'public.fid_importar_xml(jsonb)', 'public.fid_resgate_decidir(uuid, boolean)', 'public.fid_lancar(text, numeric, text)',
-    'public.fid_redefinir_pin(text)', 'public.fid_excluir_cliente(text)',
+    'public.fid_redefinir_pin(text)', 'public.fid_excluir_cliente(text)', 'public.fid_nivel_cliente(text)',
     'public.fid_editar_cliente(text, text, text, text, boolean)'] loop
     execute format('revoke execute on function %s from public, anon', f);
     execute format('grant execute on function %s to authenticated', f);

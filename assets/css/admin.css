@@ -698,3 +698,22 @@
 .leitor-acts label.btn { cursor: pointer; }
 .stack-lg { display: grid; gap: 20px; grid-template-columns: minmax(0, 1fr); }
 .fp-h h2, .fp-grid .panel h2 { margin-bottom: 0; }
+
+/* Níveis do clube (a cor de cada nível vem em --nv) */
+.fp-selo { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: #fff; background: var(--nv, var(--brass-lo)); white-space: nowrap; vertical-align: middle; }
+.fp-selo--sm { padding: 1px 7px; font-size: 10.5px; }
+.fp-nivel-ficha { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding: 12px 14px; border-radius: 14px; background: var(--surface-2); box-shadow: inset 4px 0 0 var(--nv); }
+.fp-nivel-ficha small { font-size: 13.5px; color: var(--ink-2); }
+.fp-nivel { display: grid; gap: 10px; margin: 0; padding: 14px; border: 0; border-radius: 14px; background: var(--surface-2); box-shadow: inset 4px 0 0 var(--nv); }
+.fp-nivel-h { display: flex; align-items: center; gap: 10px; }
+.fp-nivel-h small { flex: 1; min-width: 0; }
+.fp-cores { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.fp-cor { width: 30px; height: 30px; border-radius: 50%; background: var(--c); box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .35); cursor: pointer; position: relative; }
+.fp-cor.is-on { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--c); }
+.fp-cor--livre { display: grid; place-items: center; overflow: hidden; background: conic-gradient(red, yellow, lime, cyan, blue, magenta, red); }
+.fp-cor--livre input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: 0; padding: 0; }
+.fp-salvar[hidden] { display: none; }
+.fp-salvar { align-items: center; }
+.fp-salvar { grid-column: 1 / -1; z-index: 5; box-shadow: 0 10px 30px -10px rgba(0, 0, 0, .35); }
+.fp-salvar-txt { flex: 1 1 auto; font-size: 14px; font-weight: 600; color: var(--brass-lo); }
+.fp-meses[hidden] { display: none; }
