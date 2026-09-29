@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>VTX Tap · Preços</title>
+<meta name="description" content="Uma plaquinha na mesa: chamar o garçom, cardápio digital, avaliação no Google e programa de fidelidade. Veja os preços e monte o seu plano.">
+<meta name="theme-color" content="#140B33">
+<meta property="og:title" content="VTX Tap · Preços">
+<meta property="og:description" content="Chamar o garçom, cardápio, avaliação no Google e fidelidade numa plaquinha só. Monte o seu plano.">
+<meta property="og:image" content="/assets/img/vtx-tap-escuro.png">
+<link rel="icon" href="/assets/img/icon-64.png" type="image/png">
+<style>[hidden] { display: none !important; } img { max-width: 100%; }</style>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@800;900&family=IBM+Plex+Mono:wght@500;600&family=Schibsted+Grotesk:wght@400;500;600;700&display=swap">
+<style>
+  /* Layout: hero curto → "como funciona a cobrança" (uma vez / todo mês / todo ano) → simulador (controles | resumo ao lado) → tabela por tipo de cobrança → condições. */
+  :root {
+    --bg: #F4F2F9;
+    --surface: #FFFFFF;
+    --surface-2: #EDE9F6;
+    --ink: #160E33;
+    --ink-2: #2F2752;
+    --muted: #625A80;
+    --line: #E1DCEE;
+    --roxo: #7D27FC;
+    --roxo-ink: #6A1BE0;
+    --roxo-soft: #EEE5FF;
+    --noite: #140B33;
+    --noite-ink: #F1ECFF;
+    --noite-2: #CFC6F2;
+    --unico: #B45309;
+    --unico-soft: #FDF0DD;
+    --mensal: #6A1BE0;
+    --mensal-soft: #EEE5FF;
+    --anual: #0F766E;
+    --anual-soft: #DDF3EF;
+    --ok: #1B7F52;
+    --display: 'Big Shoulders Display', 'Oswald', 'Arial Narrow', Impact, sans-serif;
+    --body: 'Schibsted Grotesk', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0C0820; --surface: #161034; --surface-2: #221949; --ink: #EFECFA; --ink-2: #CFC9E6; --muted: #A298C6;
+      --line: #30275C; --roxo-ink: #BB97FF; --roxo-soft: #2C1766; --noite: #1D1245;
+      --unico: #F5B360; --unico-soft: #3A2710; --mensal: #BB97FF; --mensal-soft: #2C1766; --anual: #5FD3C3; --anual-soft: #0E3330;
+      --ok: #4FD196; color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0C0820; --surface: #161034; --surface-2: #221949; --ink: #EFECFA; --ink-2: #CFC9E6; --muted: #A298C6;
+    --line: #30275C; --roxo-ink: #BB97FF; --roxo-soft: #2C1766; --noite: #1D1245;
+    --unico: #F5B360; --unico-soft: #3A2710; --mensal: #BB97FF; --mensal-soft: #2C1766; --anual: #5FD3C3; --anual-soft: #0E3330;
+    --ok: #4FD196; color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 400 16px/1.55 var(--body); }
+  .wrap { max-width: 1120px; margin: 0 auto; padding-inline: 18px; padding-block: 24px 56px; display: grid; gap: 44px; }
+  h1, h2 { font-family: var(--display); font-weight: 900; text-transform: uppercase; line-height: .95; margin: 0; text-wrap: balance; }
+  h2 { font-size: clamp(30px, 5vw, 42px); }
+  h3 { margin: 0; font-size: 17px; font-weight: 600; }
+  p { margin: 0; }
+  .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .muted { color: var(--muted); }
+  .kicker { font-size: 12.5px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--roxo-ink); }
+  .sec { display: grid; gap: 18px; }
+  .sec-h { display: grid; gap: 6px; }
+  .sec-h p { color: var(--muted); max-width: 62ch; }
+
+  /* Selo do tipo de cobrança */
+  .tipo { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
+  .tipo::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .tipo--unico { color: var(--unico); background: var(--unico-soft); }
+  .tipo--mensal { color: var(--mensal); background: var(--mensal-soft); }
+  .tipo--anual { color: var(--anual); background: var(--anual-soft); }
+
+  /* Hero */
+  .hero { display: grid; gap: 18px; padding: 30px clamp(20px, 4vw, 44px); border-radius: 28px; background: var(--noite); color: var(--noite-ink); position: relative; overflow: hidden; }
+  .hero::after { content: ''; position: absolute; right: -90px; top: -90px; width: 320px; height: 320px; border-radius: 50%; border: 18px solid rgba(125, 39, 252, .28); box-shadow: 0 0 0 40px rgba(125, 39, 252, .12), 0 0 0 90px rgba(125, 39, 252, .06); pointer-events: none; }
+  .hero > * { position: relative; z-index: 1; }
+  .hero img { width: 150px; height: auto; }
+  .hero h1 { font-size: clamp(36px, 7vw, 64px); max-width: 17ch; }
+  .hero h1 em { font-style: normal; color: #A874FF; }
+  .hero p { max-width: 58ch; color: var(--noite-2); }
+  .hero ul { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+  .hero li { padding: 6px 12px; border-radius: 999px; background: rgba(255, 255, 255, .08); font-size: 14px; font-weight: 500; }
+  .faixa-interna { padding: 10px 14px; border-radius: 12px; background: #FDE68A; color: #3B2A00; font-weight: 600; font-size: 14px; }
+
+  /* Como funciona a cobrança */
+  .tres { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  .tres article { display: grid; gap: 8px; align-content: start; padding: 18px; border-radius: 20px; background: var(--surface); border: 1px solid var(--line); }
+  .tres ul { margin: 0; padding-left: 1.1em; color: var(--ink-2); font-size: 14.5px; display: grid; gap: 3px; }
+
+  /* Simulador */
+  .sim-grid { display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr); align-items: start; }
+  @media (min-width: 920px) { .sim-grid { grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); } .resumo { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 16px); } }
+  .controles { display: grid; gap: 14px; min-width: 0; }
+  .bloco { display: grid; gap: 12px; padding: 18px; border-radius: 20px; background: var(--surface); border: 1px solid var(--line); min-width: 0; }
+  .bloco-h { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; }
+  .qtd { display: flex; align-items: center; gap: 14px; }
+  .qtd input[type="range"] { flex: 1; min-width: 0; accent-color: var(--roxo); height: 28px; }
+  .qtd input[type="number"] { width: 84px; flex: none; padding: 8px 10px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface-2); color: var(--ink); font: 600 18px var(--mono); text-align: center; }
+  .dica { font-size: 13.5px; color: var(--muted); }
+  .opcoes { display: grid; gap: 10px; }
+  .op { display: flex; gap: 12px; align-items: flex-start; padding: 14px; border-radius: 16px; border: 1.5px solid var(--line); cursor: pointer; transition: border-color .15s, background-color .15s; min-width: 0; }
+  .op:hover { border-color: var(--roxo); }
+  .op:has(input:checked) { border-color: var(--roxo); background: var(--roxo-soft); }
+  .op:has(input:focus-visible) { outline: 3px solid var(--roxo); outline-offset: 2px; }
+  .op input { width: 20px; height: 20px; margin: 2px 0 0; flex: none; accent-color: var(--roxo); }
+  .op-txt { display: grid; gap: 2px; flex: 1; min-width: 0; }
+  .op-top { display: flex; justify-content: space-between; align-items: baseline; gap: 4px 12px; flex-wrap: wrap; }
+  .op b { font-weight: 600; }
+  .op small { color: var(--muted); font-size: 13.5px; overflow-wrap: anywhere; }
+  .op .preco { font-family: var(--mono); font-weight: 600; font-size: 14px; color: var(--roxo-ink); white-space: nowrap; }
+  code { font-family: var(--mono); font-size: .92em; overflow-wrap: anywhere; }
+
+  /* Resumo */
+  .resumo { display: grid; gap: 14px; padding: 22px; border-radius: 24px; background: var(--noite); color: var(--noite-ink); min-width: 0; }
+  .resumo > h3 { font-family: var(--display); font-weight: 900; font-size: 28px; text-transform: uppercase; }
+  .grupo { display: grid; gap: 10px; padding: 16px; border-radius: 18px; background: rgba(255, 255, 255, .06); }
+  .grupo[hidden] { display: none; }
+  .grupo-h { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .grupo-h .tipo--unico { color: #F5B360; background: rgba(245, 179, 96, .14); }
+  .grupo-h .tipo--mensal { color: #C9A8FF; background: rgba(201, 168, 255, .16); }
+  .grupo-h .tipo--anual { color: #6FE0D0; background: rgba(111, 224, 208, .14); }
+  .grupo-h small { color: var(--noite-2); font-size: 13px; }
+  .linhas { display: grid; gap: 6px; margin: 0; }
+  .linha { display: flex; justify-content: space-between; gap: 12px; font-size: 14.5px; }
+  .linha dt { color: var(--noite-2); min-width: 0; }
+  .linha dd { margin: 0; font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .linha.desc dd, .linha.desc dt { color: #7CE3B1; }
+  .grupo-total { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding-top: 8px; border-top: 1px solid rgba(255, 255, 255, .14); }
+  .grupo-total span { font-size: 14px; font-weight: 600; }
+  .grupo-total b { font-family: var(--display); font-weight: 900; font-size: 34px; line-height: 1; font-variant-numeric: tabular-nums; }
+  .consulta { display: inline-block; padding: 1px 8px; border-radius: 999px; background: rgba(168, 116, 255, .22); color: #D9C6FF; font-size: 12px; font-weight: 700; font-family: var(--body); }
+  .nota { font-size: 13px; color: var(--noite-2); }
+
+  /* Interno */
+  .interno { display: grid; gap: 10px; padding: 16px; border-radius: 18px; background: #FDE68A; color: #3B2A00; }
+  .interno h4 { margin: 0; font-size: 13px; letter-spacing: .1em; text-transform: uppercase; }
+  .interno .linha dt, .interno .linha dd { color: #3B2A00; }
+  .interno .forte dd, .interno .forte dt { font-weight: 700; }
+  .custo-in { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+  .custo-in input { width: 80px; padding: 5px 8px; border-radius: 8px; border: 1px solid #C9A227; background: #FFF8DB; color: #3B2A00; font: 600 15px var(--mono); }
+
+  /* Tabelas */
+  .tabela-wrap { overflow-x: auto; border-radius: 20px; border: 1px solid var(--line); background: var(--surface); }
+  table { width: 100%; border-collapse: collapse; font-size: 15px; min-width: 460px; }
+  caption { text-align: left; padding: 16px 18px 4px; }
+  th, td { padding: 12px 18px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  th { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+  td.v { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; font-weight: 600; text-align: right; }
+  th.v { text-align: right; }
+  td small { display: block; color: var(--muted); font-size: 13px; }
+  .cards { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  .card { display: grid; gap: 10px; align-content: start; padding: 20px; border-radius: 20px; background: var(--surface); border: 1px solid var(--line); }
+  .card.destaque { border: 2px solid var(--roxo); }
+  .card .valor { font-family: var(--display); font-weight: 900; font-size: 40px; line-height: 1; }
+  .card .valor span { font-family: var(--body); font-size: 15px; font-weight: 600; color: var(--muted); margin-left: 2px; }
+  .card ul { margin: 0; padding-left: 1.1em; color: var(--ink-2); font-size: 14.5px; display: grid; gap: 4px; }
+  .card-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .grupo-tab { display: grid; gap: 12px; }
+  .grupo-tab > header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .grupo-tab > header p { color: var(--muted); font-size: 14.5px; }
+  .condicoes { display: grid; gap: 12px; padding: 22px; border-radius: 20px; background: var(--roxo-soft); }
+  .condicoes ul { margin: 0; padding-left: 1.1em; display: grid; gap: 6px; }
+  .rodape { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; justify-content: space-between; color: var(--muted); font-size: 14px; }
+  .rodape a { color: var(--roxo-ink); font-weight: 600; }
+  .logo-claro { display: none; }
+  :root[data-theme="dark"] .logo-escuro { display: none; }
+  :root[data-theme="dark"] .logo-claro { display: inline; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .logo-escuro { display: none; } :root:not([data-theme="light"]) .logo-claro { display: inline; } }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="hero">
+    <img src="/assets/img/vtx-tap.png" alt="VTX Tap" width="150" height="69">
+    
+    <h1>Uma plaquinha na mesa. <em>O restaurante inteiro no celular do cliente.</em></h1>
+    <p>O cliente encosta o celular (NFC) ou lê o QR Code da mesa. Na mesma página ele chama o garçom, vê o cardápio, avalia no Google e junta pontos. Sem baixar aplicativo.</p>
+    <ul><li>Chamar o garçom</li><li>Cardápio digital</li><li>Avaliação no Google</li><li>Programa de fidelidade</li><li>Painel da equipe</li></ul>
+  </header>
+
+  <section class="sec" aria-labelledby="cobTitulo">
+    <div class="sec-h">
+      <p class="kicker">Como funciona a cobrança</p>
+      <h2 id="cobTitulo">Três tipos de valor, sem surpresa</h2>
+      <p>Todo preço desta página vem marcado com o tipo de cobrança. Assim você sabe o que paga uma vez só e o que se repete.</p>
+    </div>
+    <div class="tres">
+      <article><span class="tipo tipo--unico">Pagamento único</span><h3>Você paga uma vez, na contratação</h3>
+        <ul><li>Implantação no restaurante</li><li>Plaquinhas das mesas</li><li>Configuração do domínio próprio, se quiser um</li></ul></article>
+      <article><span class="tipo tipo--mensal">Todo mês</span><h3>A mensalidade dos serviços que você usar</h3>
+        <ul><li>Página da mesa e cardápio</li><li>Chamar o garçom</li><li>Programa de fidelidade</li><li>Domínio próprio, se tiver</li></ul></article>
+      <article><span class="tipo tipo--anual">Todo ano</span><h3>Só se registrarmos um domínio para você</h3>
+        <ul><li>Renovação do domínio .com.br</li><li>Com o endereço incluso (subdomínio), não existe cobrança anual</li></ul></article>
+    </div>
+  </section>
+
+  <section class="sec" aria-labelledby="simTitulo">
+    <div class="sec-h">
+      <p class="kicker">Simulador</p>
+      <h2 id="simTitulo">Monte o seu</h2>
+      <p>Mexa nas opções e veja, separado, o que é pagamento único, o que é mensal e o que é anual.</p>
+    </div>
+    <div class="sim-grid">
+      <form class="controles" id="sim" novalidate>
+        <div class="bloco">
+          <div class="bloco-h"><h3><label for="mesasNum">Quantas mesas?</label></h3><span class="dica" id="porte"></span></div>
+          <div class="qtd">
+            <input type="range" id="mesasRange" min="1" max="120" value="30" aria-label="Mesas">
+            <input type="number" id="mesasNum" min="1" max="500" value="30" inputmode="numeric">
+          </div>
+        </div>
+
+        <div class="bloco">
+          <h3>Serviços <span class="tipo tipo--mensal">Todo mês</span></h3>
+          <div class="opcoes">
+            <label class="op"><input type="checkbox" id="svPagina" checked><span class="op-txt"><span class="op-top"><b>Página da mesa e cardápio</b><span class="preco">R$ 99 por mês</span></span>
+              <small>Cardápio com fotos e filtros, Wi-Fi, avaliação no Google, comentário anônimo e Instagram.</small></span></label>
+            <label class="op"><input type="checkbox" id="svGarcom" checked><span class="op-txt"><span class="op-top"><b>Chamar o garçom</b><span class="preco">R$ 99 por mês</span></span>
+              <small>O cliente chama pelo celular e a equipe recebe na hora no painel, com som e mapa do salão.</small></span></label>
+            <label class="op"><input type="checkbox" id="svFid" checked><span class="op-txt"><span class="op-top"><b>Programa de fidelidade</b><span class="preco">R$ 199 por mês</span></span>
+              <small>Pontos pela nota fiscal, prêmios, níveis do clube, indicação de amigos e dias com pontos em dobro.</small></span></label>
+          </div>
+          <p class="dica" id="comboDica"></p>
+        </div>
+
+        <div class="bloco">
+          <div class="bloco-h"><h3>Plaquinhas <span class="tipo tipo--unico">Pagamento único</span></h3></div>
+          <div class="opcoes">
+            <label class="op"><input type="radio" name="placa" id="plPadrao" value="padrao" checked><span class="op-txt"><span class="op-top"><b>Padrão</b><span class="preco" id="precoPadrao"></span></span>
+              <small>Arte VTX Tap com o número da mesa, NFC e QR Code. Quanto mais plaquinhas, menor o preço de cada uma.</small></span></label>
+            <label class="op"><input type="radio" name="placa" id="plPerso" value="personalizada"><span class="op-txt"><span class="op-top"><b>Personalizada</b><span class="preco">Sob consulta</span></span>
+              <small>Com a logo e as cores do restaurante. O valor depende da arte, do material e da quantidade.</small></span></label>
+          </div>
+          <div class="bloco-h"><label for="placasNum" class="dica">Quantidade de plaquinhas (uma por mesa, ou mais se quiser duas em mesas grandes)</label></div>
+          <div class="qtd">
+            <input type="range" id="placasRange" min="1" max="150" value="30" aria-label="Plaquinhas">
+            <input type="number" id="placasNum" min="1" max="1000" value="30" inputmode="numeric">
+          </div>
+        </div>
+
+        <div class="bloco">
+          <h3>Endereço do site</h3>
+          <div class="opcoes" role="radiogroup" aria-label="Endereço do site">
+            <label class="op"><input type="radio" name="dom" id="domSub" value="sub" checked><span class="op-txt"><span class="op-top"><b>Endereço incluso</b><span class="preco">Grátis</span></span>
+              <small>Ex.: <code>seurestaurante.vortexsystems.tech</code></small></span></label>
+            <label class="op"><input type="radio" name="dom" id="domProprio" value="proprio"><span class="op-txt"><span class="op-top"><b>Domínio que você já tem</b><span class="preco">R$ 190 + R$ 19/mês</span></span>
+              <small>Ex.: <code>cardapio.seurestaurante.com.br</code>. R$ 190 uma vez para configurar e R$ 19 por mês.</small></span></label>
+            <label class="op"><input type="radio" name="dom" id="domRegistro" value="registro"><span class="op-txt"><span class="op-top"><b>Registramos o domínio para você</b><span class="preco">+ R$ 90/ano</span></span>
+              <small>O mesmo do item acima, mais R$ 90 por ano para registrar e renovar o domínio em seu nome.</small></span></label>
+          </div>
+        </div>
+
+        <div class="bloco">
+          <h3>Tempo de contrato</h3>
+          <div class="opcoes" role="radiogroup" aria-label="Contrato">
+            <label class="op"><input type="radio" name="contrato" id="ct6" value="6" checked><span class="op-txt"><span class="op-top"><b>6 meses</b><span class="preco">Implantação cheia</span></span>
+              <small>Contrato mínimo.</small></span></label>
+            <label class="op"><input type="radio" name="contrato" id="ct12" value="12"><span class="op-txt"><span class="op-top"><b>12 meses</b><span class="preco">50% off na implantação</span></span>
+              <small>A mensalidade é a mesma; o desconto vale para a implantação.</small></span></label>
+          </div>
+        </div>
+      </form>
+
+      <aside class="resumo" aria-live="polite">
+        <h3>Seu orçamento</h3>
+        <div class="grupo">
+          <div class="grupo-h"><span class="tipo tipo--unico">Pagamento único</span><small>paga uma vez, na contratação</small></div>
+          <dl class="linhas" id="lnUnico"></dl>
+          <div class="grupo-total"><span>Total único</span><b id="totUnico">R$ 0</b></div>
+        </div>
+        <div class="grupo">
+          <div class="grupo-h"><span class="tipo tipo--mensal">Todo mês</span><small>a partir do primeiro mês</small></div>
+          <dl class="linhas" id="lnMensal"></dl>
+          <div class="grupo-total"><span>Total por mês</span><b id="totMensal">R$ 0</b></div>
+        </div>
+        <div class="grupo" id="grupoAnual" hidden>
+          <div class="grupo-h"><span class="tipo tipo--anual">Todo ano</span><small>renovação do domínio</small></div>
+          <dl class="linhas" id="lnAnual"></dl>
+          <div class="grupo-total"><span>Total por ano</span><b id="totAnual">R$ 0</b></div>
+        </div>
+        
+        <p class="nota">Mensalidades reajustadas uma vez por ano pelo IPCA.</p>
+      </aside>
+    </div>
+  </section>
+
+  <section class="sec" aria-labelledby="tabTitulo">
+    <div class="sec-h">
+      <p class="kicker">Tabela de preços</p>
+      <h2 id="tabTitulo">Pague só pelo que usar</h2>
+    </div>
+
+    <div class="grupo-tab">
+      <header><span class="tipo tipo--mensal">Todo mês</span><p>Mensalidade de cada serviço. Escolha um, dois ou os três.</p></header>
+      <div class="cards">
+        <article class="card"><h3>Página da mesa e cardápio</h3><p class="valor num">R$ 99<span>por mês</span></p>
+          <ul><li>Cardápio digital com fotos e filtros</li><li>Wi-Fi, Instagram e endereço</li><li>Avaliação no Google em um toque</li><li>Comentário anônimo para a gerência</li></ul></article>
+        <article class="card"><h3>Chamar o garçom</h3><p class="valor num">R$ 99<span>por mês</span></p>
+          <ul><li>Chamado pelo celular, sem botão na mesa</li><li>Painel da equipe com som e alerta de atraso</li><li>Mapa do salão e fechamento da mesa</li><li>Proteção contra trote</li></ul></article>
+        <article class="card"><h3>Programa de fidelidade</h3><p class="valor num">R$ 199<span>por mês</span></p>
+          <ul><li>Pontos pela nota fiscal (QR da NFC-e)</li><li>Prêmios com foto e código para o garçom</li><li>Níveis do clube e dias com pontos em dobro</li><li>Indicação de amigos</li></ul></article>
+        <article class="card destaque"><div class="card-top"><h3>Os três juntos</h3><span class="tipo tipo--mensal">Combo</span></div><p class="valor num">R$ 329<span>por mês</span></p>
+          <ul><li>Tudo dos três serviços</li><li>R$ 68 a menos por mês que separados</li></ul></article>
+      </div>
+    </div>
+
+    <div class="grupo-tab">
+      <header><span class="tipo tipo--unico">Pagamento único</span><p>Pago uma vez, na contratação.</p></header>
+      <div class="tabela-wrap">
+        <table>
+          <thead><tr><th>Implantação no restaurante</th><th class="v">Valor único</th></tr></thead>
+          <tbody>
+            <tr><td>Até 20 mesas</td><td class="v">R$ 590</td></tr>
+            <tr><td>21 a 50 mesas</td><td class="v">R$ 890</td></tr>
+            <tr><td>51 mesas ou mais, ou várias áreas</td><td class="v">R$ 1.190</td></tr>
+            <tr><td>Implantação da fidelidade<small>Regras, prêmios, níveis e regulamento prontos.</small></td><td class="v">+ R$ 490</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="tabela-wrap">
+        <table>
+          <thead><tr><th>Plaquinha padrão (NFC + QR Code)</th><th class="v">Valor único por plaquinha</th></tr></thead>
+          <tbody id="tabPlacas"></tbody>
+        </table>
+      </div>
+      <p class="muted">A implantação inclui o cadastro do restaurante, o cardápio montado, as mesas e áreas, a instalação das plaquinhas no local e 1 hora de treinamento da equipe. Plaquinha personalizada, com a logo do restaurante: sob consulta.</p>
+    </div>
+
+    <div class="grupo-tab">
+      <header><h3>Endereço do site</h3><p>Opcional. O endereço incluso não tem custo.</p></header>
+      <div class="tabela-wrap">
+        <table>
+          <thead><tr><th>Opção</th><th class="v">Valor</th></tr></thead>
+          <tbody>
+            <tr><td>Endereço incluso<small><code>seurestaurante.vortexsystems.tech</code></small></td><td class="v">Grátis</td></tr>
+            <tr><td>Domínio que você já tem: configuração</td><td class="v">R$ 190 único</td></tr>
+            <tr><td>Domínio que você já tem: manutenção</td><td class="v">R$ 19 por mês</td></tr>
+            <tr><td>Registro e renovação do domínio por nós</td><td class="v">R$ 90 por ano</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="condicoes">
+      <h3>Condições</h3>
+      <ul>
+        <li>Contrato mínimo de 6 meses.</li>
+        <li>No contrato de 12 meses, a implantação sai com 50% de desconto.</li>
+        <li>Mensalidades reajustadas uma vez por ano pelo IPCA.</li>
+        <li>Plaquinha perdida ou quebrada: reposição pelo mesmo valor da unidade.</li>
+      </ul>
+    </div>
+  </section>
+
+  <footer class="rodape">
+    <span><img class="logo-escuro" src="/assets/img/vtx-tap-escuro.png" alt="VTX Tap" width="110" height="51"><img class="logo-claro" src="/assets/img/vtx-tap.png" alt="" width="110" height="51"></span>
+    <span>Fale com a gente: <a href="https://instagram.com/vortexsoftwareco" target="_blank" rel="noopener">@vortexsoftwareco</a></span>
+  </footer>
+</div>
+
+<script>
+  (function () {
+    const INTERNO = false;
+    const $ = (s) => document.getElementById(s);
+    const brl = (v) => 'R$ ' + Math.round(v).toLocaleString('pt-BR');
+    const PRECO = { pagina: 99, garcom: 99, fid: 199, combo: 329, fidSetup: 490, domSetup: 190, domMes: 19, domAno: 90 };
+    // Plaquinha padrão: preço por unidade conforme a quantidade.
+    const FAIXAS = [
+      { de: 1, ate: 19, valor: 59 },
+      { de: 20, ate: 49, valor: 52 },
+      { de: 50, ate: 99, valor: 45 },
+      { de: 100, ate: Infinity, valor: 42 },
+    ];
+    const precoPlaca = (q) => FAIXAS.find((f) => q >= f.de && q <= f.ate).valor;
+    function implantacao(m) {
+      if (m <= 20) return { valor: 590, porte: 'até 20 mesas' };
+      if (m <= 50) return { valor: 890, porte: '21 a 50 mesas' };
+      return { valor: 1190, porte: '51 mesas ou mais' };
+    }
+    const linha = (dt, dd, cls = '') => `<div class="linha ${cls}"><dt>${dt}</dt><dd>${dd}</dd></div>`;
+    const faixaTxt = (f) => (f.ate === Infinity ? `${f.de} ou mais` : `${f.de} a ${f.ate}`);
+
+    $('tabPlacas').innerHTML = FAIXAS.map((f) => `<tr><td>${faixaTxt(f)} plaquinhas</td><td class="v">${brl(f.valor)} cada</td></tr>`).join('')
+      + '<tr><td>Personalizada, com a logo do restaurante</td><td class="v">Sob consulta</td></tr>';
+
+    let placasManual = false;
+    function calcular() {
+      const m = Math.min(Math.max(Math.round(+$('mesasNum').value || 1), 1), 500);
+      const q = Math.min(Math.max(Math.round(+$('placasNum').value || 1), 1), 1000);
+      const sv = { pagina: $('svPagina').checked, garcom: $('svGarcom').checked, fid: $('svFid').checked };
+      const qtd = Object.values(sv).filter(Boolean).length;
+      const dom = document.querySelector('input[name="dom"]:checked').value;
+      const meses = +document.querySelector('input[name="contrato"]:checked').value;
+      const placa = document.querySelector('input[name="placa"]:checked').value;
+      const imp = implantacao(m);
+      const pu = precoPlaca(q);
+      $('porte').textContent = `Implantação: ${imp.porte}`;
+      $('precoPadrao').textContent = `${brl(pu)} cada`;
+
+      // Pagamento único
+      const u = [];
+      let totU = 0;
+      let impTotal = 0;
+      if (qtd) {
+        u.push(linha(`Implantação (${imp.porte})`, brl(imp.valor)));
+        impTotal += imp.valor;
+        if (sv.fid) { u.push(linha('Implantação da fidelidade', brl(PRECO.fidSetup))); impTotal += PRECO.fidSetup; }
+        if (meses === 12) { u.push(linha('Desconto do contrato de 12 meses', '− ' + brl(impTotal / 2), 'desc')); impTotal /= 2; }
+        totU += impTotal;
+      }
+      let totPlacas = 0;
+      if (placa === 'padrao') {
+        totPlacas = q * pu;
+        u.push(linha(`${q} plaquinhas padrão × ${brl(pu)}`, brl(totPlacas)));
+        totU += totPlacas;
+      } else {
+        u.push(linha(`${q} plaquinhas personalizadas`, '<span class="consulta">sob consulta</span>'));
+      }
+      if (dom !== 'sub') { u.push(linha('Configuração do domínio próprio', brl(PRECO.domSetup))); totU += PRECO.domSetup; }
+      $('lnUnico').innerHTML = u.join('');
+      $('totUnico').textContent = brl(totU) + (placa === 'padrao' ? '' : ' + plaquinhas');
+
+      // Todo mês
+      const mm = [];
+      let totM = 0;
+      if (qtd === 3) {
+        mm.push(linha('Página, garçom e fidelidade (separados)', brl(PRECO.pagina + PRECO.garcom + PRECO.fid)));
+        mm.push(linha('Desconto do combo', '− ' + brl(PRECO.pagina + PRECO.garcom + PRECO.fid - PRECO.combo), 'desc'));
+        totM += PRECO.combo;
+      } else {
+        if (sv.pagina) { mm.push(linha('Página da mesa e cardápio', brl(PRECO.pagina))); totM += PRECO.pagina; }
+        if (sv.garcom) { mm.push(linha('Chamar o garçom', brl(PRECO.garcom))); totM += PRECO.garcom; }
+        if (sv.fid) { mm.push(linha('Programa de fidelidade', brl(PRECO.fid))); totM += PRECO.fid; }
+      }
+      if (dom !== 'sub') { mm.push(linha('Domínio próprio', brl(PRECO.domMes))); totM += PRECO.domMes; }
+      if (!mm.length) mm.push(linha('Escolha pelo menos um serviço', '—'));
+      $('lnMensal').innerHTML = mm.join('');
+      $('totMensal').textContent = brl(totM);
+
+      // Todo ano
+      $('grupoAnual').hidden = dom !== 'registro';
+      $('lnAnual').innerHTML = linha('Registro e renovação do domínio', brl(PRECO.domAno));
+      $('totAnual').textContent = brl(PRECO.domAno);
+
+      $('comboDica').textContent = qtd === 3 ? 'Combo aplicado: R$ 329 por mês, R$ 68 a menos que separados.'
+        : qtd ? 'Com os três serviços juntos, a mensalidade fica em R$ 329 (combo).' : 'Escolha pelo menos um serviço.';
+
+      if (INTERNO) interno({ q, pu, placa, totPlacas, impTotal, totM, dom, meses });
+    }
+
+    // Visão interna: custo e lucro.
+    function interno({ q, pu, placa, totPlacas, impTotal, totM, dom, meses }) {
+      const custo = Math.max(+$('custoPlaca').value || 0, 0);
+      const infra = Math.max(+$('custoInfra').value || 0, 0);
+      const custoPlacas = placa === 'padrao' ? q * custo : 0;
+      const lucroPlacas = totPlacas - custoPlacas;
+      const regDom = dom === 'registro' ? 40 : 0;
+      const lucroMes = totM - infra;
+      const lucroEntrada = lucroPlacas + impTotal + (dom !== 'sub' ? PRECO.domSetup : 0);
+      $('lnInterno').innerHTML = [
+        placa === 'padrao' ? linha(`Plaquinhas: custo ${q} × ${brl(custo)}`, brl(custoPlacas)) : linha('Plaquinhas personalizadas', 'orçar: custo × 2,5'),
+        placa === 'padrao' ? linha(`Margem da plaquinha (${brl(pu)} ÷ ${brl(custo)})`, custo ? (pu / custo).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + 'x' : '—') : '',
+        placa === 'padrao' ? linha('Lucro nas plaquinhas', brl(lucroPlacas)) : '',
+        linha('Implantação (tempo, sem custo direto)', brl(impTotal)),
+        linha('Lucro no pagamento único', brl(lucroEntrada), 'forte'),
+        linha(`Lucro por mês (mensalidade − ${brl(infra)} de servidor)`, brl(lucroMes), 'forte'),
+        linha(`Lucro nos primeiros ${meses} meses`, brl(lucroEntrada + lucroMes * meses + (dom === 'registro' ? PRECO.domAno - regDom : 0)), 'forte'),
+      ].join('');
+    }
+
+    const sincronizar = (de, para, max) => { $(para).value = Math.min(+$(de).value || 1, max); };
+    $('mesasRange').addEventListener('input', () => { sincronizar('mesasRange', 'mesasNum', 500); if (!placasManual) { $('placasNum').value = $('mesasNum').value; sincronizar('placasNum', 'placasRange', 150); } calcular(); });
+    $('mesasNum').addEventListener('input', () => { sincronizar('mesasNum', 'mesasRange', 120); if (!placasManual) { $('placasNum').value = $('mesasNum').value; sincronizar('placasNum', 'placasRange', 150); } calcular(); });
+    $('placasRange').addEventListener('input', () => { placasManual = true; sincronizar('placasRange', 'placasNum', 1000); calcular(); });
+    $('placasNum').addEventListener('input', () => { placasManual = true; sincronizar('placasNum', 'placasRange', 150); calcular(); });
+    $('sim').addEventListener('change', calcular);
+    $('sim').addEventListener('submit', (e) => e.preventDefault());
+    document.addEventListener('input', (e) => { if (e.target.closest('.interno')) calcular(); });
+    calcular();
+  })();
+</script>
+
+</body>
+</html>

@@ -30,7 +30,7 @@ Tudo o que muda no dia a dia do restaurante é editado no painel.
 
 Um app e um banco (Supabase) atendem a central da Vortex e todos os restaurantes:
 
-- `tap.vortexsystems.tech` → **central** (painel da Vortex) e o **redirecionador** das plaquinhas (`/t/CODIGO`).
+- `tap.vortexsystems.tech` → **página de preços** (`/`, com simulador), **central** (painel da Vortex, em `/master`) e o **redirecionador** das plaquinhas (`/t/CODIGO`).
 - `quintal.vortexsystems.tech` → **restaurante** "quintal": página da mesa (`/`) e painel da equipe (`/admin`).
 
 Cada restaurante é uma linha em `restaurantes`, identificado pelo **subdomínio**. Tudo o que é dele (chamados, equipe, mesas, comentários, plaquinhas) tem `restaurante_id`, e as regras do banco (RLS) garantem que a equipe de um restaurante só enxerga o dela. Cliente novo = um cadastro na central; não há banco, deploy nem DNS novo por cliente.
@@ -81,7 +81,8 @@ A central libera por restaurante (Editar restaurante → Módulos contratados �
 ```
 index.html              página da mesa (cliente)          →  quintal.vortexsystems.tech/?tag=CODIGO
 admin/index.html        painel da equipe do restaurante   →  quintal.vortexsystems.tech/admin
-central/                central da Vortex e redirecionador →  tap.vortexsystems.tech  e  /t/CODIGO
+central/                central da Vortex e redirecionador →  tap.vortexsystems.tech/master  e  /t/CODIGO
+lp/                     página de preços com simulador   →  tap.vortexsystems.tech/
 central/placa.js        layout do PDF das plaquinhas (o @ e os textos ficam no topo)
 env.js                  gerado no servidor a partir das variáveis de ambiente
 assets/js/config.js     dados iniciais do restaurante e leitura do subdomínio
@@ -89,7 +90,7 @@ assets/js/store.js      dados: modo demonstração (navegador) ou Supabase
 assets/js/cliente.js    página da mesa;   assets/js/admin.js   painel da equipe
 supabase/schema.sql     banco único: tabelas, regras de acesso, funções, imagens e tempo real
 supabase/functions/     função "equipe": criar conta e entrar por PIN (por restaurante)
-Dockerfile, deploy/     nginx: central no CENTRAL_HOST, restaurantes em qualquer outro subdomínio
+Dockerfile, deploy/     nginx: no CENTRAL_HOST, preços em /, central em /master e plaquinhas em /t/; restaurantes em qualquer outro subdomínio
 ```
 
 ## Testar agora (modo demonstração)
@@ -99,7 +100,8 @@ python -m http.server 5500
 ```
 
 - Restaurante: `http://localhost:5500/admin` (crie a conta; a primeira senha vira a da equipe) e `http://localhost:5500/?mesa=12`.
-- Central: `http://localhost:5500/central/` (o redirecionador fica em `/central/t.html?c=CODIGO`).
+- Central: `http://localhost:5500/central/` (publicada em `/master`; o redirecionador fica em `/central/t.html?c=CODIGO`).
+- Página de preços: `http://localhost:5500/lp/` (publicada na raiz do `CENTRAL_HOST`).
 
 Sem as variáveis do Supabase, os dados ficam no navegador e sincronizam só entre abas do mesmo aparelho.
 
