@@ -85,24 +85,27 @@ td.num small { display: block; font-size: 11.5px; color: var(--muted); }
 .tagver .qr svg { width: 100%; height: auto; }
 .tagver code { font-family: var(--font-mono); font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
 .tagver p { font-size: 14px; }
+.limpar { display: grid; gap: 6px; width: 100%; margin-top: 6px; padding-top: 14px; border-top: 1px solid var(--line); }
+.limpar h3 { font-size: 15px; }
+.limpar p { font-size: 13px; }
 
 /* Novo restaurante */
 .slug-campo { display: flex; align-items: stretch; }
 .slug-campo .input { flex: 1 1 0; width: 0; min-width: 0; border-top-right-radius: 0; border-bottom-right-radius: 0; }
 .slug-base { display: flex; align-items: center; padding: 0 12px; border: 1.5px solid var(--line); border-left: 0; border-radius: 0 14px 14px 0; background: var(--surface-2); color: var(--muted); font-size: 14px; white-space: nowrap; }
 @media (max-width: 400px) { .slug-base { font-size: 12px; padding: 0 8px; } }
-.ativ-dados { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 12px; width: 100%; margin: 0; padding: 12px 14px; border-radius: 14px; background: var(--surface-2); text-align: left; font-size: 14px; }
-.ativ-dados dt { color: var(--muted); font-weight: 600; }
-.ativ-dados dd { margin: 0; overflow-wrap: anywhere; }
-.ativ-dados a { color: var(--cobalt-ink); }
-
-/* Código de ativação */
-.ativ { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 10px 12px; border-radius: 12px; background: var(--cobalt-soft); }
-.ativ small { width: 100%; font-size: 12px; font-weight: 600; color: var(--muted); }
-.ativ b { font-size: 20px; letter-spacing: .14em; color: var(--ink); margin-right: auto; }
-.ativ-sheet { text-align: center; justify-items: center; }
-.ativ-grande { display: block; padding: 14px 22px; border-radius: 16px; background: var(--cobalt); color: var(--enamel); font-size: 32px; letter-spacing: .16em; }
+/* Acesso do restaurante: links clicáveis e botões de copiar */
+.acesso-dados { display: grid; gap: 4px; padding: 6px; border-radius: 14px; background: var(--surface-2); }
+.acesso-linha { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0 8px; padding: 8px 8px 8px 12px; border-radius: 10px; background: var(--surface); }
+.acesso-linha span { grid-column: 1; font-size: 12px; font-weight: 600; color: var(--muted); }
+.acesso-linha a, .acesso-linha b { grid-column: 1; font-size: 15px; overflow-wrap: anywhere; }
+.acesso-linha a { color: var(--cobalt-ink); text-decoration: underline; text-underline-offset: 3px; }
+.acesso-linha .icon-btn { grid-column: 2; grid-row: 1 / span 2; }
+.acesso-obs { padding: 8px 12px; font-size: 13px; }
+.acesso-acts { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
 .ativ-passos { text-align: left; margin: 0; padding-left: 1.3em; display: grid; gap: 6px; font-size: 14.5px; color: var(--ink-2); }
+.rcard-links { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.pill--mod { margin-top: 8px; background: var(--cobalt-soft); color: var(--cobalt-ink); }
 
 /* Visão geral */
 .vhead .seg { min-width: 280px; }

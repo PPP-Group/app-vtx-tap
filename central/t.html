@@ -26,6 +26,10 @@
     input { font: 600 20px ui-monospace, 'SF Mono', Consolas, monospace; letter-spacing: .18em; text-align: center; text-transform: uppercase;
       width: 100%; min-height: 52px; padding: 10px 12px; border-radius: 14px; border: 1.5px solid color-mix(in srgb, var(--muted) 40%, transparent); background: var(--surface); color: var(--ink); }
     input:focus { outline: none; border-color: var(--cobalt); }
+    .campo { display: flex; align-items: center; gap: 4px; width: 100%; }
+    .campo input { flex: 1 1 0; width: 0; min-width: 0; }
+    input.slug { font: 600 18px system-ui, -apple-system, 'Segoe UI', sans-serif; letter-spacing: 0; text-transform: none; text-align: left; }
+    .base { flex: none; font-size: 14px; color: var(--muted); }
     .erro { color: #CF3E27; font-weight: 600; min-height: 1.4em; }
     .ico { width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center; background: color-mix(in srgb, var(--cobalt) 14%, transparent); color: var(--cobalt); font-size: 26px; }
     [hidden] { display: none !important; }
@@ -41,7 +45,7 @@
   </main>
   <script>
     // Redirecionador das plaquinhas: /t/CODIGO → site do restaurante dono da plaquinha (?tag=CODIGO).
-    // Plaquinha nova (sem dono): a equipe ativa com o código de ativação do restaurante.
+    // Plaquinha nova (sem dono): a equipe informa o restaurante e escolhe a mesa no painel (PIN).
     (function () {
       var env = window.CENTRAL_ENV || {};
       var bruto = (location.pathname.match(/\/t\/([A-Za-z0-9-]+)/) || [])[1] || new URLSearchParams(location.search).get('c') || '';
@@ -89,25 +93,17 @@
         return Promise.resolve(r && r.ativo !== false ? { status: 'ok', slug: r.slug } : { status: 'inativo' });
       }
 
-      // Mesmas regras de public.ativar_etiqueta() do schema.sql.
-      function ativar(ativacao) {
-        var atv = String(ativacao || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-        if (temServidor) return rpc('ativar_etiqueta', { p_codigo: codigo, p_ativacao: atv });
-        var db = lerDemo();
-        var e = (db.etiquetas || []).find(function (x) { return x.codigo === codigo; });
-        if (!e) return Promise.resolve({ status: 'inexistente' });
-        var r = (db.restaurantes || []).find(function (x) { return x.codigo_ativacao === atv && x.ativo !== false; });
-        if (!r) return Promise.resolve({ status: 'codigo_incorreto' });
-        if (!e.restaurante_id) { e.restaurante_id = r.id; e.vendida_em = new Date().toISOString(); gravarDemo(db); }
-        return Promise.resolve({ status: 'ok', slug: r.slug, restaurante: r.nome });
-      }
-
-      /* Plaquinha nova: a equipe digita o código de ativação do restaurante.
-         O celular guarda o restaurante para ativar as próximas com um toque. */
-      var LEMBRAR = 'central-ativacao';
+      /* Plaquinha nova: a equipe diz de qual restaurante ela é (o endereço, uma
+         vez por celular) e entra com o PIN no painel, onde escolhe a mesa. O
+         login da equipe é a autorização: não existe código de ativação à parte. */
+      var LEMBRAR = 'central-restaurante';
       function lembrado() { try { return JSON.parse(localStorage.getItem(LEMBRAR)); } catch (e) { return null; } }
-      function lembrar(v) { try { v ? localStorage.setItem(LEMBRAR, JSON.stringify(v)) : localStorage.removeItem(LEMBRAR); } catch (e) {} }
-      function formatar(c) { c = String(c || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); return c.length > 4 ? c.slice(0, 4) + '-' + c.slice(4, 8) : c; }
+      function lembrar(v) {
+        try {
+          v ? localStorage.setItem(LEMBRAR, JSON.stringify(v)) : localStorage.removeItem(LEMBRAR);
+          localStorage.removeItem('central-ativacao');
+        } catch (e) {}
+      }
 
       // Endereço do restaurante: subdomínio do domínio base. Sem domínio base
       // (teste local), o mesmo servidor com ?r=.
@@ -119,60 +115,67 @@
         return u.href;
       }
 
+      // "ciencia", "ciencia.vortexsystems.tech" ou o link inteiro do site/painel → "ciencia".
+      function slugDe(texto) {
+        var t = String(texto || '').trim().toLowerCase().replace(/^https?:\/\//, '').split(/[\/?#\s]/)[0];
+        if (BASE && t.slice(-(BASE.length + 1)) === '.' + BASE) t = t.slice(0, -(BASE.length + 1));
+        t = t.split('.')[0];
+        return /^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$/.test(t) ? t : '';
+      }
+      function buscarRestaurante(slug) {
+        if (temServidor) return rpc('restaurante_publico', { p_slug: slug });
+        var r = (lerDemo().restaurantes || []).find(function (x) { return x.slug === slug && x.ativo !== false; });
+        return Promise.resolve(r ? { slug: r.slug, nome: r.nome } : null);
+      }
+
       function irParaMesa(slug) {
         // Abre o painel do restaurante já na escolha da mesa desta plaquinha.
+        box.innerHTML = '<div class="dot" aria-hidden="true"></div><h1>Abrindo o painel…</h1><p>Entre com o seu PIN e escolha a mesa.</p>';
         location.replace(site(slug, '/admin/', { vincular: codigo }));
       }
 
       function telaAtivar(msg) {
         var salvo = lembrado();
-        if (salvo && salvo.codigo && !msg) {
+        if (salvo && salvo.slug && !msg) {
           box.innerHTML = '<div class="ico" aria-hidden="true">✓</div><h1>Plaquinha nova</h1>' +
-            '<p>Ativar esta plaquinha para <b id="nomeR"></b>? Depois você escolhe a mesa.</p><code></code>' +
-            '<button type="button" id="ok">Ativar e escolher a mesa</button><p class="erro" id="erro" role="alert"></p>' +
-            '<button type="button" class="link" id="outro">É de outro restaurante</button>';
-          box.querySelector('#nomeR').textContent = salvo.nome || 'o seu restaurante';
+            '<p>Ligar esta plaquinha a uma mesa de <b id="nomeR"></b>?</p><code></code>' +
+            '<button type="button" id="ok">Escolher a mesa</button>' +
+            '<button type="button" class="link" id="outro">É de outro restaurante</button>' +
+            '<p style="font-size:13px">Cliente? Esta mesa ainda está sendo preparada. Chame o garçom.</p>';
+          box.querySelector('#nomeR').textContent = salvo.nome || salvo.slug;
           box.querySelector('code').textContent = codigo;
-          box.querySelector('#ok').onclick = function () { enviar(salvo.codigo, this); };
+          box.querySelector('#ok').onclick = function () { irParaMesa(salvo.slug); };
           box.querySelector('#outro').onclick = function () { lembrar(null); telaAtivar(); };
           return;
         }
         box.innerHTML = '<div class="ico" aria-hidden="true">＋</div><h1>Plaquinha nova</h1>' +
-          '<p>Se você é da equipe do restaurante, digite o <b>código de ativação</b> que recebeu na implantação. Depois é só escolher a mesa.</p><code></code>' +
-          '<form id="f" novalidate><label for="atv" class="sr">Código de ativação</label>' +
-          '<input id="atv" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="9" placeholder="XXXX-XXXX" inputmode="text">' +
-          '<button type="submit">Ativar</button><p class="erro" id="erro" role="alert"></p></form>' +
+          '<p>Se você é da equipe, digite o <b>endereço do restaurante</b>. Depois é só entrar com o seu PIN e escolher a mesa.</p><code></code>' +
+          '<form id="f" novalidate><label for="rest" class="sr">Endereço do restaurante</label>' +
+          '<div class="campo"><input id="rest" class="slug" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="80" placeholder="restaurante" inputmode="url">' +
+          (BASE ? '<span class="base"></span>' : '') + '</div>' +
+          '<button type="submit">Continuar</button><p class="erro" id="erro" role="alert"></p></form>' +
           '<p style="font-size:13px">Cliente? Esta mesa ainda está sendo preparada. Chame o garçom.</p>';
         box.querySelector('code').textContent = codigo;
-        var inp = box.querySelector('#atv');
-        box.querySelector('#erro').textContent = msg || '';
-        inp.oninput = function () { var p = inp.value; inp.value = formatar(p); };
+        if (BASE) box.querySelector('.base').textContent = '.' + BASE;
+        var inp = box.querySelector('#rest');
+        var erro = box.querySelector('#erro');
+        erro.textContent = msg || '';
         box.querySelector('#f').onsubmit = function (ev) {
           ev.preventDefault();
-          var v = inp.value.replace(/[^A-Za-z0-9]/g, '');
-          if (v.length !== 8) { box.querySelector('#erro').textContent = 'O código de ativação tem 8 letras e números.'; return inp.focus(); }
-          enviar(v, this.querySelector('button'));
+          var slug = slugDe(inp.value);
+          var btn = this.querySelector('button');
+          if (!slug) { erro.textContent = 'Digite o endereço do restaurante (o nome antes de .' + (BASE || 'seu-dominio') + ').'; return inp.focus(); }
+          btn.disabled = true;
+          buscarRestaurante(slug).then(function (r) {
+            if (!r) { btn.disabled = false; erro.textContent = 'Não achamos esse restaurante. Confira o endereço.'; return inp.focus(); }
+            lembrar({ slug: slug, nome: (r.restaurante && r.restaurante.nome) || r.nome || slug });
+            irParaMesa(slug);
+          }).catch(function () {
+            btn.disabled = false;
+            erro.textContent = 'Sem conexão. Confira a internet e tente de novo.';
+          });
         };
         setTimeout(function () { inp.focus(); }, 50);
-      }
-
-      function enviar(ativacao, btn) {
-        btn.disabled = true;
-        ativar(ativacao).then(function (r) {
-          if (r && r.status === 'ok' && r.slug) {
-            lembrar({ codigo: String(ativacao).toUpperCase().replace(/[^A-Z0-9]/g, ''), nome: r.restaurante || '' });
-            box.innerHTML = '<div class="dot" aria-hidden="true"></div><h1>Plaquinha ativada</h1><p>Abrindo a escolha da mesa…</p>';
-            return irParaMesa(r.slug);
-          }
-          if (r && r.status === 'codigo_incorreto') { lembrar(null); return telaAtivar('Código de ativação incorreto. Confira e tente de novo.'); }
-          if (r && r.status === 'bloqueado') return telaAtivar('Muitas tentativas erradas. Aguarde 10 minutos e tente de novo.');
-          if (r && r.status === 'inativo') return mostrar('Plaquinha desativada', 'O serviço deste restaurante está desativado. Fale com a Vortex.');
-          mostrar('Plaquinha não encontrada', 'Não reconhecemos este código. Confira se o link está completo.');
-        }).catch(function () {
-          btn.disabled = false;
-          var e = box.querySelector('#erro');
-          if (e) e.textContent = 'Sem conexão. Confira a internet e tente de novo.';
-        });
       }
 
       if (!codigo) return mostrar('Link incompleto', 'Encoste o celular na plaquinha de novo ou aponte a câmera para o QR.');

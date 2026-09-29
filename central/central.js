@@ -47,23 +47,43 @@
     toast(`Gerando PDF com ${lista.length} ${lista.length === 1 ? 'plaquinha' : 'plaquinhas'}…`);
     await Placa.baixarPdf(lista.map((c) => ({ codigo: c, url: tagUrl(c) })), `${nomeArq(titulo)}.pdf`);
   }
-  const fmtAtivacao = (c) => { c = String(c || ''); return c.length > 4 ? `${c.slice(0, 4)}-${c.slice(4)}` : c; };
-  function mostrarAtivacao(r, novo, senha) {
-    $('#shTitle').textContent = novo ? 'Restaurante criado' : 'Código de ativação';
-    $('#shBody').innerHTML = `<div class="stack ativ-sheet">
-      ${novo ? `<dl class="ativ-dados">
-        <dt>Endereço</dt><dd><a class="mono" href="${esc(siteDe(r))}" target="_blank" rel="noopener">${esc(siteCurto(r))}</a></dd>
-        <dt>Painel da equipe</dt><dd class="mono">${esc(siteCurto(r))}/admin</dd>
-        ${senha ? `<dt>Senha da equipe</dt><dd class="mono">${esc(senha)}</dd>` : ''}
-      </dl>` : ''}
-      <p>Código de ativação das plaquinhas de <b>${esc(r.nome)}</b>:</p>
-      <b class="ativ-grande mono">${fmtAtivacao(r.codigo_ativacao)}</b>
+  // Painel da equipe do restaurante.
+  const painelDe = (r) => (BASE ? `https://${r.slug}.${BASE}/admin/` : new URL(`/admin/?r=${r.slug}`, location.origin).href);
+  // Texto pronto para mandar ao restaurante (WhatsApp, e-mail).
+  const textoAcesso = (r, senha) => [
+    `*${r.nome}*`,
+    `Site das mesas: ${siteDe(r)}`,
+    `Painel da equipe: ${painelDe(r)}`,
+    senha ? `Senha da equipe: ${senha}` : '',
+    '',
+    `Cada pessoa da equipe cria a conta no painel com a senha da equipe e depois entra só com o próprio PIN.`,
+    `Para ligar uma plaquinha: encoste o celular nela, digite o endereço "${r.slug}" (só na primeira vez), entre com o PIN e escolha a mesa.`,
+  ].filter((l, i, a) => l || a[i - 1]).join('\n');
+
+  // Acesso do restaurante: endereço, painel e senha da equipe, com botões de copiar.
+  function mostrarAcesso(r, novo, senha) {
+    $('#shTitle').textContent = novo ? 'Restaurante criado' : r.nome;
+    const linha = (rotulo, valor, link) => `<div class="acesso-linha">
+        <span>${rotulo}</span>
+        ${link ? `<a class="mono" href="${esc(link)}" target="_blank" rel="noopener">${esc(valor)}</a>` : `<b class="mono">${esc(valor)}</b>`}
+        <button type="button" class="icon-btn" data-copiar-txt="${esc(link || valor)}" aria-label="Copiar ${rotulo.toLowerCase()}" title="Copiar">${icon('copy')}</button>
+      </div>`;
+    S.acessoTexto = textoAcesso(r, senha);
+    $('#shBody').innerHTML = `<div class="stack acesso">
+      <div class="acesso-dados">
+        ${linha('Site das mesas', siteCurto(r), siteDe(r))}
+        ${linha('Painel da equipe', `${siteCurto(r)}/admin`, painelDe(r))}
+        ${senha ? linha('Senha da equipe', senha) : '<p class="muted acesso-obs">A senha da equipe não fica visível depois de criada. Para trocar, use <b>Editar</b>.</p>'}
+      </div>
       <ol class="ativ-passos">
-        <li>Cole a plaquinha na mesa e encoste o celular nela (ou leia o QR).</li>
-        <li>Na tela <b>Plaquinha nova</b>, digite este código. Só na primeira: o celular lembra para as próximas.</li>
-        <li>Entre com o PIN da equipe e escolha o número da mesa.</li>
+        <li>Cada pessoa da equipe abre o painel, toca em <b>Criar conta</b> com a senha da equipe e passa a entrar só com o próprio PIN.</li>
+        <li>Para ligar uma plaquinha: encoste o celular nela; na tela <b>Plaquinha nova</b>, digite o endereço <b class="mono">${esc(r.slug)}</b> (só na primeira vez, o celular lembra).</li>
+        <li>Entre com o PIN e escolha o número da mesa.</li>
       </ol>
-      <button type="button" class="btn btn-cobalt btn-block" data-copiar-atv="${r.id}">${icon('copy')} Copiar código</button>
+      <div class="acesso-acts">
+        <button type="button" class="btn btn-cobalt" data-copiar-acesso>${icon('copy')} Copiar tudo</button>
+        <a class="btn btn-line" href="https://wa.me/?text=${encodeURIComponent(S.acessoTexto)}" target="_blank" rel="noopener">${icon('share')} Enviar no WhatsApp</a>
+      </div>
     </div>`;
     openSheet('sh');
   }
@@ -105,6 +125,17 @@
         return c;
       },
       async listEtiquetas() { return read().etiquetas; },
+      // Mesmas regras de public.limpar_etiquetas() do schema.sql.
+      async limpar(codigos, nivel) {
+        const db = read();
+        db.etiquetas.forEach((e) => {
+          if (!codigos.includes(e.codigo)) return;
+          Object.assign(e, { mesa: null, vinculada_em: null, vinculada_por: null });
+          if (nivel !== 'mesa') Object.assign(e, { restaurante_id: null, vendida_em: null, ativada_em: null });
+          if (nivel === 'tudo') Object.assign(e, { gravada: false, leituras: 0, ultima_leitura: null });
+        });
+        write(db);
+      },
       async gerar(qtd, lote) {
         const db = read();
         const existentes = new Set(db.etiquetas.map((e) => e.codigo));
@@ -222,6 +253,11 @@
       async marcarGravadas(codigos, g) {
         for (let i = 0; i < codigos.length; i += 500) {
           must(await sb.rpc('marcar_gravadas', { p_codigos: codigos.slice(i, i + 500), p_gravada: g }));
+        }
+      },
+      async limpar(codigos, nivel) {
+        for (let i = 0; i < codigos.length; i += 500) {
+          must(await sb.rpc('limpar_etiquetas', { p_codigos: codigos.slice(i, i + 500), p_nivel: nivel }));
         }
       },
       async metricas(dias) {
@@ -386,7 +422,7 @@
         <td class="muted">${fmtData(t.criado_em)}</td>
       </tr>`;
     }).join('');
-    return `<div class="vhead"><div><h1>Plaquinhas</h1><p>Cada plaquinha tem um código único, igual no NFC e no QR. Ela sai sem dono: a equipe do restaurante ativa com o código de ativação na primeira leitura.</p></div>
+    return `<div class="vhead"><div><h1>Plaquinhas</h1><p>Cada plaquinha tem um código único, igual no NFC e no QR. Ela sai sem dono: na primeira leitura, a equipe do restaurante digita o endereço do restaurante, entra com o PIN e escolhe a mesa.</p></div>
         <span class="acts"><button type="button" class="btn btn-line" data-abrir="gravar">${icon('nfc')} Gravar NFC</button>
         <button type="button" class="btn btn-cobalt" data-abrir="gerar">${icon('plus')} Gerar lote</button></span></div>
       <dl class="strip">
@@ -408,7 +444,9 @@
         <span class="selpick">ou as próximas <input class="input mono" id="pickN" type="number" min="1" max="2000" placeholder="10" aria-label="Quantidade"> <button type="button" class="btn btn-line btn-sm" data-pick>em estoque</button></span>
         ${n ? `<div class="selacts">
           <button type="button" class="btn btn-cobalt btn-sm" data-abrir="vender">${icon('arrow')} Atribuir a um restaurante</button>
+          <button type="button" class="btn btn-line btn-sm" data-acao="mesa">Tirar da mesa</button>
           <button type="button" class="btn btn-line btn-sm" data-acao="estoque">Devolver ao estoque</button>
+          <button type="button" class="btn btn-line btn-sm" data-acao="zerar">Zerar tudo</button>
           <button type="button" class="btn btn-line btn-sm" data-acao="pdf">${icon('download')} PDF das plaquinhas</button>
           <button type="button" class="btn btn-line btn-sm" data-acao="imprimir">${icon('printer')} Imprimir QR</button>
           <button type="button" class="btn btn-line btn-sm" data-acao="etiquetas">${icon('printer')} Etiquetas de código</button>
@@ -426,19 +464,20 @@
 
   function vRestaurantes() {
     const cont = (id) => S.tags.filter((t) => t.restaurante_id === id).length;
-    return `<div class="vhead"><div><h1>Restaurantes</h1><p>Cada restaurante tem um <b>código de ativação</b>: a equipe dele digita na primeira leitura de uma plaquinha nova, e ela passa a ser do restaurante. Mudou o domínio? Troque o endereço aqui e todas as plaquinhas continuam funcionando.</p></div>
+    return `<div class="vhead"><div><h1>Restaurantes</h1><p>Cada restaurante tem um endereço próprio e a senha da equipe. Na primeira leitura de uma plaquinha nova, alguém da equipe digita o endereço do restaurante e entra com o PIN: a plaquinha passa a ser dele. Em <b>Acesso</b> você copia os dados para mandar ao restaurante.</p></div>
         <button type="button" class="btn btn-cobalt" data-abrir="rest">${icon('plus')} Novo restaurante</button></div>
       ${S.rests.length ? `<div class="rests">${S.rests.map((r) => `<article class="rcard ${r.ativo === false ? 'is-off' : ''}">
-          <div><h3>${esc(r.nome)}</h3><a href="${esc(siteDe(r))}" target="_blank" rel="noopener" class="mono">${esc(siteCurto(r))}</a>
-            ${r.observacao ? `<p>${esc(r.observacao)}</p>` : ''}</div>
-          <div class="ativ"><small>Código de ativação</small><b class="mono">${fmtAtivacao(r.codigo_ativacao)}</b>
-            <span class="rcard-acts"><button type="button" class="btn btn-quiet btn-sm" data-copiar-atv="${r.id}">${icon('copy')} Copiar</button>
-            <button type="button" class="btn btn-quiet btn-sm" data-trocar-atv="${r.id}">Trocar</button></span></div>
+          <div><h3>${esc(r.nome)}</h3>
+            <p class="rcard-links"><a href="${esc(siteDe(r))}" target="_blank" rel="noopener" class="mono">${esc(siteCurto(r))}</a>
+              <a href="${esc(painelDe(r))}" target="_blank" rel="noopener" class="mono">painel</a></p>
+            ${r.observacao ? `<p>${esc(r.observacao)}</p>` : ''}
+            ${r.modulos && r.modulos.fidelidade ? '<span class="pill pill--mod">Fidelidade</span>' : ''}</div>
           <div class="rcard-foot"><span>${cont(r.id)} ${cont(r.id) === 1 ? 'plaquinha' : 'plaquinhas'}${r.ativo === false ? ' · <b>desativado</b>' : ''}</span>
             <span class="rcard-acts"><button type="button" class="btn btn-quiet btn-sm" data-ver-rest="${r.id}">Ver plaquinhas</button>
+            <button type="button" class="btn btn-quiet btn-sm" data-acesso="${r.id}">${icon('share')} Acesso</button>
             <button type="button" class="btn btn-line btn-sm" data-editar="${r.id}">${icon('edit')} Editar</button></span></div>
         </article>`).join('')}</div>`
-        : `<div class="vazio">${icon('grid')}<h2>Nenhum restaurante</h2><p>Cadastre o restaurante com o endereço do site dele (ex.: https://quintal.vtx.com.br). Ele recebe um código de ativação para a equipe ligar as plaquinhas.</p></div>`}`;
+        : `<div class="vazio">${icon('grid')}<h2>Nenhum restaurante</h2><p>Cadastre o restaurante com um nome, o endereço (subdomínio) e a senha da equipe. A equipe usa o endereço e o PIN para ligar as plaquinhas.</p></div>`}`;
   }
 
   /* ============================== Folhas ============================== */
@@ -490,14 +529,47 @@
     $('#shBody').innerHTML = `<div class="stack tagver">
       <div class="qr">${qrSvg(tagUrl(codigo), { cell: 6, margin: 1 })}</div>
       <code>${esc(tagUrl(codigo))}</code>
-      <p>${r ? `Entregue a <b>${esc(r.nome)}</b> em ${fmtData(t.vendida_em)}` : 'Em estoque'} · ${t.leituras || 0} leituras${t.ultima_leitura ? ` (última ${ago(t.ultima_leitura)})` : ''}</p>
+      <p>${r ? `Entregue a <b>${esc(r.nome)}</b>${t.vendida_em || t.ativada_em ? ` em ${fmtData(t.vendida_em || t.ativada_em)}` : ''}${t.mesa ? ` · mesa <b>${t.mesa}</b>` : ' · sem mesa'}` : 'Em estoque'}
+        · NFC ${t.gravada ? 'gravado' : 'não gravado'} · ${t.leituras || 0} leituras${t.ultima_leitura ? ` (última ${ago(t.ultima_leitura)})` : ''}</p>
       <div class="acts">
         <button type="button" class="btn btn-line btn-sm" data-pdf1="${codigo}">${icon('download')} PDF</button>
         <button type="button" class="btn btn-line btn-sm" data-copiar="${codigo}">${icon('copy')} Copiar link</button>
         <a class="btn btn-line btn-sm" href="${esc(tagUrl(codigo))}" target="_blank" rel="noopener">${icon('external')} Testar</a>
       </div>
+      <div class="limpar">
+        <h3>Limpar plaquinha</h3>
+        <p class="muted">O código ${esc(codigo)} nunca muda. Limpar só apaga o que está ligado a ele.</p>
+        <div class="acts">
+          ${t.mesa ? `<button type="button" class="btn btn-line btn-sm" data-limpar1="mesa" data-cod="${codigo}">Tirar da mesa</button>` : ''}
+          ${t.restaurante_id ? `<button type="button" class="btn btn-line btn-sm" data-limpar1="estoque" data-cod="${codigo}">Devolver ao estoque</button>` : ''}
+          <button type="button" class="btn btn-danger btn-sm" data-limpar1="zerar" data-cod="${codigo}">${icon('trash')} Zerar tudo</button>
+        </div>
+      </div>
     </div>`;
     openSheet('sh');
+  }
+
+  // Limpar: 'mesa' tira da mesa (continua do restaurante); 'estoque' devolve ao
+  // estoque; 'zerar' volta a ser como nova (NFC para gravar de novo). O código não muda.
+  async function limparPlaquinhas(codigos, tipo) {
+    if (!codigos.length) return;
+    const um = codigos.length === 1;
+    const alvo = um ? `a plaquinha ${codigos[0]}` : `${codigos.length} plaquinhas`;
+    const pergunta = {
+      mesa: `Tirar ${alvo} da mesa? ${um ? 'Ela continua' : 'Elas continuam'} do restaurante e ${um ? 'aparece' : 'aparecem'} como “Plaquinha nova” até ${um ? 'ser ligada' : 'serem ligadas'} de novo.`,
+      estoque: `Devolver ${alvo} ao estoque? ${um ? 'Ela deixa' : 'Elas deixam'} de ser do restaurante e ${um ? 'para' : 'param'} de abrir o site dele.`,
+      zerar: `Zerar ${alvo}? ${um ? 'Ela volta' : 'Elas voltam'} a ser como ${um ? 'nova' : 'novas'}: sem restaurante, sem mesa, leituras zeradas e NFC marcado para gravar de novo. O código não muda.`,
+    }[tipo];
+    if (!confirm(pergunta)) return;
+    try {
+      await api.limpar(codigos, { mesa: 'mesa', estoque: 'restaurante', zerar: 'tudo' }[tipo]);
+      const feito = { mesa: um ? 'Plaquinha tirada da mesa.' : 'Plaquinhas tiradas da mesa.', estoque: um ? 'Plaquinha devolvida ao estoque.' : 'Plaquinhas devolvidas ao estoque.', zerar: um ? 'Plaquinha zerada: está como nova.' : 'Plaquinhas zeradas: estão como novas.' };
+      toast(feito[tipo], { tone: 'ok' });
+      if (!$('#sh').hidden) closeSheet();
+    } catch (ex) {
+      toast(ex.message, { tone: 'error' });
+    }
+    return carregar();
   }
 
   /* ============================== Ações ============================== */
@@ -739,29 +811,50 @@
     const outro = codigoDoLink(link);
     if (outro && outro !== t.codigo) return msgGravar(`Esta etiqueta já tem outro código (${outro}). Confira se é a plaquinha certa.`);
     G.ocupado = true;
-    msgGravar('Gravando… mantenha encostada.', '');
     const reader = G.reader;
+    const passos = G.bloquear ? 2 : 1;
+    // Cada operação no chip tem prazo: se o celular perdeu o contato, é mais
+    // rápido afastar e encostar de novo do que esperar.
+    const comPrazo = (fazer) => {
+      const ctrl = new AbortController();
+      const t0 = setTimeout(() => ctrl.abort(), 8000);
+      return fazer(ctrl.signal).finally(() => clearTimeout(t0));
+    };
+    const outroBotao = G.modo === 'lista' ? 'Pular' : G.modo === 'camera' ? 'Ler outro QR' : 'Outro código';
     try {
-      if (link !== meu) await reader.write({ records: [{ recordType: 'url', data: meu }] });
+      if (link !== meu) {
+        msgGravar(`Gravando${passos > 1 ? ' (1/2)' : ''}… mantenha encostada.`, '');
+        await comPrazo((signal) => reader.write({ records: [{ recordType: 'url', data: meu }] }, { overwrite: true, signal }));
+      }
     } catch (e) {
       G.ocupado = false;
-      return msgGravar(`Não gravou: ${e.message}. Afaste e encoste de novo.`);
+      return msgGravar(e.name === 'AbortError'
+        ? 'A etiqueta não respondeu. Afaste o celular e encoste de novo.'
+        : `Não gravou: ${e.message}. Afaste e encoste de novo.`);
     }
-    try {
-      if (!t.gravada) await api.marcarGravadas([t.codigo], true);
+    // Registrar no servidor fica para depois de liberar o chip (não segura o celular encostado).
+    const registrar = () => {
+      if (t.gravada) return;
       t.gravada = true;
-    } catch (e) {
-      console.error(e);
-    }
+      api.marcarGravadas([t.codigo], true).catch((e) => {
+        console.error(e);
+        t.gravada = false;
+        setTimeout(registrar, 3000);
+      });
+    };
     if (G.bloquear) {
       try {
-        await espera(250);
-        await reader.makeReadOnly();
+        msgGravar('Bloqueando (2/2)… mantenha encostada.', '');
+        await comPrazo((signal) => reader.makeReadOnly({ signal }));
       } catch (e) {
+        registrar();
         G.ocupado = false;
-        return msgGravar(`${t.codigo} gravada, mas não bloqueou (${e.message}). Encoste de novo para bloquear; se ela já estiver bloqueada, toque em “${G.modo === 'lista' ? 'Pular' : G.modo === 'camera' ? 'Ler outro QR' : 'Outro código'}”.`);
+        return msgGravar(e.name === 'AbortError'
+          ? `${t.codigo} gravada, mas o bloqueio não respondeu. Afaste e encoste de novo para bloquear, ou toque em “${outroBotao}” se ela já estiver bloqueada.`
+          : `${t.codigo} gravada, mas não bloqueou (${e.message}). Encoste de novo para bloquear; se ela já estiver bloqueada, toque em “${outroBotao}”.`);
       }
     }
+    registrar();
     G.ultimaSerie = serie;
     G.ultimoLink = meu;
     G.feitos++;
@@ -772,7 +865,7 @@
       G.lido = null;
       desligarNfc();
     }
-    telaGravar(`${t.codigo} gravada${G.bloquear ? ' e bloqueada' : ''}. ${G.modo === 'camera' ? 'Leia o QR da próxima.' : G.modo === 'digitar' ? 'Digite o código da próxima.' : 'Afaste e encoste a próxima.'}`, 'is-ok');
+    telaGravar(`Pronto: ${t.codigo} gravada${G.bloquear ? ' e bloqueada' : ''}. Pode afastar. ${G.modo === 'camera' ? 'Leia o QR da próxima.' : G.modo === 'digitar' ? 'Digite o código da próxima.' : 'Encoste a próxima.'}`, 'is-ok');
   }
 
   function pararGravar() {
@@ -807,22 +900,21 @@
     if (vr) { Object.assign(S, { view: 'plaquinhas', rest: vr.dataset.verRest, filtro: 'todas', lote: '', busca: '' }); return render(); }
     const ver = t.closest('[data-ver]');
     if (ver) return verTag(ver.dataset.ver);
-    const ca = t.closest('[data-copiar-atv]');
-    if (ca) {
-      const r = restDe(ca.dataset.copiarAtv);
-      const ok = r && (await copyText(fmtAtivacao(r.codigo_ativacao)));
-      return toast(ok ? 'Código de ativação copiado.' : 'Não foi possível copiar.', { tone: ok ? 'ok' : 'error' });
+    const l1 = t.closest('[data-limpar1]');
+    if (l1) return limparPlaquinhas([l1.dataset.cod], l1.dataset.limpar1);
+    const acs = t.closest('[data-acesso]');
+    if (acs) {
+      const r = restDe(acs.dataset.acesso);
+      return r && mostrarAcesso(r, false);
     }
-    const ta = t.closest('[data-trocar-atv]');
-    if (ta) {
-      const r = restDe(ta.dataset.trocarAtv);
-      if (!r || !confirm(`Trocar o código de ativação de ${r.nome}? O código antigo para de funcionar. Plaquinhas já ativadas continuam normais.`)) return;
-      try {
-        r.codigo_ativacao = await api.trocarCodigo(r.id);
-        render();
-        mostrarAtivacao(r, false);
-      } catch (ex) { toast(ex.message, { tone: 'error' }); }
-      return;
+    const ct = t.closest('[data-copiar-txt]');
+    if (ct) {
+      const ok = await copyText(ct.dataset.copiarTxt);
+      return toast(ok ? 'Copiado.' : 'Não foi possível copiar. Toque e segure no texto para copiar.', { tone: ok ? 'ok' : 'error' });
+    }
+    if (t.closest('[data-copiar-acesso]')) {
+      const ok = await copyText(S.acessoTexto || '');
+      return toast(ok ? 'Dados de acesso copiados. Cole no WhatsApp ou no e-mail.' : 'Não foi possível copiar.', { tone: ok ? 'ok' : 'error' });
     }
     const p1 = t.closest('[data-pdf1]');
     if (p1) {
@@ -856,14 +948,7 @@
       }
       if (ac.dataset.acao === 'etiquetas') return imprimirCodigos(lista);
       if (ac.dataset.acao === 'csv') return exportarCsv(lista);
-      if (ac.dataset.acao === 'estoque') {
-        if (!confirm(`Devolver ${lista.length} ${lista.length === 1 ? 'plaquinha' : 'plaquinhas'} ao estoque? Elas param de abrir o site do restaurante.`)) return;
-        try {
-          await api.atribuir(lista.map((x) => x.codigo), null);
-          toast('Plaquinhas devolvidas ao estoque.', { tone: 'ok' });
-        } catch (ex) { toast(ex.message, { tone: 'error' }); }
-        return carregar();
-      }
+      if (['estoque', 'mesa', 'zerar'].includes(ac.dataset.acao)) return limparPlaquinhas(lista.map((x) => x.codigo), ac.dataset.acao);
     }
     const g = t.closest('[data-gravar]');
     if (g) {
@@ -970,7 +1055,7 @@
         const salvo = await api.salvarRestaurante({ ...(S.editRest ? { id: S.editRest } : {}), nome, slug, senha, observacao: $('#rObs').value.trim() || null, ativo: $('#rAtivo').checked });
         if (!S.editRest && salvo) {
           S.rests.push(salvo);
-          mostrarAtivacao(salvo, true, senha);
+          mostrarAcesso(salvo, true, senha);
         } else {
           closeSheet();
           toast('Restaurante salvo.', { tone: 'ok' });

@@ -783,7 +783,7 @@
           <ol>
             <li>Cole a plaquinha na mesa.</li>
             <li>Encoste o celular nela (ou aponte a câmera para o QR). Na primeira vez aparece <strong>Plaquinha nova</strong>.</li>
-            <li>Digite o <strong>código de ativação</strong> do restaurante (só na primeira plaquinha: o celular lembra para as próximas).</li>
+            <li>Digite o <strong>endereço do restaurante</strong> (só na primeira plaquinha: o celular lembra para as próximas).</li>
             <li>Entre com seu PIN e escolha o número da mesa.</li>
             <li>Pronto: daí em diante, a plaquinha abre direto a página dessa mesa.</li>
           </ol>
@@ -855,8 +855,9 @@
       <p class="muted">Em qual mesa esta plaquinha está colada?</p>
       <div class="vmesas">${grid}</div>
       <button type="button" class="btn btn-cobalt btn-block" data-vinc="salvar" ${vincMesa ? '' : 'disabled'}>${icon('check')} ${vincMesa ? `Ligar à mesa ${vincMesa}` : 'Escolha a mesa'}</button>
-      ${atual ? `<button type="button" class="btn btn-danger btn-block" data-vinc="soltar">${icon('trash')} Desligar desta mesa</button>` : ''}
-      <small class="help">Uma mesa pode ter mais de uma plaquinha (por exemplo, uma em cada ponta).</small>
+      ${atual && atual.mesa ? `<button type="button" class="btn btn-line btn-block" data-vinc="soltar">Desligar desta mesa</button>` : ''}
+      ${atual ? `<button type="button" class="btn btn-danger btn-block" data-vinc="liberar">${icon('trash')} Tirar do restaurante</button>` : ''}
+      <small class="help">Uma mesa pode ter mais de uma plaquinha (por exemplo, uma em cada ponta).${atual ? ' Tirar do restaurante devolve a plaquinha ao estoque: ela volta a ser “nova” e pode ser ligada de novo por qualquer restaurante.' : ''}</small>
     </div>`;
   }
   async function salvarVinculo() {
@@ -874,11 +875,23 @@
     }
   }
   async function soltarVinculo() {
-    if (!confirm(`Desligar a plaquinha ${vincCodigo}? Ela volta a aparecer como “Plaquinha nova” até ser ligada de novo.`)) return;
+    if (!confirm(`Desligar a plaquinha ${vincCodigo}? Ela continua do restaurante e volta a aparecer como “Plaquinha nova” até ser ligada a outra mesa.`)) return;
     try {
       await store.desvincularEtiqueta(vincCodigo);
       closeSheet();
-      toast('Plaquinha desligada.');
+      toast('Plaquinha desligada da mesa.');
+      queueRefresh();
+    } catch (e) {
+      console.error(e);
+      toast('Não foi possível salvar. Verifique a conexão.', { tone: 'error' });
+    }
+  }
+  async function liberarPlaquinha() {
+    if (!confirm(`Tirar a plaquinha ${vincCodigo} do restaurante? Ela volta ao estoque, como nova, e deixa de abrir a página das mesas até ser ligada de novo.`)) return;
+    try {
+      await store.liberarEtiqueta(vincCodigo);
+      closeSheet();
+      toast('Plaquinha tirada do restaurante.');
       queueRefresh();
     } catch (e) {
       console.error(e);
@@ -1577,7 +1590,7 @@
       return renderVincular();
     }
     const vb = t.closest('[data-vinc]');
-    if (vb) return vb.dataset.vinc === 'salvar' ? salvarVinculo() : soltarVinculo();
+    if (vb) return vb.dataset.vinc === 'salvar' ? salvarVinculo() : vb.dataset.vinc === 'liberar' ? liberarPlaquinha() : soltarVinculo();
     const aBtn = t.closest('[data-area]');
     if (aBtn) {
       const areas = S.settings.mesas.areas.slice();
