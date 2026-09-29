@@ -16,6 +16,6 @@ COPY index.html env.js /usr/share/nginx/html/
 COPY admin /usr/share/nginx/html/admin
 COPY lp /usr/share/nginx/html/lp
 COPY assets /usr/share/nginx/html/assets
-COPY central/index.html central/t.html central/central.js central/central.css central/placa.js /usr/share/nginx/html/central/
+COPY central/index.html central/t.html central/central.js central/central.css central/placa.js central/sw.js central/manifest.webmanifest /usr/share/nginx/html/central/
 
 EXPOSE 80

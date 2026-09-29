@@ -349,10 +349,86 @@
     btn.disabled = false;
   });
 
+  /* ============================== App instalável (celular e computador) ============================== */
+  const APP = {
+    pedido: null,
+    instalado: () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true,
+    ios: () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1),
+  };
+  // Publicada em /master: o service worker fica na raiz (/master-sw.js) para cobrir /master.
+  if ('serviceWorker' in navigator) {
+    const emMaster = location.pathname.startsWith('/master');
+    addEventListener('load', () => navigator.serviceWorker
+      .register(emMaster ? '/master-sw.js' : '/central/sw.js', { scope: emMaster ? '/master' : '/central/' }).catch(() => {}));
+  }
+  addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    APP.pedido = e;
+    avisoApp();
+    botaoApp();
+  });
+  addEventListener('appinstalled', () => {
+    APP.pedido = null;
+    $('#appAviso')?.remove();
+    botaoApp();
+    toast('App instalado. Abra pelo ícone “VTX Master”.', { tone: 'ok', ms: 4500 });
+  });
+  const CHAVE_AVISO = 'central-app-aviso';
+  function avisoApp() {
+    if (!S.user || APP.instalado() || $('#appAviso')) return;
+    if (!APP.pedido && !APP.ios()) return;
+    let visto = 0;
+    try { visto = +localStorage.getItem(CHAVE_AVISO) || 0; } catch {}
+    if (Date.now() - visto < 14 * 864e5) return;
+    const el = document.createElement('div');
+    el.className = 'app-aviso';
+    el.id = 'appAviso';
+    el.setAttribute('role', 'region');
+    el.setAttribute('aria-label', 'Instalar o app');
+    el.innerHTML = `<img src="/admin/icons/icon-192.png" alt="" width="40" height="40">
+      <div><b>Instale o VTX Master</b><small>Abre direto da tela inicial ou da barra de tarefas, em tela cheia.</small></div>
+      <button type="button" class="btn btn-cobalt btn-sm" data-app="instalar">${APP.pedido ? 'Instalar' : 'Como instalar'}</button>
+      <button type="button" class="icon-btn" data-app="fechar" aria-label="Agora não">${icon('x')}</button>`;
+    document.body.append(el);
+  }
+  // Botão fixo no topo enquanto o app não estiver instalado.
+  function botaoApp() {
+    const b = $('#btnApp');
+    if (b) b.hidden = APP.instalado() || !(APP.pedido || APP.ios());
+  }
+  async function instalarApp() {
+    if (APP.pedido) {
+      const pedido = APP.pedido;
+      APP.pedido = null;
+      pedido.prompt();
+      await pedido.userChoice.catch(() => null);
+      botaoApp();
+      return;
+    }
+    $('#shTitle').textContent = 'Instalar no iPhone';
+    $('#shBody').innerHTML = `<ol class="app-passos">
+        <li>Abra este endereço no <b>Safari</b>.</li>
+        <li>Toque em <b>Compartilhar</b> ${icon('share')}.</li>
+        <li>Escolha <b>Adicionar à Tela de Início</b> e toque em <b>Adicionar</b>.</li>
+      </ol>`;
+    openSheet('sh');
+  }
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-app]');
+    if (!b) return;
+    if (b.closest('#appAviso')) {
+      try { localStorage.setItem(CHAVE_AVISO, String(Date.now())); } catch {}
+      $('#appAviso').remove();
+    }
+    if (b.dataset.app === 'instalar') instalarApp();
+  });
+
   function start() {
     $('#login').hidden = true;
     $('#app').hidden = false;
-    $('#who').innerHTML = `<span>${esc(S.user.email)}</span>${online ? `<button type="button" class="btn btn-quiet btn-sm" data-sair>${icon('logout')} Sair</button>` : ''}`;
+    $('#who').innerHTML = `<button type="button" class="btn btn-line btn-sm" id="btnApp" data-app="instalar" hidden>${icon('download')} Instalar app</button><span>${esc(S.user.email)}</span>${online ? `<button type="button" class="btn btn-quiet btn-sm" data-sair>${icon('logout')} Sair</button>` : ''}`;
+    botaoApp();
+    setTimeout(avisoApp, 1200);
     $('#demoBar').hidden = online;
     carregar();
   }

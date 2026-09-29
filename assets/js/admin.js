@@ -221,6 +221,7 @@
     e.preventDefault();
     APP.pedido = e;
     avisoApp();
+    if (S.user) renderChrome();
     if (S.user && S.view === 'ajustes' && S.ajTab === 'aparelho') renderView();
   });
   addEventListener('appinstalled', () => {
@@ -252,18 +253,18 @@
       </ol>`;
   }
 
-  // Convite para instalar: uma vez por aparelho, só em tela de celular.
+  // Convite para instalar (celular e computador). Fechado, volta depois de 14 dias.
   function avisoApp() {
-    if (!S.user || APP.instalado() || $('#appAviso') || get('nfc-app-aviso')) return;
+    if (!S.user || APP.instalado() || $('#appAviso')) return;
+    if (Date.now() - (+get('nfc-app-aviso') || 0) < 14 * 864e5) return;
     if (!APP.pedido && !APP.ios()) return;
-    if (!matchMedia('(max-width: 900px)').matches) return;
     const el = document.createElement('div');
     el.className = 'app-aviso';
     el.id = 'appAviso';
     el.setAttribute('role', 'region');
     el.setAttribute('aria-label', 'Instalar o app');
     el.innerHTML = `<img src="/admin/icons/icon-192.png" alt="" width="40" height="40">
-      <div><b>Painel no celular</b><small>Instale o app e abra direto da tela inicial.</small></div>
+      <div><b>Instale o painel</b><small>Abre direto da tela inicial ou da barra de tarefas, em tela cheia, e avisa dos chamados.</small></div>
       <button type="button" class="btn btn-cobalt btn-sm" data-app="instalar">${APP.pedido ? 'Instalar' : 'Como instalar'}</button>
       <button type="button" class="icon-btn" data-app="fechar" aria-label="Agora não">${icon('x')}</button>`;
     document.body.append(el);
@@ -272,7 +273,7 @@
     const b = e.target.closest('[data-app]');
     if (!b) return;
     if (b.closest('#appAviso')) {
-      set('nfc-app-aviso', '1');
+      set('nfc-app-aviso', String(Date.now()));
       $('#appAviso').remove();
     }
     if (b.dataset.app === 'instalar') instalarApp();
@@ -451,6 +452,7 @@
         <div>${esc(S.user.nome)}<small>Em serviço</small></div></div>
       <div class="side-tools">
         <button class="icon-btn" type="button" data-tool="som" aria-pressed="${S.som}" aria-label="${S.som ? 'Silenciar alertas' : 'Ativar som dos alertas'}" title="Som dos alertas">${icon(S.som ? 'volume' : 'mute')}</button>
+        ${!APP.instalado() && (APP.pedido || APP.ios()) ? `<button class="icon-btn" type="button" data-app="instalar" aria-label="Instalar o app" title="Instalar o app">${icon('download')}</button>` : ''}
         <button class="icon-btn" type="button" data-tool="tema" aria-label="Alternar tema claro/escuro" title="Tema">${icon(isDark() ? 'sun' : 'moon')}</button>
         <button class="icon-btn" type="button" data-tool="sair" aria-label="Sair" title="Sair">${icon('logout')}</button>
       </div>`;
@@ -1492,31 +1494,29 @@
           <label class="switch"><input type="checkbox" data-set="som" ${S.som ? 'checked' : ''} aria-label="Som dos alertas"><span></span></label></div></div>
         <div class="set-row"><div><h3>Lembrete de atrasados</h3><p>Repete o sino a cada 90 s enquanto houver chamado com mais de ${LATE} min.</p></div>
           <label class="switch"><input type="checkbox" data-set="lembrete" ${S.lembrete ? 'checked' : ''} aria-label="Lembrete de atrasados"><span></span></label></div>
-        <div class="set-row"><div><h3>Notificações do sistema</h3><p>${perm === 'granted' ? 'Ativadas. Você recebe avisos mesmo com o painel em segundo plano.' : perm === 'denied' ? 'Bloqueadas no navegador. Libere nas permissões do site.' : perm === 'unsupported' ? 'Este navegador não oferece notificações.' : 'Receba avisos com o painel em segundo plano.'}</p></div>
-          ${perm === 'default' ? '<button type="button" class="btn btn-cobalt btn-sm" data-set="notif">Ativar</button>' : ''}</div>
-        <div class="set-row"><div><h3>Manter a tela ligada</h3><p>${'wakeLock' in navigator ? 'Ideal para o tablet fixo no balcão.' : 'Este navegador não permite manter a tela ligada.'}</p></div>
-          <label class="switch"><input type="checkbox" data-set="tela" ${S.telaLigada ? 'checked' : ''} ${'wakeLock' in navigator ? '' : 'disabled'} aria-label="Manter a tela ligada"><span></span></label></div>
+        ${perm === 'default' ? `<div class="set-row"><div><h3>Notificações do sistema</h3><p>Receba avisos com o painel em segundo plano.</p></div>
+          <button type="button" class="btn btn-cobalt btn-sm" data-set="notif">Ativar</button></div>` : ''}
+        ${'wakeLock' in navigator ? `<div class="set-row"><div><h3>Manter a tela ligada</h3><p>Ideal para o tablet fixo no balcão.</p></div>
+          <label class="switch"><input type="checkbox" data-set="tela" ${S.telaLigada ? 'checked' : ''} aria-label="Manter a tela ligada"><span></span></label></div>` : ''}
         <div class="set-row wrap"><div><h3>Tema</h3><p>Escuro ajuda em salões com pouca luz.</p></div>
           <div class="seg" role="radiogroup" aria-label="Tema">
             <button type="button" role="radio" aria-checked="${tema === 'light'}" data-tema="light">Claro</button>
             <button type="button" role="radio" aria-checked="${tema === 'dark'}" data-tema="dark">Escuro</button>
             <button type="button" role="radio" aria-checked="${tema === 'auto'}" data-tema="auto">Automático</button></div></div>
-        <div class="set-row"><div><h3>Conexão</h3><p>${isDemo
-          ? 'Modo demonstração: tudo fica salvo só neste navegador. Para os celulares dos clientes chamarem a equipe, o site precisa estar ligado ao servidor.'
-          : 'Conectado ao servidor em tempo real.'}</p></div></div>
         ${isDemo ? `<div class="set-row"><div><h3>Dados de demonstração</h3><p>Apaga os chamados e comentários deste navegador. Os dados do restaurante continuam.</p></div>
           <button type="button" class="btn btn-danger btn-sm" data-set="reset">${icon('trash')} Apagar</button></div>` : ''}
-        <div class="set-row"><div><h3>${esc(S.user.nome)}</h3><p>Conectado neste aparelho.</p></div>
+        <div class="set-row"><div><h3>${esc(S.user.nome)}</h3><p>Sair do painel neste aparelho.</p></div>
           <button type="button" class="btn btn-line btn-sm" data-tool="sair">${icon('logout')} Sair</button></div>
       </div>`;
   }
 
   function linhaApp() {
-    if (APP.instalado()) return '<div class="set-row"><div><h3>App do painel</h3><p>Instalado neste aparelho.</p></div></div>';
+    // Só aparece quando dá para fazer algo: instalar agora ou seguir os passos do iPhone.
+    if (APP.instalado()) return '';
     if (APP.pedido) return `<div class="set-row"><div><h3>Instalar o app</h3><p>Coloca o painel na tela inicial, abre em tela cheia e avisa dos chamados.</p></div>
           <button type="button" class="btn btn-cobalt btn-sm" data-app="instalar">${icon('download')} Instalar</button></div>`;
     if (APP.ios()) return `<div class="set-row wrap"><div><h3>Instalar o app no iPhone</h3><p>Coloca o painel na tela inicial e libera as notificações de chamados.</p></div>${passosIos()}</div>`;
-    return '<div class="set-row"><div><h3>Instalar o app</h3><p>No Android, abra no Chrome e toque em <b>⋮</b> › <b>Instalar app</b>. No computador, use o ícone de instalar na barra de endereço.</p></div></div>';
+    return '';
   }
 
   /* Widgets */
