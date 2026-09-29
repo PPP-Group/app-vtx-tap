@@ -379,16 +379,9 @@ begin
    where codigo = upper(btrim(p_codigo)) and restaurante_id = r;
 end $$;
 
--- Tirar uma plaquinha do restaurante (volta ao estoque, como nova).
-create or replace function public.etiqueta_liberar(p_codigo text) returns void
-language plpgsql security definer set search_path = public as $$
-declare r uuid := public.meu_restaurante();
-begin
-  if r is null then raise exception 'Acesso negado.'; end if;
-  update public.etiquetas
-     set restaurante_id = null, ativada_em = null, mesa = null, vinculada_em = null, vinculada_por = null
-   where codigo = upper(btrim(p_codigo)) and restaurante_id = r;
-end $$;
+-- Devolver a plaquinha ao estoque é só da central (limpar_etiquetas): o
+-- painel do restaurante só tira da mesa.
+drop function if exists public.etiqueta_liberar(text);
 
 -- ---------------------------------------------------------------------------
 -- Chamados, comentários e o sino liberado pela equipe
@@ -1795,7 +1788,7 @@ begin
   -- Logados (cada função confere se é equipe ou operador).
   foreach f in array array[
     'public.salvar_config(jsonb)', 'public.etiqueta_vincular(text, int)', 'public.etiqueta_desvincular(text)',
-    'public.etiqueta_liberar(text)', 'public.limpar_etiquetas(text[], text)',
+    'public.limpar_etiquetas(text[], text)',
     'public.sessao_decidir(uuid, boolean)', 'public.mesa_fechar(int)',
     'public.criar_restaurante(text, text, text)', 'public.central_senha_equipe(uuid, text)',
     'public.trocar_codigo_ativacao(uuid)', 'public.gerar_etiquetas(int, text)',

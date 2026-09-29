@@ -14,7 +14,7 @@
  *   chamar(token, dados)         → chamado criado (só com o sino liberado; erro.code 'BLOQUEADO')
  *   cancelarChamado(token, id)
  *   listSessoes({ desde }) / decidirSessao(id, liberar) / fecharMesa(mesa) / listMesasAbertas()   (equipe)
- *   listEtiquetas() / vincularEtiqueta(codigo, mesa) / desvincularEtiqueta(codigo) / liberarEtiqueta(codigo) (equipe)
+ *   listEtiquetas() / vincularEtiqueta(codigo, mesa) / desvincularEtiqueta(codigo) (equipe)
  *
  *   listFeedback() / createFeedback(d) / updateFeedback(id, patch)
  *   getSettings() / updateSettings(patch)
@@ -432,11 +432,6 @@
         const db = read();
         const e = db.etiquetas.find((x) => x.codigo === normCodigo(codigo));
         if (e) Object.assign(e, { mesa: null, vinculada_em: null, vinculada_por: null });
-        write(db);
-      },
-      async liberarEtiqueta(codigo) {
-        const db = read();
-        db.etiquetas = db.etiquetas.filter((e) => e.codigo !== normCodigo(codigo));
         write(db);
       },
       async listFeedback() {
@@ -1020,9 +1015,6 @@
       },
       async desvincularEtiqueta(codigo) {
         must(await sb.rpc('etiqueta_desvincular', { p_codigo: normCodigo(codigo) }));
-      },
-      async liberarEtiqueta(codigo) {
-        must(await sb.rpc('etiqueta_liberar', { p_codigo: normCodigo(codigo) }));
       },
       async listFeedback() {
         return must(await sb.from('comentarios').select('*').eq('restaurante_id', rid).order('criado_em', { ascending: false }).limit(300));
