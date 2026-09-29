@@ -39,11 +39,11 @@ Cada restaurante é uma linha em `restaurantes`, identificado pelo **subdomínio
 
 Toda plaquinha sai de fábrica com um código único (ex.: `K7P2QXA`). O NFC e o QR têm o **mesmo link**, `https://tap.vortexsystems.tech/t/K7P2QXA`, e ela não tem número de mesa impresso.
 
-1. **Fábrica (central):** *Gerar lote* baixa o **PDF para a gráfica** (uma plaquinha de 12 × 6 cm por página, com QR e código). Depois, *Gravar NFC* (Chrome no Android) grava e bloqueia as etiquetas, de preferência no modo **Ler o QR da plaquinha**, que garante NFC igual ao QR. As plaquinhas saem **sem dono**.
-2. **Implantação (central):** *Novo restaurante* com nome, **subdomínio** e **senha da equipe**. A central mostra o endereço, o painel e o **código de ativação** (ex.: `QB7K-2M9P`) para passar ao restaurante.
-3. **Instalação (restaurante):** cola a plaquinha e encosta o celular → **Plaquinha nova** → digita o código de ativação (só na primeira; o celular lembra o restaurante) → cria a conta com a senha da equipe ou entra com o PIN → escolhe a mesa. Daí em diante, a plaquinha abre direto a mesa.
+1. **Fábrica (central):** *Gerar lote* baixa o **PDF para a gráfica** (uma plaquinha de 12 × 6 cm por página, com QR e código). Depois, *Gravar NFC* (Chrome no Android) grava e bloqueia as etiquetas: **Ler o QR da plaquinha** (garante NFC igual ao QR) ou **Digitar o código** impresso, sem câmera. Câmera e NFC nunca ficam ligados juntos. As plaquinhas saem **sem dono**.
+2. **Implantação (central):** *Novo restaurante* com nome, **subdomínio** e **senha da equipe**. A tela seguinte tem o site, o painel e a senha com botões de copiar, **Copiar tudo** e **Enviar no WhatsApp** (o mesmo fica em *Acesso*, no cartão do restaurante).
+3. **Instalação (restaurante):** cola a plaquinha e encosta o celular → **Plaquinha nova** → digita o **endereço do restaurante** (só na primeira; o celular lembra) → entra com o PIN (ou cria a conta com a senha da equipe) → escolhe a mesa. Daí em diante, a plaquinha abre direto a mesa. Não existe código de ativação à parte: o login da equipe é a autorização.
 
-Os códigos nunca repetem (o código é a chave primária de `etiquetas`); gere sempre pela central. Errar o código de ativação 8 vezes em 10 minutos bloqueia aquela plaquinha por um tempo. *Atribuir a um restaurante* continua na central para casos manuais.
+Os códigos nunca repetem (o código é a chave primária de `etiquetas`); gere sempre pela central. *Atribuir a um restaurante* continua na central para casos manuais.
 
 ### Sino liberado pela equipe (antitrote)
 
@@ -58,7 +58,7 @@ A página da mesa abre para qualquer um (cardápio, Wi-Fi etc.), mas o sino só 
 
 - *Visão geral*: leituras por dia (7, 30 ou 90 dias), ranking dos restaurantes com variação contra o período anterior, **chamados e tempo médio de resposta** de cada restaurante, plaquinhas nunca lidas e alerta de restaurante parado há 7 dias.
 - *Plaquinhas*: gerar lote (com PDF), PDF de novo pela seleção, atribuir, devolver ao estoque, imprimir QR ou etiquetas de código, exportar CSV e gravar NFC.
-- *Restaurantes*: subdomínio, código de ativação (copiar e trocar), nova senha da equipe, ativar ou desativar.
+- *Restaurantes*: subdomínio, dados de acesso para mandar ao restaurante (copiar ou WhatsApp), nova senha da equipe, ativar ou desativar.
 
 ## Estrutura
 
