@@ -158,6 +158,12 @@
     niveis: { ...FID_PADRAO.niveis, ...((f && f.niveis) || {}) },
   });
 
+  // Mensalidade do plano (a mesma tabela de public.plano_preco).
+  const precoPlano = (p) => {
+    const sv = (p && p.servicos) || {};
+    const base = sv.pagina && sv.garcom && sv.fidelidade ? 329 : (sv.pagina ? 99 : 0) + (sv.garcom ? 99 : 0) + (sv.fidelidade ? 199 : 0);
+    return base + (p && ['proprio', 'registro'].includes(p.dominio) ? 19 : 0);
+  };
   // Valores iniciais, usados enquanto a equipe ainda não salvou nada pelo painel.
   // Demonstração: o restaurante de exemplo (Quintal Bistrô). Restaurante de verdade:
   // tudo em branco, e o que não for preenchido não aparece para o cliente.
@@ -192,6 +198,13 @@
     // Lista de atalhos salva antes de existir o de informações: ele entra no fim, desligado.
     if (!out.widgets.some((w) => w.tipo === 'info')) out.widgets = [...out.widgets, { id: 'info', tipo: 'info', label: 'Informações do restaurante', ativo: false, embutido: true }];
     out.modulos = { ...(demo ? { fidelidade: true } : {}), ...((saved && saved.modulos) || {}) };
+    // Plano contratado: serviços e mesas. Sem plano definido = tudo liberado.
+    const pl = saved && saved.plano;
+    out.plano = {
+      servicos: { pagina: true, garcom: true, fidelidade: !!out.modulos.fidelidade, ...((pl && pl.servicos) || {}) },
+      mesas: Math.min(Math.max(+((pl && pl.mesas) || 500), 1), 500),
+    };
+    out.modulos.fidelidade = !!out.plano.servicos.fidelidade;
     out.fidelidade = mergeFid(saved && saved.fidelidade ? saved.fidelidade : demo ? FID_DEMO : null);
     return out;
   };
@@ -560,7 +573,11 @@
         if (patch.fidelidade && patch.fidelidade.ativo && !(patch.fidelidade.cnpjs || []).length) {
           throw new Error('Informe o CNPJ que sai nas notas fiscais antes de ativar o programa.');
         }
-        const novo = { ...mergeSettings(db.configuracao, true), ...patch };
+        const atual = mergeSettings(db.configuracao, true);
+        if (patch.mesas && +patch.mesas.total > atual.plano.mesas) {
+          throw new Error(`Seu plano tem ${atual.plano.mesas} mesas. Para usar mais, aumente as mesas na aba Plano.`);
+        }
+        const novo = { ...atual, ...patch };
         db.configuracao = novo;
         // Regras novas: atualiza o nível guardado de cada cliente.
         if (patch.fidelidade) F(db).clientes.forEach((c) => atualizarNivel(db, c.cpf, false));
@@ -575,6 +592,29 @@
       },
       async uploadImage(blob) {
         return blobToDataUrl(blob);
+      },
+      // Plano na demonstração: mesmas regras de public.plano_aplicar (guardado neste navegador).
+      async meuPlano() {
+        const db = read();
+        const p = mergeSettings(db.configuracao, true).plano;
+        const plano = { ...p, dominio: 'sub', contrato: 6, definido: !!(db.planoHistorico || []).length };
+        return { plano, mensal: precoPlano(plano), historico: db.planoHistorico || [] };
+      },
+      async alterarPlano(p) {
+        const db = read();
+        const sv = (p && p.servicos) || {};
+        if (!sv.pagina && !sv.garcom && !sv.fidelidade) throw new Error('Escolha pelo menos um serviço.');
+        const antes = (await this.meuPlano()).plano;
+        const novo = { servicos: { pagina: !!sv.pagina, garcom: !!sv.garcom, fidelidade: !!sv.fidelidade }, mesas: Math.min(Math.max(Math.round(+p.mesas || 20), 1), 500), dominio: 'sub', contrato: 6, definido: true };
+        const cfgAtual = mergeSettings(db.configuracao, true);
+        const mesas = cfgAtual.mesas.total > novo.mesas
+          ? { total: novo.mesas, areas: cfgAtual.mesas.areas.filter((a) => a.de <= novo.mesas).map((a) => ({ ...a, ate: Math.min(a.ate, novo.mesas) })) }
+          : cfgAtual.mesas;
+        db.configuracao = { ...(db.configuracao || {}), plano: novo, mesas, modulos: { ...((db.configuracao && db.configuracao.modulos) || {}), fidelidade: novo.servicos.fidelidade } };
+        (db.planoHistorico = db.planoHistorico || []).unshift({ criado_em: nowIso(), origem: 'restaurante', por: quem(db), antes: antes.definido ? antes : null, depois: novo,
+          mensal_antes: antes.definido ? precoPlano(antes) : null, mensal_depois: precoPlano(novo) });
+        write(db);
+        return novo;
       },
 
       /* ---------- Fidelidade: cliente ---------- */
@@ -1139,6 +1179,8 @@
       async getSettings() {
         const row = must(await sb.rpc('restaurante_publico', { p_slug: slug }));
         const s = mergeSettings(row, false);
+        // Mesas ainda não configuradas: começa com as contratadas no plano.
+        if (row && !row.mesas && s.plano.mesas < 500) s.mesas = { total: s.plano.mesas, areas: [{ nome: 'Salão', de: 1, ate: s.plano.mesas }] };
         // Nome cadastrado na central até a equipe definir o dela.
         if (row && !(row.restaurante && row.restaurante.nome)) s.restaurante = { ...s.restaurante, nome: row.nome };
         return s;
@@ -1146,6 +1188,12 @@
       async updateSettings(patch) {
         must(await sb.rpc('salvar_config', { p_patch: patch }));
         return this.getSettings();
+      },
+      async meuPlano() {
+        return must(await sb.rpc('meu_plano'));
+      },
+      async alterarPlano(plano) {
+        return must(await sb.rpc('meu_plano_alterar', { p_plano: plano }));
       },
       async uploadImage(blob, nome) {
         const ext = (blob.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
@@ -1344,6 +1392,7 @@
   window.Store = {
     // Ajustes iniciais (antes de carregar o que foi salvo): demonstração ou restaurante em branco.
     padrao: (demo) => mergeSettings(null, demo),
+    precoPlano,
     // Regras do programa de fidelidade usadas também pelas telas (validação e simulação).
     fid: { PADRAO: FID_PADRAO, cpfValido, chaveValida, chaveDoTexto, boost: fidBoost, calcular: fidCalcular, niveis: fidNiveis, nivelDe: fidNivelDe, soDigitos },
     create() {

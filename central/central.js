@@ -87,6 +87,19 @@
     </div>`;
     openSheet('sh');
   }
+  /* ---------- Planos: serviços, mesas e mensalidade (a mesma tabela de public.plano_preco) ---------- */
+  const SERVICOS = [['pagina', 'Página e cardápio', 99], ['garcom', 'Chamar o garçom', 99], ['fidelidade', 'Fidelidade', 199]];
+  const reais = (v) => 'R$ ' + Number(v || 0).toLocaleString('pt-BR');
+  function planoPreco(p) {
+    if (!p) return 0;
+    const sv = p.servicos || {};
+    const base = sv.pagina && sv.garcom && sv.fidelidade ? 329 : SERVICOS.reduce((t, [k, , v]) => t + (sv[k] ? v : 0), 0);
+    return base + (['proprio', 'registro'].includes(p.dominio) ? 19 : 0);
+  }
+  const planoServicos = (p) => SERVICOS.filter(([k]) => p && p.servicos && p.servicos[k]).map(([, n]) => n);
+  const planoResumo = (p) => (p ? `${planoServicos(p).join(' · ')} · ${p.mesas} mesas · ${reais(planoPreco(p))}/mês` : 'Plano não definido');
+  // Plano para o formulário: o salvo ou, sem plano, o que o restaurante usa hoje.
+  const planoOuPadrao = (r) => r.plano || { servicos: { pagina: true, garcom: true, fidelidade: !!(r.modulos && r.modulos.fidelidade) }, mesas: 30, dominio: 'sub', contrato: 6 };
   const fmtData = (iso) => (iso ? new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '');
 
   /* ============================== Dados ============================== */
@@ -108,6 +121,30 @@
       async entrar() {},
       async sair() {},
       async listRestaurantes() { return read().restaurantes; },
+      async alterarPlano(rid, plano) {
+        const db = read();
+        const r = db.restaurantes.find((x) => x.id === rid);
+        if (!r) throw new Error('Restaurante não encontrado.');
+        const sv = plano.servicos || {};
+        if (!sv.pagina && !sv.garcom && !sv.fidelidade) throw new Error('Escolha pelo menos um serviço.');
+        const novo = { servicos: { pagina: !!sv.pagina, garcom: !!sv.garcom, fidelidade: !!sv.fidelidade }, mesas: Math.min(Math.max(Math.round(+plano.mesas || 20), 1), 500),
+          dominio: ['proprio', 'registro'].includes(plano.dominio) ? plano.dominio : 'sub', contrato: +plano.contrato === 12 ? 12 : 6, definido: true };
+        (db.mudancas = db.mudancas || []).unshift({ id: id(), restaurante_id: rid, antes: r.plano || null, depois: novo, mensal_antes: r.plano ? planoPreco(r.plano) : null,
+          mensal_depois: planoPreco(novo), origem: 'central', por: 'demonstração', visto: false, criado_em: new Date().toISOString() });
+        r.plano = novo;
+        r.modulos = { ...(r.modulos || {}), fidelidade: novo.servicos.fidelidade };
+        write(db);
+        return novo;
+      },
+      async listMudancas() {
+        const db = read();
+        return (db.mudancas || []).slice(0, 50).map((m) => ({ ...m, restaurantes: { nome: (db.restaurantes.find((r) => r.id === m.restaurante_id) || {}).nome || '—' } }));
+      },
+      async marcarVistas(ids) {
+        const db = read();
+        (db.mudancas || []).forEach((m) => ids.includes(m.id) && (m.visto = true));
+        write(db);
+      },
       async salvarRestaurante({ senha, ...r }) {
         const db = read();
         if (db.restaurantes.some((x) => x.slug === r.slug && x.id !== r.id)) throw new Error('Esse subdomínio já está em uso. Escolha outro.');
@@ -224,12 +261,17 @@
       async listRestaurantes() {
         return must(await sb.from('restaurantes').select('*').order('nome'));
       },
+      async alterarPlano(rid, plano) {
+        return must(await sb.rpc('plano_alterar_central', { p_restaurante: rid, p_plano: plano }));
+      },
+      async listMudancas() {
+        return must(await sb.from('plano_mudancas').select('*, restaurantes(nome)').order('criado_em', { ascending: false }).limit(50));
+      },
+      async marcarVistas(ids) {
+        if (ids.length) must(await sb.from('plano_mudancas').update({ visto: true }).in('id', ids));
+      },
       async salvarRestaurante({ id, senha, ...dados }) {
-        if (!id) {
-          const novo = must(await sb.rpc('criar_restaurante', { p_nome: dados.nome, p_slug: dados.slug, p_senha_equipe: senha }));
-          if (novo && novo.id && dados.modulos) must(await sb.from('restaurantes').update({ modulos: dados.modulos }).eq('id', novo.id));
-          return novo && { ...novo, modulos: dados.modulos };
-        }
+        if (!id) return must(await sb.rpc('criar_restaurante', { p_nome: dados.nome, p_slug: dados.slug, p_senha_equipe: senha }));
         const { data, error } = await sb.from('restaurantes').update(dados).eq('id', id).select().single();
         if (error) throw error.code === '23505' ? new Error('Esse subdomínio já está em uso. Escolha outro.') : error;
         if (senha) must(await sb.rpc('central_senha_equipe', { p_restaurante: id, p_senha: senha }));
@@ -272,8 +314,9 @@
 
   async function carregar() {
     try {
-      const [rests, tags, met] = await Promise.all([api.listRestaurantes(), api.listEtiquetas(), api.metricas(S.dias)]);
+      const [rests, tags, met, mud] = await Promise.all([api.listRestaurantes(), api.listEtiquetas(), api.metricas(S.dias), api.listMudancas().catch(() => [])]);
       S.rests = rests || [];
+      S.mudancas = mud || [];
       S.tags = tags || [];
       S.met = met;
       const existe = new Set(S.tags.map((t) => t.codigo));
@@ -379,7 +422,9 @@
         <div><dt>Chamados no período</dt><dd>${num(m.chamados || 0)}</dd></div>
         <div><dt>Restaurantes com leitura</dt><dd>${ativos}<small>/${rs.length}</small></dd></div>
         <div><dt>Ativadas nunca lidas</dt><dd>${nunca}<small>/${entregues.length}</small></dd></div>
+        <div><dt>Receita mensal (planos)</dt><dd>${reais(S.rests.filter((r) => r.ativo !== false && r.plano).reduce((t, r) => t + planoPreco(r.plano), 0))}</dd></div>
       </dl>
+      ${mudancasHtml()}
       <section class="card-sec"><h2>Leituras por dia</h2>${grafico(m.por_dia)}
         <details class="tabela-alt"><summary>Ver em tabela</summary><table><thead><tr><th>Dia</th><th class="num">Leituras</th></tr></thead>
           <tbody>${m.por_dia.slice().reverse().map((d) => `<tr><td>${diaCurto(d.dia)}</td><td class="num">${num(d.n)}</td></tr>`).join('')}</tbody></table></details>
@@ -466,6 +511,27 @@
         : `<div class="vazio">${icon('nfc')}<h2>${total ? 'Nada neste filtro' : 'Nenhuma plaquinha ainda'}</h2><p>${total ? 'Mude os filtros acima.' : 'Toque em “Gerar lote” para criar os primeiros códigos.'}</p></div>`}`;
   }
 
+  // Mudanças de plano (upsell e downsell), da central ou pedidas pelo restaurante no painel.
+  function mudancasHtml() {
+    const lista = (S.mudancas || []).slice(0, 12);
+    if (!lista.length) return '';
+    const novas = lista.filter((m) => !m.visto && m.origem === 'restaurante');
+    const txt = (p) => (p ? `${planoServicos(p).join(', ')} · ${p.mesas} mesas` : 'sem plano');
+    return `<section class="card-sec"><div class="sec-h"><h2>Mudanças de plano${novas.length ? ` <span class="pill pill--mod">${novas.length} nova${novas.length > 1 ? 's' : ''}</span>` : ''}</h2>
+        ${novas.length ? `<button type="button" class="btn btn-quiet btn-sm" data-mud-vistas="${novas.map((m) => m.id).join(',')}">Marcar como vistas</button>` : ''}</div>
+      <div class="tabela"><table><thead><tr><th>Quando</th><th>Restaurante</th><th>Mudança</th><th class="num">Mensalidade</th><th>Quem</th></tr></thead>
+        <tbody>${lista.map((m) => {
+          const dif = m.mensal_antes == null ? null : m.mensal_depois - m.mensal_antes;
+          const tipo = dif == null ? 'Plano definido' : dif > 0 ? 'Upsell' : dif < 0 ? 'Downsell' : 'Ajuste';
+          return `<tr class="${!m.visto && m.origem === 'restaurante' ? 'is-nova' : ''}">
+            <td>${fmtData(m.criado_em)}</td>
+            <td>${esc((m.restaurantes && m.restaurantes.nome) || '—')}</td>
+            <td><b>${tipo}</b><br><small class="muted">${esc(txt(m.antes))} → ${esc(txt(m.depois))}</small></td>
+            <td class="num">${m.mensal_antes == null ? '' : `${reais(m.mensal_antes)} → `}<b>${reais(m.mensal_depois)}</b>${dif ? ` <span class="${dif > 0 ? 'up' : 'down'}">${dif > 0 ? '+' : '−'}${reais(Math.abs(dif))}</span>` : ''}</td>
+            <td>${m.origem === 'restaurante' ? `Restaurante (${esc(m.por || 'equipe')})` : `Central${m.por ? ` (${esc(m.por)})` : ''}`}</td></tr>`;
+        }).join('')}</tbody></table></div></section>`;
+  }
+
   function vRestaurantes() {
     const cont = (id) => S.tags.filter((t) => t.restaurante_id === id).length;
     return `<div class="vhead"><div><h1>Restaurantes</h1><p>Cada restaurante tem um endereço próprio e a senha da equipe. Na primeira leitura de uma plaquinha nova, alguém da equipe digita o endereço do restaurante e entra com o PIN: a plaquinha passa a ser dele. Em <b>Acesso</b> você copia os dados para mandar ao restaurante.</p></div>
@@ -475,7 +541,7 @@
             <p class="rcard-links"><a href="${esc(siteDe(r))}" target="_blank" rel="noopener" class="mono">${esc(siteCurto(r))}</a>
               <a href="${esc(painelDe(r))}" target="_blank" rel="noopener" class="mono">painel</a></p>
             ${r.observacao ? `<p>${esc(r.observacao)}</p>` : ''}
-            ${r.modulos && r.modulos.fidelidade ? '<span class="pill pill--mod">Fidelidade</span>' : ''}</div>
+            <p class="rcard-plano ${r.plano ? '' : 'is-sem'}">${esc(planoResumo(r.plano))}</p></div>
           <div class="rcard-foot"><span>${cont(r.id)} ${cont(r.id) === 1 ? 'plaquinha' : 'plaquinhas'}${r.ativo === false ? ' · <b>desativado</b>' : ''}</span>
             <span class="rcard-acts"><button type="button" class="btn btn-quiet btn-sm" data-ver-rest="${r.id}">Ver plaquinhas</button>
             <button type="button" class="btn btn-quiet btn-sm" data-acesso="${r.id}">${icon('share')} Acesso</button>
@@ -507,6 +573,34 @@
     </form>` : `<div class="stack"><p>Cadastre o restaurante primeiro.</p><button type="button" class="btn btn-cobalt" data-abrir="rest">${icon('plus')} Novo restaurante</button></div>`;
     openSheet('sh');
   }
+  function planoForm(r) {
+    const p = planoOuPadrao(r);
+    return `<fieldset class="stack modulos" id="rPlano"><legend>Plano contratado</legend>
+      ${r.id && !r.plano ? '<p class="note">Plano ainda não definido: hoje tudo está liberado. Confira os serviços e as mesas e salve.</p>' : ''}
+      ${SERVICOS.map(([k, n, v]) => `<label class="check"><input type="checkbox" data-plano-sv="${k}" ${p.servicos[k] ? 'checked' : ''}> ${n} <span class="muted">· R$ ${v}/mês</span></label>`).join('')}
+      <div class="plano-linha">
+        <label class="field"><span>Mesas contratadas</span><input class="input mono" id="rMesas" type="number" min="1" max="500" value="${p.mesas}"></label>
+        <label class="field"><span>Endereço</span><select class="input" id="rDominio">
+          <option value="sub" ${p.dominio === 'sub' ? 'selected' : ''}>Subdomínio (incluso)</option>
+          <option value="proprio" ${p.dominio === 'proprio' ? 'selected' : ''}>Domínio próprio (+R$ 19/mês)</option>
+          <option value="registro" ${p.dominio === 'registro' ? 'selected' : ''}>Registrado por nós (+R$ 19/mês)</option></select></label>
+        <label class="field"><span>Contrato</span><select class="input" id="rContrato">
+          <option value="6" ${+p.contrato !== 12 ? 'selected' : ''}>6 meses</option><option value="12" ${+p.contrato === 12 ? 'selected' : ''}>12 meses</option></select></label>
+      </div>
+      <p class="plano-preco">Mensalidade: <b id="rPreco">${reais(planoPreco(p))}</b> <span class="muted">(combo dos três: R$ 329)</span></p>
+    </fieldset>`;
+  }
+  const planoDoForm = () => ({
+    servicos: Object.fromEntries(SERVICOS.map(([k]) => [k, !!($(`[data-plano-sv="${k}"]`) || {}).checked])),
+    mesas: Math.round(+$('#rMesas').value || 0), dominio: $('#rDominio').value, contrato: +$('#rContrato').value,
+  });
+  document.addEventListener('input', (e) => {
+    if (e.target.closest('#rPlano') && $('#rPreco')) $('#rPreco').textContent = reais(planoPreco(planoDoForm()));
+  });
+  document.addEventListener('change', (e) => {
+    if (e.target.closest('#rPlano') && $('#rPreco')) $('#rPreco').textContent = reais(planoPreco(planoDoForm()));
+  });
+
   function abrirRest(id) {
     const r = id ? restDe(id) : { nome: '', slug: '', observacao: '', ativo: true };
     S.editRest = id || null;
@@ -520,9 +614,7 @@
         <small class="help">A equipe usa esta senha para criar a conta no painel (cada pessoa depois entra com o próprio PIN).</small></label>
       <label class="field"><span>Observação (opcional)</span><input class="input" id="rObs" maxlength="300" value="${esc(r.observacao || '')}"></label>
       <label class="check"><input type="checkbox" id="rAtivo" ${r.ativo !== false ? 'checked' : ''}> Ativo (desmarcado: as plaquinhas mostram “desativada”)</label>
-      <fieldset class="stack modulos"><legend>Módulos contratados</legend>
-        <label class="check"><input type="checkbox" id="rFid" ${r.modulos && r.modulos.fidelidade ? 'checked' : ''}> Programa de fidelidade (aba Fidelidade no painel; o restaurante configura as regras e coloca no ar)</label>
-      </fieldset>
+      ${planoForm(r)}
       <p class="form-error" id="rErr" role="alert"></p>
       <button type="submit" class="btn btn-cobalt btn-block">${icon('check')} Salvar</button>
     </form>`;
@@ -979,6 +1071,11 @@
     if (dd) { S.dias = +dd.dataset.dias; return carregar(); }
     const ed = t.closest('[data-editar]');
     if (ed) return abrirRest(ed.dataset.editar);
+    const mv = t.closest('[data-mud-vistas]');
+    if (mv) {
+      await api.marcarVistas(mv.dataset.mudVistas.split(','));
+      return carregar();
+    }
     const vr = t.closest('[data-ver-rest]');
     if (vr) { Object.assign(S, { view: 'plaquinhas', rest: vr.dataset.verRest, filtro: 'todas', lote: '', busca: '' }); return render(); }
     const ver = t.closest('[data-ver]');
@@ -1136,7 +1233,19 @@
         if (!nome) throw new Error('Informe o nome.');
         if (!slugOk(slug)) throw new Error('Subdomínio inválido: use letras minúsculas, números e hífen (sem acento nem espaço).');
         if ((!S.editRest || senha) && senha.length < 6) throw new Error('A senha da equipe precisa ter pelo menos 6 caracteres.');
-        const salvo = await api.salvarRestaurante({ ...(S.editRest ? { id: S.editRest } : {}), nome, slug, senha, observacao: $('#rObs').value.trim() || null, ativo: $('#rAtivo').checked, modulos: { ...((restDe(S.editRest) || {}).modulos || {}), fidelidade: $('#rFid').checked } });
+        const plano = planoDoForm();
+        if (!Object.values(plano.servicos).some(Boolean)) throw new Error('Escolha pelo menos um serviço do plano.');
+        if (!(plano.mesas >= 1 && plano.mesas <= 500)) throw new Error('Mesas contratadas: de 1 a 500.');
+        const salvo = await api.salvarRestaurante({ ...(S.editRest ? { id: S.editRest } : {}), nome, slug, senha, observacao: $('#rObs').value.trim() || null, ativo: $('#rAtivo').checked });
+        const rid = S.editRest || (salvo && salvo.id);
+        const antes = restDe(rid);
+        const at = antes && antes.plano;
+        const mudou = !at || SERVICOS.some(([k]) => !!(at.servicos || {})[k] !== plano.servicos[k])
+          || +at.mesas !== plano.mesas || at.dominio !== plano.dominio || +at.contrato !== plano.contrato;
+        if (rid && mudou) {
+          const novo = await api.alterarPlano(rid, plano);
+          if (salvo) salvo.plano = novo;
+        }
         if (!S.editRest && salvo) {
           S.rests.push(salvo);
           mostrarAcesso(salvo, true, senha);

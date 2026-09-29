@@ -694,3 +694,5 @@ button.fid-nivel { cursor: pointer; }
 .fid-niveis ul .i { width: 16px; height: 16px; flex: none; margin-top: 2px; color: var(--nv); }
 .fid-niveis-mini { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; color: var(--muted); }
 .fid-premio-info .fid-selo { align-self: flex-start; }
+
+.call[hidden], .plate-stage[hidden] { display: none !important; }

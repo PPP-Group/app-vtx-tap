@@ -197,7 +197,7 @@
 
   function renderGate() {
     const gate = $('#callGate');
-    $('#call').hidden = !mesa;
+    $('#call').hidden = !mesa || !temServico('garcom');
     if (!mesa) return;
     const pend = sess && sess.status === 'pendente';
     gate.hidden = liberado();
@@ -537,7 +537,9 @@
   /* ---------------- Atalhos ---------------- */
   const menuCount = () => live.cardapio.reduce((n, c) => n + c.itens.length, 0);
   // Informações do restaurante (endereço, telefone, horários, Instagram): atalho que o restaurante liga nos ajustes.
-  const infoLigada = () => !!(live.widgets.find((w) => w.tipo === 'info') || {}).ativo;
+  // Serviços do plano contratado: sem "pagina", só o que não depende dela (fidelidade).
+  const temServico = (k) => !live.plano || !!live.plano.servicos[k];
+  const infoLigada = () => temServico('pagina') && !!(live.widgets.find((w) => w.tipo === 'info') || {}).ativo;
   const telDe = (t) => String(t || '').replace(/\D/g, '');
   const telTxt = (t) => {
     const d = telDe(t);
@@ -548,6 +550,7 @@
   const TONES = ['cobalt', 'brass', 'leaf', 'pepper'];
   function widgetTile(w, i) {
     const tone = TONES[i % TONES.length];
+    if (w.tipo !== 'fidelidade' && !temServico('pagina')) return '';
     switch (w.tipo) {
       case 'cardapio': {
         if (!menuCount()) return '';
@@ -1001,6 +1004,10 @@
   /* ---------------- Início ---------------- */
   function boot() {
     if (mesa && !(mesa >= 1 && mesa <= live.mesas.total)) mesa = null;
+    // Chamar o garçom fora do plano: some o sino e a escolha da mesa.
+    const semGarcom = !temServico('garcom');
+    $('#call').hidden = semGarcom;
+    document.querySelector('.plate-stage').hidden = semGarcom;
     renderTop();
     renderPlate();
     renderReasons();

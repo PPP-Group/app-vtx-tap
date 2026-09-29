@@ -32,7 +32,7 @@ window.NFC_CONFIG = {
     instagram: 'quintalbistro',
     telefone: '11987654321',
     // Link "Pedir avaliações" do Perfil da Empresa no Google. Vazio = busca pelo nome.
-    googleUrl: '',
+    googleUrl: 'https://www.google.com/search?q=Quintal+Bistr%C3%B4+avalia%C3%A7%C3%B5es',
     logo: '',
     capa: '',
     // Taxa de serviço sugerida (%) usada na calculadora de divisão da conta.
