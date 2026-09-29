@@ -577,8 +577,24 @@
         return '';
     }
   }
+  // Grade dinâmica: os atalhos pequenos andam em pares; quando sobra um
+  // (3, 5… ligados), o último ocupa a linha inteira para não deixar buraco.
   function renderTiles() {
-    $('#tiles').innerHTML = live.widgets.filter((w) => w.ativo !== false).map(widgetTile).join('');
+    const html = live.widgets.filter((w) => w.ativo !== false).map(widgetTile).filter(Boolean);
+    let seguidos = 0;
+    const marcar = (fim) => {
+      if (seguidos % 2) html[fim - 1] = html[fim - 1].replace('class="tile"', 'class="tile tile--full"');
+      seguidos = 0;
+    };
+    html.forEach((t, i) => (t.includes('tile--menu') ? marcar(i) : seguidos++));
+    marcar(html.length);
+    const insta = instagramHandle(R.instagram);
+    if (insta) {
+      html.push(`<a class="tile tile--insta" href="${esc(instagramUrl(R.instagram))}" target="_blank" rel="noopener">
+        ${icon('instagram')}<span><b>Siga no Instagram</b><small>@${esc(insta)}</small></span>${icon('arrow')}
+      </a>`);
+    }
+    $('#tiles').innerHTML = html.join('');
   }
   document.addEventListener('click', (e) => {
     const b = e.target.closest('[data-open]');
@@ -599,7 +615,6 @@
         <summary class="info-row">${icon('clock')}<span>Hoje: ${hoursOf(today)} · ver semana</span></summary>
         <div class="hours">${[1, 2, 3, 4, 5, 6, 0].map((d) => `<span class="${d === today ? 'is-today' : ''}">${dias[d]}</span><span class="${d === today ? 'is-today' : ''}">${hoursOf(d)}</span>`).join('')}</div>
       </details>
-      ${instagramHandle(R.instagram) ? `<a class="info-row" href="${esc(instagramUrl(R.instagram))}" target="_blank" rel="noopener">${icon('instagram')}<span>@${esc(instagramHandle(R.instagram))}</span></a>` : ''}
       <p class="info-foot">Nenhum cadastro é necessário para usar esta página.</p>`;
   }
 

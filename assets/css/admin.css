@@ -320,7 +320,11 @@
 
 /* ---------- Plaquinhas ---------- */
 .howto { display: grid; gap: 14px; margin-bottom: 18px; }
-@media (min-width: 900px) { .howto { grid-template-columns: 1.2fr 1fr; align-items: start; } }
+@media (min-width: 900px) { .howto { grid-template-columns: 1.2fr 1fr; align-items: stretch; } }
+.howto > .panel { align-content: start; }
+/* "Ligar pelo código": botão no pé do card, alinhado com o fim do passo a passo. */
+.howto > form.panel { display: flex; flex-direction: column; }
+.howto > form.panel > button { margin-top: auto; }
 .howto ol { margin: 0; padding-left: 1.3em; display: grid; gap: 6px; font-size: 14.5px; color: var(--ink-2); }
 .howto ol li::marker { font-family: var(--font-mono); color: var(--muted); }
 .link-cod { color: var(--cobalt-ink); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; letter-spacing: .06em; }
@@ -381,6 +385,9 @@
 .arow input[data-afield="nome"] { flex: 1 1 0; width: 0; min-width: 0; }
 .arow input[data-afield="de"], .arow input[data-afield="ate"] { width: 64px; flex: 0 0 64px; text-align: center; }
 .arow-sep { flex: none; color: var(--muted); }
+.arow.is-erro input[data-afield="de"], .arow.is-erro input[data-afield="ate"] { border-color: var(--pepper); box-shadow: 0 0 0 3px var(--pepper-soft); }
+.area-erro { display: flex; gap: 8px; align-items: flex-start; margin: 0; padding: 10px 12px; border-radius: 12px; background: var(--pepper-soft); color: var(--pepper); font-size: 13.5px; font-weight: 600; }
+.area-erro svg { width: 18px; height: 18px; flex: none; margin-top: 1px; }
 .arow .icon-btn { width: 38px; height: 38px; flex: none; color: var(--pepper); background: var(--pepper-soft); }
 @media (max-width: 400px) {
   .arow { gap: 6px; }
@@ -446,8 +453,15 @@
 .save-state .i { width: 16px; height: 16px; stroke-width: 2.4; }
 
 .aj-grid { display: grid; gap: 14px; max-width: 1100px; grid-template-columns: minmax(0, 1fr); }
-@media (min-width: 1100px) { .aj-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; } }
-.aj-view { justify-self: start; }
+/* Cards lado a lado sempre com a mesma altura: a linha estica os dois e o
+   conteúdo fica no topo. Uma coluna com dois cards (.aj-col) estica o último. */
+@media (min-width: 1100px) { .aj-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; } }
+.aj-grid > .panel { align-content: start; }
+.aj-col { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.aj-col > .panel { align-content: start; }
+.aj-col > .panel:last-child { flex: 1 1 auto; }
+.aj-brand { grid-template-rows: auto auto auto 1fr; }
+.aj-view { justify-self: start; align-self: end; }
 .help { font-size: 12.5px; line-height: 1.4; color: var(--muted); }
 .field-narrow { max-width: 240px; }
 .set-inline { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 14px; border-radius: 14px; background: var(--surface-2); font-size: 15px; cursor: pointer; }
