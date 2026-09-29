@@ -221,6 +221,7 @@
     e.preventDefault();
     APP.pedido = e;
     avisoApp();
+    if (S.user) renderChrome();
     if (S.user && S.view === 'ajustes' && S.ajTab === 'aparelho') renderView();
   });
   addEventListener('appinstalled', () => {
@@ -252,18 +253,18 @@
       </ol>`;
   }
 
-  // Convite para instalar: uma vez por aparelho, só em tela de celular.
+  // Convite para instalar (celular e computador). Fechado, volta depois de 14 dias.
   function avisoApp() {
-    if (!S.user || APP.instalado() || $('#appAviso') || get('nfc-app-aviso')) return;
+    if (!S.user || APP.instalado() || $('#appAviso')) return;
+    if (Date.now() - (+get('nfc-app-aviso') || 0) < 14 * 864e5) return;
     if (!APP.pedido && !APP.ios()) return;
-    if (!matchMedia('(max-width: 900px)').matches) return;
     const el = document.createElement('div');
     el.className = 'app-aviso';
     el.id = 'appAviso';
     el.setAttribute('role', 'region');
     el.setAttribute('aria-label', 'Instalar o app');
     el.innerHTML = `<img src="/admin/icons/icon-192.png" alt="" width="40" height="40">
-      <div><b>Painel no celular</b><small>Instale o app e abra direto da tela inicial.</small></div>
+      <div><b>Instale o painel</b><small>Abre direto da tela inicial ou da barra de tarefas, em tela cheia, e avisa dos chamados.</small></div>
       <button type="button" class="btn btn-cobalt btn-sm" data-app="instalar">${APP.pedido ? 'Instalar' : 'Como instalar'}</button>
       <button type="button" class="icon-btn" data-app="fechar" aria-label="Agora não">${icon('x')}</button>`;
     document.body.append(el);
@@ -272,7 +273,7 @@
     const b = e.target.closest('[data-app]');
     if (!b) return;
     if (b.closest('#appAviso')) {
-      set('nfc-app-aviso', '1');
+      set('nfc-app-aviso', String(Date.now()));
       $('#appAviso').remove();
     }
     if (b.dataset.app === 'instalar') instalarApp();
@@ -451,6 +452,7 @@
         <div>${esc(S.user.nome)}<small>Em serviço</small></div></div>
       <div class="side-tools">
         <button class="icon-btn" type="button" data-tool="som" aria-pressed="${S.som}" aria-label="${S.som ? 'Silenciar alertas' : 'Ativar som dos alertas'}" title="Som dos alertas">${icon(S.som ? 'volume' : 'mute')}</button>
+        ${!APP.instalado() && (APP.pedido || APP.ios()) ? `<button class="icon-btn" type="button" data-app="instalar" aria-label="Instalar o app" title="Instalar o app">${icon('download')}</button>` : ''}
         <button class="icon-btn" type="button" data-tool="tema" aria-label="Alternar tema claro/escuro" title="Tema">${icon(isDark() ? 'sun' : 'moon')}</button>
         <button class="icon-btn" type="button" data-tool="sair" aria-label="Sair" title="Sair">${icon('logout')}</button>
       </div>`;
