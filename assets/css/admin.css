@@ -1,7 +1,7 @@
 /* ==========================================================================
    Painel da equipe — celular (abas embaixo) e desktop (menu lateral)
    ========================================================================== */
-:root { --side: #0E1330; --side-ink: #E8EBF7; --tabbar-h: 66px; }
+:root { --side: #140B33; --side-ink: #ECE8F7; --tabbar-h: 66px; }
 
 /* ---------- Entrada ---------- */
 .login { min-height: 100dvh; display: grid; place-items: center; padding: 24px 16px calc(24px + var(--safe-b)); }
@@ -103,7 +103,7 @@
 
 .side-brand { display: grid; gap: 14px; padding: 0 8px; }
 /* Logo do sistema em cima; logo do restaurante (menor) à esquerda do nome. */
-.side-sistema { display: block; width: 118px; height: auto; }
+.side-sistema { display: block; width: 118px; height: auto; justify-self: center; }
 .side-rest { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .side-rest > div { min-width: 0; }
 .side-mark { display: grid; place-items: center; width: 34px; height: 34px; flex: none; border-radius: 50%; overflow: hidden; background: rgba(255, 255, 255, .12); font-size: 13px; font-weight: 700; letter-spacing: .02em; box-shadow: 0 0 0 2px rgba(255, 255, 255, .15); }

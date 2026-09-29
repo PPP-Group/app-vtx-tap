@@ -918,8 +918,8 @@
       return false;
     }
   }
-  // Cores sugeridas para a marca; a primeira é o azul padrão do sistema.
-  const CORES = ['#1b3a9e', '#0f766e', '#15803d', '#b45309', '#c2410c', '#b91c1c', '#be185d', '#7e22ce', '#3f3f46'];
+  // Cores sugeridas para a marca; a primeira é o roxo padrão do sistema.
+  const CORES = ['#7d27fc', '#1b3a9e', '#0f766e', '#15803d', '#b45309', '#c2410c', '#b91c1c', '#be185d', '#3f3f46'];
   const corAtual = () => (/^#[0-9a-f]{6}$/i.test(S.settings.restaurante.cor || '') ? S.settings.restaurante.cor.toLowerCase() : UI.COR_PADRAO);
   async function salvarCor(cor) {
     UI.aplicarCor(cor);
@@ -1072,7 +1072,7 @@
               <div class="cor-opcoes" role="group" aria-label="Cores sugeridas">${CORES.map((c) => `<button type="button" class="cor-bola" data-cor="${c}" style="background:${c}" aria-label="Usar a cor ${c}" aria-pressed="${corAtual() === c}"></button>`).join('')}
                 <label class="cor-bola cor-livre" title="Outra cor" aria-pressed="${!CORES.includes(corAtual())}" style="${CORES.includes(corAtual()) ? '' : `background:${corAtual()}`}">${icon('plus')}<input type="color" class="sr-only" data-cor-livre value="${corAtual()}" aria-label="Escolher outra cor"></label>
               </div>
-              ${corAtual() !== UI.COR_PADRAO ? '<button type="button" class="btn btn-line btn-sm" data-cor="padrao">Voltar ao azul</button>' : ''}
+              ${corAtual() !== UI.COR_PADRAO ? '<button type="button" class="btn btn-line btn-sm" data-cor="padrao">Voltar ao roxo padrão</button>' : ''}
             </div></div>
         </div>
         <a class="btn btn-line aj-view" href="/?mesa=1" target="_blank" rel="noopener">${icon('external')} Ver a página da mesa como o cliente</a>

@@ -274,7 +274,7 @@
      gera a família inteira (--cobalt*) e tinge os neutros com o mesmo tom,
      nos modos claro e escuro. Cores muito claras são escurecidas até o texto
      branco dos botões ficar legível (contraste 4,5:1). */
-  const COR_PADRAO = '#1b3a9e';
+  const COR_PADRAO = '#7d27fc';
   const hexOk = (h) => /^#[0-9a-f]{6}$/i.test(String(h || ''));
   const hexToRgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
   function rgbToHsl([r, g, b]) {
@@ -350,7 +350,7 @@
       try { cor ? localStorage.setItem(COR_CACHE, cor) : localStorage.removeItem(COR_CACHE); } catch {}
     }
   }
-  // Última cor conhecida deste endereço: evita piscar azul enquanto os ajustes carregam.
+  // Última cor conhecida deste endereço: evita piscar a cor padrão enquanto os ajustes carregam.
   try {
     const salva = localStorage.getItem(COR_CACHE);
     if (salva) aplicarCor(salva, { lembrar: false });
