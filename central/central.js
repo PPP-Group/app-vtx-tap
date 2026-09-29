@@ -558,18 +558,85 @@
     const pergunta = {
       mesa: `Tirar ${alvo} da mesa? ${um ? 'Ela continua' : 'Elas continuam'} do restaurante e ${um ? 'aparece' : 'aparecem'} como “Plaquinha nova” até ${um ? 'ser ligada' : 'serem ligadas'} de novo.`,
       estoque: `Devolver ${alvo} ao estoque? ${um ? 'Ela deixa' : 'Elas deixam'} de ser do restaurante e ${um ? 'para' : 'param'} de abrir o site dele.`,
-      zerar: `Zerar ${alvo}? ${um ? 'Ela volta' : 'Elas voltam'} a ser como ${um ? 'nova' : 'novas'}: sem restaurante, sem mesa, leituras zeradas e NFC marcado para gravar de novo. O código não muda.`,
+      zerar: `Zerar ${alvo}? ${um ? 'Ela volta' : 'Elas voltam'} a ser como ${um ? 'nova' : 'novas'}: sem restaurante, sem mesa e leituras zeradas. Em seguida você pode apagar o chip encostando no celular. O código impresso não muda.`,
     }[tipo];
     if (!confirm(pergunta)) return;
     try {
       await api.limpar(codigos, { mesa: 'mesa', estoque: 'restaurante', zerar: 'tudo' }[tipo]);
       const feito = { mesa: um ? 'Plaquinha tirada da mesa.' : 'Plaquinhas tiradas da mesa.', estoque: um ? 'Plaquinha devolvida ao estoque.' : 'Plaquinhas devolvidas ao estoque.', zerar: um ? 'Plaquinha zerada: está como nova.' : 'Plaquinhas zeradas: estão como novas.' };
       toast(feito[tipo], { tone: 'ok' });
-      if (!$('#sh').hidden) closeSheet();
+      if (tipo === 'zerar') telaApagar(codigos);
+      else if (!$('#sh').hidden) closeSheet();
     } catch (ex) {
       toast(ex.message, { tone: 'error' });
     }
     return carregar();
+  }
+
+  // Depois de zerar: apaga o link gravado no chip, para a plaquinha ficar em
+  // branco (grava de novo pela tela “Gravar NFC”). Plaquinha bloqueada não apaga.
+  function telaApagar(codigos) {
+    G.apagar = new Set(codigos);
+    const um = codigos.length === 1;
+    $('#shTitle').textContent = 'Apagar o chip';
+    $('#shBody').innerHTML = 'NDEFReader' in window
+      ? `<div class="stack gravar">
+        <p>No sistema, ${um ? `a plaquinha <b>${esc(codigos[0])}</b> já está zerada` : `as ${codigos.length} plaquinhas já estão zeradas`}. O chip ainda guarda o link: se alguém encostar, abre a tela de ativação. Para deixar o chip em branco, toque em “Apagar” e encoste ${um ? 'a plaquinha' : 'uma de cada vez'} atrás do celular.</p>
+        <p class="gravar-msg" aria-live="polite"></p>
+        <div class="acts"><button type="button" class="btn btn-danger btn-sm" data-apagar>${icon('nfc')} Apagar o chip</button>
+          <button type="button" class="btn btn-quiet btn-sm" data-close>Pronto</button></div></div>`
+      : `<div class="stack"><p>No sistema, ${um ? 'a plaquinha já está zerada' : 'as plaquinhas já estão zeradas'}. Para apagar também o chip, abra a central no <b>Chrome do Android</b> com o NFC ligado e zere de novo. Sem apagar, ao encostar ela abre a tela de ativação, como uma nova.</p>
+        <div class="acts"><button type="button" class="btn btn-quiet btn-sm" data-close>Pronto</button></div></div>`;
+    openSheet('sh');
+  }
+
+  async function ligarApagar() {
+    const b = $('[data-apagar]');
+    if (b) b.hidden = true;
+    msgGravar('Liberando o NFC…', '');
+    desligarNfc();
+    const ctrl = new AbortController();
+    const reader = new NDEFReader();
+    G.ctrl = ctrl;
+    G.reader = reader;
+    try {
+      await reader.scan({ signal: ctrl.signal });
+    } catch (e) {
+      if (G.reader === reader) desligarNfc();
+      if (b) b.hidden = false;
+      return msgGravar(e.name === 'NotAllowedError' ? 'Permita o uso de NFC para este site (ícone ao lado do endereço).' : `NFC indisponível: ${e.message}. Confira se o NFC do celular está ligado.`);
+    }
+    msgGravar('Encoste a plaquinha atrás do celular.', '');
+    reader.onreadingerror = () => msgGravar('Não deu para ler. Afaste e encoste de novo.');
+    reader.onreading = (ev) => apagarChip(ev, reader);
+  }
+
+  async function apagarChip(ev, reader) {
+    if (G.ocupado) return;
+    const link = (ev.message.records || []).map((r) => {
+      try { return r.recordType === 'url' ? new TextDecoder().decode(r.data) : ''; } catch { return ''; }
+    }).find(Boolean) || '';
+    const cod = codigoDoLink(link);
+    if (!(ev.message.records || []).some((r) => r.recordType !== 'empty')) return msgGravar('Este chip já está em branco.', 'is-ok');
+    if (!cod || !G.apagar.has(cod)) return msgGravar(`Esta não é ${G.apagar.size === 1 ? `a ${[...G.apagar][0]}` : 'uma das plaquinhas zeradas'}${cod ? ` (é a ${cod})` : ''}. Nada foi apagado.`);
+    G.ocupado = true;
+    msgGravar(`Apagando ${cod}… mantenha encostada.`, '');
+    const ctrl = new AbortController();
+    const prazo = setTimeout(() => ctrl.abort(), 8000);
+    try {
+      await reader.write({ records: [{ recordType: 'empty' }] }, { overwrite: true, signal: ctrl.signal });
+      G.apagar.delete(cod);
+      navigator.vibrate && navigator.vibrate(60);
+      msgGravar(G.apagar.size ? `${cod} apagada. Encoste a próxima (faltam ${G.apagar.size}).` : `${cod} apagada: o chip está em branco. Para usar de novo, grave em “Gravar NFC”.`, 'is-ok');
+      if (!G.apagar.size) desligarNfc();
+    } catch (e) {
+      msgGravar(e.name === 'AbortError'
+        ? 'A plaquinha não respondeu. Afaste o celular e encoste de novo.'
+        : `Não apagou (${e.message}). Se ela foi bloqueada ao gravar, o chip é somente leitura para sempre: continua com o código ${cod} e, zerada, abre a tela de ativação como uma nova.`);
+    } finally {
+      clearTimeout(prazo);
+      G.ocupado = false;
+    }
   }
 
   /* ============================== Ações ============================== */
@@ -902,6 +969,7 @@
     if (ver) return verTag(ver.dataset.ver);
     const l1 = t.closest('[data-limpar1]');
     if (l1) return limparPlaquinhas([l1.dataset.cod], l1.dataset.limpar1);
+    if (t.closest('[data-apagar]')) return ligarApagar();
     const acs = t.closest('[data-acesso]');
     if (acs) {
       const r = restDe(acs.dataset.acesso);

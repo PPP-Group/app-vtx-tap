@@ -856,8 +856,7 @@
       <div class="vmesas">${grid}</div>
       <button type="button" class="btn btn-cobalt btn-block" data-vinc="salvar" ${vincMesa ? '' : 'disabled'}>${icon('check')} ${vincMesa ? `Ligar à mesa ${vincMesa}` : 'Escolha a mesa'}</button>
       ${atual && atual.mesa ? `<button type="button" class="btn btn-line btn-block" data-vinc="soltar">Desligar desta mesa</button>` : ''}
-      ${atual ? `<button type="button" class="btn btn-danger btn-block" data-vinc="liberar">${icon('trash')} Tirar do restaurante</button>` : ''}
-      <small class="help">Uma mesa pode ter mais de uma plaquinha (por exemplo, uma em cada ponta).${atual ? ' Tirar do restaurante devolve a plaquinha ao estoque: ela volta a ser “nova” e pode ser ligada de novo por qualquer restaurante.' : ''}</small>
+      <small class="help">Uma mesa pode ter mais de uma plaquinha (por exemplo, uma em cada ponta).</small>
     </div>`;
   }
   async function salvarVinculo() {
@@ -886,18 +885,7 @@
       toast('Não foi possível salvar. Verifique a conexão.', { tone: 'error' });
     }
   }
-  async function liberarPlaquinha() {
-    if (!confirm(`Tirar a plaquinha ${vincCodigo} do restaurante? Ela volta ao estoque, como nova, e deixa de abrir a página das mesas até ser ligada de novo.`)) return;
-    try {
-      await store.liberarEtiqueta(vincCodigo);
-      closeSheet();
-      toast('Plaquinha tirada do restaurante.');
-      queueRefresh();
-    } catch (e) {
-      console.error(e);
-      toast('Não foi possível salvar. Verifique a conexão.', { tone: 'error' });
-    }
-  }
+
 
   /* ---------- Salvar configuração ---------- */
   let savedT;
@@ -1590,7 +1578,7 @@
       return renderVincular();
     }
     const vb = t.closest('[data-vinc]');
-    if (vb) return vb.dataset.vinc === 'salvar' ? salvarVinculo() : vb.dataset.vinc === 'liberar' ? liberarPlaquinha() : soltarVinculo();
+    if (vb) return vb.dataset.vinc === 'salvar' ? salvarVinculo() : soltarVinculo();
     const aBtn = t.closest('[data-area]');
     if (aBtn) {
       const areas = S.settings.mesas.areas.slice();
