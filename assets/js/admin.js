@@ -52,6 +52,9 @@
     { id: 'plaquinhas', label: 'Mesas', icon: 'nfc' },
     { id: 'ajustes', label: 'Ajustes', icon: 'sliders' },
   ];
+  // Fidelidade aparece quando a central libera o módulo para o restaurante.
+  const temFid = () => !!(S.settings.modulos && S.settings.modulos.fidelidade && window.FidPainel);
+  const views = () => (temFid() ? [...VIEWS.slice(0, 3), { id: 'fidelidade', label: 'Fidelidade', curto: 'Pontos', icon: 'gift' }, ...VIEWS.slice(3)] : VIEWS);
 
   const motivo = (id) => cfg.motivos.find((m) => m.id === id) || { label: id, curto: id };
   const areaDe = (n) => (S.settings.mesas.areas.find((a) => n >= a.de && n <= a.ate) || {}).nome || '';
@@ -316,9 +319,12 @@
       console.error(e);
       S.online = false;
     }
+    if (temFid()) await FidPainel.atualizar();
     detectNew();
     renderChrome();
+    // Na fidelidade só redesenha sem formulário em edição (não apaga o que está sendo digitado).
     if (['chamados', 'salao', 'comentarios', 'plaquinhas'].includes(S.view)) renderView();
+    else if (S.view === 'fidelidade' && !$('#main').contains(document.activeElement)) renderView();
     if (S.mesaAberta && !$('#sh-mesa').hidden) renderMesaSheet(S.mesaAberta);
   }
 
@@ -418,6 +424,7 @@
   const badgeFor = (id, n) => {
     if (id === 'chamados' && n.abertos) return `<span class="badge">${n.abertos}</span>`;
     if (id === 'comentarios' && n.naoLidos) return `<span class="badge badge--soft">${n.naoLidos}</span>`;
+    if (id === 'fidelidade' && temFid() && FidPainel.badge()) return `<span class="badge">${FidPainel.badge()}</span>`;
     return '';
   };
 
@@ -429,11 +436,13 @@
     const mark = $('.side-mark');
     mark.classList.toggle('has-logo', !!logo);
     mark.innerHTML = logo ? `<img src="${esc(logo)}" alt="">` : '';
-    $('#sideNav').innerHTML = VIEWS.map(
+    const lista = views();
+    $('#sideNav').innerHTML = lista.map(
       (v) => `<a class="nav-item" href="#${v.id}" ${S.view === v.id ? 'aria-current="page"' : ''}>${icon(v.icon)}<span>${v.label}</span>${badgeFor(v.id, n)}</a>`
     ).join('');
-    $('#tabbar').innerHTML = VIEWS.map(
-      (v) => `<a class="tab" href="#${v.id}" ${S.view === v.id ? 'aria-current="page"' : ''}>${icon(v.icon)}<span>${v.label}</span>${badgeFor(v.id, n)}</a>`
+    $('#tabbar').style.gridTemplateColumns = `repeat(${lista.length}, 1fr)`;
+    $('#tabbar').innerHTML = lista.map(
+      (v) => `<a class="tab" href="#${v.id}" ${S.view === v.id ? 'aria-current="page"' : ''}>${icon(v.icon)}<span>${v.curto || v.label}</span>${badgeFor(v.id, n)}</a>`
     ).join('');
     $('#sideFoot').innerHTML = `
       <span class="live ${S.online ? '' : 'is-off'}">${S.online ? (isDemo ? 'Ao vivo · modo demonstração' : 'Ao vivo') : 'Sem conexão'}</span>
@@ -444,7 +453,7 @@
         <button class="icon-btn" type="button" data-tool="tema" aria-label="Alternar tema claro/escuro" title="Tema">${icon(isDark() ? 'sun' : 'moon')}</button>
         <button class="icon-btn" type="button" data-tool="sair" aria-label="Sair" title="Sair">${icon('logout')}</button>
       </div>`;
-    $('#mtopTitle').textContent = VIEWS.find((v) => v.id === S.view).label;
+    $('#mtopTitle').textContent = lista.find((v) => v.id === S.view).label;
     $('#mtopActions').innerHTML = `
       <button class="icon-btn" type="button" data-tool="som" aria-pressed="${S.som}" aria-label="${S.som ? 'Silenciar alertas' : 'Ativar som dos alertas'}">${icon(S.som ? 'volume' : 'mute')}</button>
       <span class="avatar" title="${esc(S.user.nome)}">${esc(firstName(S.user.nome)[0] || '?').toUpperCase()}</span>`;
@@ -481,7 +490,7 @@
   }
   function route() {
     const v = location.hash.replace('#', '');
-    S.view = VIEWS.some((x) => x.id === v) ? v : 'chamados';
+    S.view = views().some((x) => x.id === v) ? v : 'chamados';
     renderChrome();
     renderView();
     $('#main').scrollTop = 0;
@@ -492,7 +501,7 @@
   function renderView() {
     const main = $('#main');
     main.dataset.view = S.view;
-    main.innerHTML = { chamados: vChamados, salao: vSalao, comentarios: vComentarios, plaquinhas: vPlaquinhas, ajustes: vAjustes }[S.view]();
+    main.innerHTML = { chamados: vChamados, salao: vSalao, comentarios: vComentarios, plaquinhas: vPlaquinhas, ajustes: vAjustes, fidelidade: () => FidPainel.html() }[S.view]();
     if (S.view === 'ajustes' && S.ajTab === 'restaurante') carregarEquipe();
   }
 
@@ -920,8 +929,8 @@
   const saveRestaurante = (patch) => saveSettings({ restaurante: { ...S.settings.restaurante, ...patch } });
 
   /* ---------- Widgets do cliente ---------- */
-  const WIDGET_ICON = { cardapio: 'book', wifi: 'wifi', dividir: 'users', google: 'star', comentario: 'msg' };
-  const WIDGET_LABEL = { cardapio: 'Cardápio', wifi: 'Wi-Fi', dividir: 'Dividir a conta', google: 'Avaliar no Google', comentario: 'Comentário anônimo' };
+  const WIDGET_ICON = { fidelidade: 'gift', cardapio: 'book', wifi: 'wifi', dividir: 'users', google: 'star', comentario: 'msg' };
+  const WIDGET_LABEL = { fidelidade: 'Programa de fidelidade', cardapio: 'Cardápio', wifi: 'Wi-Fi', dividir: 'Dividir a conta', google: 'Avaliar no Google', comentario: 'Comentário anônimo' };
   const WIDGET_ICONS = [
     ['link', 'Link'], ['book', 'Livro'], ['star', 'Estrela'], ['msg', 'Mensagem'], ['wifi', 'Wi-Fi'],
     ['users', 'Pessoas'], ['printer', 'Impressora'], ['qr', 'QR'], ['sparkle', 'Destaque'],
@@ -937,6 +946,7 @@
     if (tipo === 'google') return r.googleUrl ? 'Link de avaliação configurado' : 'Sem link: abre a busca do Google pelo nome';
     if (tipo === 'dividir') return `Serviço de ${Number(r.taxaServico) || 0}%`;
     if (tipo === 'comentario') return 'Chega na aba Comentários';
+    if (tipo === 'fidelidade') return (S.settings.fidelidade || {}).ativo ? 'Regras e prêmios na aba Fidelidade' : 'Pausado: coloque no ar na aba Fidelidade';
     return '';
   }
 
@@ -1176,12 +1186,12 @@
         i.src = src;
       });
       let sx = 0, sy = 0, sw = img.naturalWidth, sh = img.naturalHeight, w, h;
-      if (tipo === 'logo') {
+      if (tipo === 'logo' || tipo === 'premio') {
         const lado = Math.min(sw, sh);
         sx = (sw - lado) / 2;
         sy = (sh - lado) / 2;
         sw = sh = lado;
-        w = h = Math.min(480, lado);
+        w = h = Math.min(tipo === 'premio' ? 720 : 480, lado);
       } else {
         const k = Math.min(1, (isDemo ? 1280 : 1800) / sw);
         w = Math.round(sw * k);
@@ -1326,9 +1336,14 @@
 
   /* Widgets */
   function ajWidgets() {
+    // Com o módulo liberado, o atalho da fidelidade entra na lista (logo depois do cardápio) para poder mudar de lugar ou desligar.
+    if (temFid() && !S.settings.widgets.some((w) => w.tipo === 'fidelidade')) {
+      const i = S.settings.widgets.findIndex((w) => w.tipo === 'cardapio');
+      S.settings.widgets.splice(i + 1, 0, { id: 'fidelidade', tipo: 'fidelidade', label: 'Programa de fidelidade', ativo: true, embutido: true });
+    }
     return `<div class="panel stack" id="widgetsCfg">
         <p class="muted" style="font-size:13px">Desligue o que o restaurante não usa e use as setas para mudar a ordem. Os dados de Wi-Fi, Google e cardápio ficam nas abas Restaurante e Cardápio.</p>
-        <ul class="wlist">${S.settings.widgets.map((w, i) => widgetRow(w, i, S.settings.widgets.length)).join('')}</ul>
+        <ul class="wlist">${S.settings.widgets.map((w, i) => (w.tipo === 'fidelidade' && !temFid() ? '' : widgetRow(w, i, S.settings.widgets.length))).join('')}</ul>
         ${widgetForm()}
       </div>`;
   }
@@ -1733,6 +1748,7 @@
     $$('.sheet [data-close].icon-btn').forEach((b) => (b.innerHTML = icon('x')));
     if (started) return;
     started = true;
+    if (window.FidPainel) FidPainel.iniciar({ store, S, rerender: renderView, chrome: renderChrome, ding, isDemo, prepararImagem });
     route();
     window.addEventListener('hashchange', route);
     store.subscribe(queueRefresh);

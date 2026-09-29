@@ -106,6 +106,15 @@
     const b = fidBoost(regras, quando);
     return { pontos: Math.floor(Math.max(Number(valor) || 0, 0) * ppr * b.mult + 1e-9), mult: b.mult, boost: b.nome };
   }
+  // Na demonstração o programa já vem no ar, para dar para experimentar.
+  const FID_DEMO = {
+    ativo: true, nome: 'Clube de pontos', pontosPorReal: 1,
+    boosts: [
+      { id: 'b1', nome: 'Terça em dobro', mult: 2, dias: [2], de: '', ate: '', inicio: '', fim: '', ativo: true },
+      { id: 'b2', nome: 'Happy hour', mult: 1.5, dias: [1, 2, 3, 4, 5], de: '17:00', ate: '19:00', inicio: '', fim: '', ativo: true },
+    ],
+    regulamento: 'Demonstração: 1 ponto a cada R$ 1 gasto com CPF na nota. Os pontos valem por 12 meses.',
+  };
   const mergeFid = (f) => ({ ...FID_PADRAO, ...(f || {}), indicacao: { ...FID_PADRAO.indicacao, ...((f && f.indicacao) || {}) } });
 
   // Valores iniciais, usados enquanto a equipe ainda não salvou nada pelo painel.
@@ -127,7 +136,7 @@
       out[k] = Array.isArray(v) || typeof v !== 'object' ? v : { ...base[k], ...v };
     }
     out.modulos = { ...(demo ? { fidelidade: true } : {}), ...((saved && saved.modulos) || {}) };
-    out.fidelidade = mergeFid(saved && saved.fidelidade);
+    out.fidelidade = mergeFid(saved && saved.fidelidade ? saved.fidelidade : demo ? FID_DEMO : null);
     return out;
   };
   const normCodigo = (c) => String(c || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -201,7 +210,14 @@
     const tentativas = {};
 
     /* Fidelidade na demonstração: mesmas regras de public.fid_*, guardadas neste navegador. */
-    const F = (db) => (db.fid = db.fid || { clientes: [], movimentos: [], notas: [], xml: [], premios: [], resgates: [], pins: {}, sessoes: {} });
+    const F = (db) => (db.fid = db.fid || {
+      clientes: [], movimentos: [], notas: [], xml: [], resgates: [], pins: {}, sessoes: {},
+      premios: [
+        { id: 'p1', nome: 'Caipirinha da casa', descricao: 'Limão, morango ou maracujá.', pontos: 150, imagem: null, ativo: true, ordem: 1, criado_em: nowIso() },
+        { id: 'p2', nome: 'Sobremesa do dia', descricao: '', pontos: 220, imagem: null, ativo: true, ordem: 2, criado_em: nowIso() },
+        { id: 'p3', nome: 'Porção de fritas', descricao: 'Com maionese da casa.', pontos: 300, imagem: null, ativo: true, ordem: 3, criado_em: nowIso() },
+      ],
+    });
     const regras = (db) => mergeSettings(db.configuracao, true).fidelidade;
     const noAr = (db) => { const s = mergeSettings(db.configuracao, true); return !!(s.modulos.fidelidade && s.fidelidade.ativo); };
     const hashTxt = async (t) => {
@@ -276,8 +292,8 @@
       const r = regras(db);
       if (!chaveValida(chave)) return 'Chave de acesso inválida. Confira os 44 números da nota.';
       if (!['65', '59'].includes(chave.slice(20, 22))) return 'Esta não é uma nota fiscal de consumidor (NFC-e).';
-      if (!(r.cnpjs || []).length) return 'O restaurante ainda não cadastrou o CNPJ das notas. Avise a equipe.';
-      if (!r.cnpjs.includes(chave.slice(6, 20))) return 'Esta nota é de outro estabelecimento.';
+      // Demonstração sem CNPJ cadastrado: aceita a nota de qualquer lugar.
+      if ((r.cnpjs || []).length && !r.cnpjs.includes(chave.slice(6, 20))) return 'Esta nota é de outro estabelecimento.';
       const mes = new Date(2000 + +chave.slice(2, 4), +chave.slice(4, 6) - 1, 1);
       const fimMes = new Date(mes.getFullYear(), mes.getMonth() + 1, 1);
       if (mes > new Date()) return 'Chave de acesso inválida. Confira os 44 números da nota.';

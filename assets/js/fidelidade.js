@@ -1,0 +1,475 @@
+/*
+ * Programa de fidelidade na página da mesa.
+ * O CPF acha a conta (primeiro nome e saldo); o PIN de 4 números libera o
+ * extrato, o resgate de prêmios e o código de indicação. O aparelho lembra.
+ * Pontos entram pela nota fiscal: o cliente lê o QR da NFC-e (com CPF na nota)
+ * e o restaurante confere pelo XML ou à mão.
+ *
+ *   Fidelidade.iniciar({ store, slug, nomeRestaurante }) → programa (ou null)
+ *   Fidelidade.tile() → HTML do atalho na página
+ *   Fidelidade.abrir()
+ */
+(function () {
+  const { $, esc, brl, icon, toast, copyText, openSheet } = UI;
+  const F = Store.fid;
+  const DIAS = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
+
+  let store = null;
+  let prog = null;
+  let chave = 'fid';
+  let nomeRest = '';
+  const S = { cpf: null, nome: null, pontos: null, pendentes: 0, token: null, conta: null, tela: 'inicio', indicacao: '', indicador: null, aviso: null, premio: null, resgate: null, ocupado: false };
+
+  const ler = () => { try { return JSON.parse(localStorage.getItem(chave)) || {}; } catch { return {}; } };
+  const gravar = () => { try { localStorage.setItem(chave, JSON.stringify({ cpf: S.cpf, nome: S.nome, pontos: S.pontos, token: S.token })); } catch {} };
+  const esquecer = () => { Object.assign(S, { cpf: null, nome: null, pontos: null, pendentes: 0, token: null, conta: null }); try { localStorage.removeItem(chave); } catch {} };
+
+  const fmtCpf = (c) => F.soDigitos(c).slice(0, 11).replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d{1,2})$/, '$1-$2');
+  const fmtTel = (t) => {
+    const d = F.soDigitos(t).slice(0, 11);
+    if (d.length <= 2) return d;
+    if (d.length <= 6) return `(${d.slice(0, 2)}) ${d.slice(2)}`;
+    return d.length === 11 ? `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}` : `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+  };
+  const num = (n) => Number(n || 0).toLocaleString('pt-BR');
+  const pts = (n) => `${num(n)} ${Math.abs(n) === 1 ? 'ponto' : 'pontos'}`;
+  const dataCurta = (iso) => new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+
+  // "1 ponto a cada R$ 1", "2 pontos a cada R$ 1", "1 ponto a cada R$ 2".
+  function regraTexto() {
+    const p = Number(prog.pontosPorReal) || 0;
+    if (p >= 1) return `${num(p)} ${p === 1 ? 'ponto' : 'pontos'} a cada R$ 1`;
+    if (p > 0) return `1 ponto a cada ${brl(1 / p).replace(',00', '')}`;
+    return 'pontos nas suas compras';
+  }
+  const PLURAL = ['domingos', 'segundas', 'terças', 'quartas', 'quintas', 'sextas', 'sábados'];
+  // "às terças", "de segunda a sexta", "às segundas, quartas e sextas", "todo dia".
+  function diasTexto(dias) {
+    const d = [...new Set(dias || [])].sort();
+    if (!d.length || d.length === 7) return 'todo dia';
+    if (d.length === 1) return `${d[0] === 0 || d[0] === 6 ? 'aos' : 'às'} ${PLURAL[d[0]]}`;
+    if (d.length > 2 && d[d.length - 1] - d[0] === d.length - 1) return `de ${DIAS[d[0]]} a ${DIAS[d[d.length - 1]]}`;
+    const n = d.map((x) => PLURAL[x]);
+    return `${d[0] === 0 || d[0] === 6 ? 'aos' : 'às'} ${n.slice(0, -1).join(', ')} e ${n[n.length - 1]}`;
+  }
+  const multTexto = (m) => (m === 2 ? 'pontos em dobro' : m === 3 ? 'pontos em triplo' : `${String(m).replace('.', ',')}x pontos`);
+  function boostTexto(b) {
+    const hora = b.de && b.ate ? `, das ${b.de.replace(':00', 'h')} às ${b.ate.replace(':00', 'h')}` : '';
+    const periodo = b.fim ? `, até ${b.fim.split('-').reverse().slice(0, 2).join('/')}` : '';
+    return `${multTexto(b.mult)} ${diasTexto(b.dias)}${hora}${periodo}`;
+  }
+  const boostAgora = () => {
+    const b = F.boost({ boosts: prog.boosts }, new Date());
+    return b.mult > 1 ? b : null;
+  };
+
+  /* ---------- Atalho na página ---------- */
+  function tile() {
+    if (!prog || !prog.ativo) return '';
+    const agora = boostAgora();
+    const conhecido = S.cpf && S.pontos != null;
+    return `<button type="button" class="tile tile--fid" data-fid-abrir>
+      <span class="tile-fid-top">${icon('gift')} ${esc(prog.nome)}</span>
+      <div><h3>${conhecido ? pts(S.pontos) : 'Ganhe pontos'}</h3>
+        <p>${conhecido ? `Olá, ${esc(S.nome || '')}! Leia a nota e troque por prêmios.` : `${esc(regraTexto())} e troque por prêmios.`}${agora ? ` <b>Agora: ${multTexto(agora.mult)}!</b>` : ''}</p></div>
+      <span class="tile-go">${icon('arrow')}</span>
+    </button>`;
+  }
+  const atualizarTile = () => {
+    const t = document.querySelector('[data-fid-abrir]');
+    if (t) t.outerHTML = tile();
+  };
+
+  /* ---------- Telas ---------- */
+  const corpo = () => $('#fidBody');
+  function render() {
+    const html = {
+      inicio: tInicio, cadastro: tCadastro, conta: tConta, pin: tPin, resultado: tResultado,
+      resgatar: tResgatar, codigo: tCodigo, indicar: tIndicar, regulamento: tRegulamento,
+    }[S.tela]();
+    corpo().innerHTML = html;
+    $('#fidTitle').textContent = S.tela === 'inicio' ? nomeRest || 'Fidelidade' : prog.nome;
+    const foco = corpo().querySelector('[data-foco]');
+    if (foco) setTimeout(() => foco.focus(), 60);
+  }
+  const ir = (tela) => { S.tela = tela; render(); corpo().scrollTop = 0; };
+
+  const boosts = () => (prog.boosts || []).length
+    ? `<ul class="fid-boosts">${prog.boosts.map((b) => `<li>${icon('sparkle')}<span>${b.nome ? `<b>${esc(b.nome)}</b> · ` : ''}${esc(boostTexto(b))}</span></li>`).join('')}</ul>` : '';
+
+  function premiosHtml(comBotao) {
+    const lista = prog.premios || [];
+    if (!lista.length) return '<p class="muted fid-vazio">Os prêmios aparecem aqui em breve.</p>';
+    const saldo = S.pontos || 0;
+    return `<div class="fid-premios">${lista.map((p) => {
+      const falta = p.pontos - saldo;
+      const pct = Math.max(4, Math.min(100, Math.round((saldo / p.pontos) * 100)));
+      return `<article class="fid-premio">
+        <div class="fid-premio-img ${p.imagem ? '' : 'is-vazia'}">${p.imagem ? `<img src="${esc(p.imagem)}" alt="" loading="lazy">` : icon('gift')}</div>
+        <div class="fid-premio-info"><h4>${esc(p.nome)}</h4>${p.descricao ? `<p>${esc(p.descricao)}</p>` : ''}
+          <b class="fid-premio-pts">${pts(p.pontos)}</b>
+          ${comBotao ? (falta > 0
+            ? `<span class="fid-barra" aria-label="Faltam ${falta} pontos"><i style="width:${pct}%"></i></span><small class="muted">Faltam ${pts(falta)}</small>`
+            : `<button type="button" class="btn btn-cobalt btn-sm" data-fid-resgatar="${esc(p.id)}">Trocar</button>`) : ''}
+        </div>
+      </article>`;
+    }).join('')}</div>`;
+  }
+
+  function tInicio() {
+    return `<div class="stack-lg fid">
+      <div class="plate fid-hero"><span class="rivet r1"></span><span class="rivet r2"></span>
+        <small>Programa de fidelidade</small><b>${esc(prog.nome)}</b><p>Ganhe ${esc(regraTexto())} e troque por prêmios.</p></div>
+      ${boosts()}
+      ${S.indicador ? `<p class="note">${icon('users')}<span>Você foi indicado por <b>${esc(S.indicador)}</b>. Cadastre-se e ganhe pontos de boas-vindas na primeira compra.</span></p>` : ''}
+      <form class="stack" id="fidCpfForm" novalidate>
+        <label class="field"><span>Seu CPF</span><input class="input mono" id="fidCpf" inputmode="numeric" autocomplete="off" maxlength="14" placeholder="000.000.000-00" data-foco value="${esc(fmtCpf(S.cpf || ''))}"></label>
+        <p class="form-error" id="fidErro" role="alert">${esc(S.aviso || '')}</p>
+        <button type="submit" class="btn btn-cobalt btn-block">Entrar ou cadastrar</button>
+      </form>
+      <ol class="fid-como">
+        <li><b>Cadastre-se</b> com o seu CPF (uma vez só).</li>
+        <li>Na hora de pagar, <b>peça CPF na nota</b>.</li>
+        <li><b>Leia o QR Code</b> da nota aqui. Os pontos entram depois que o restaurante confere a nota.</li>
+        <li>Troque os pontos por <b>prêmios</b>.</li>
+      </ol>
+      <section class="stack"><h3 class="fid-h3">Prêmios</h3>${premiosHtml(false)}</section>
+      ${prog.regulamento ? '<button type="button" class="link fid-link" data-fid-ir="regulamento">Regulamento do programa</button>' : ''}
+    </div>`;
+  }
+
+  function tCadastro() {
+    return `<form class="stack fid" id="fidCadForm" novalidate>
+      <p class="muted">Cadastro no <b>${esc(prog.nome)}</b> de ${esc(nomeRest)}. Leva um minuto.</p>
+      <div class="fid-cpf-fixo"><span>CPF</span><b class="mono">${esc(fmtCpf(S.cpf))}</b><button type="button" class="link" data-fid-ir="inicio">Trocar</button></div>
+      <label class="field"><span>Nome completo</span><input class="input" id="fcNome" autocomplete="name" maxlength="80" data-foco required></label>
+      <label class="field"><span>E-mail</span><input class="input" id="fcEmail" type="email" autocomplete="email" maxlength="120" required></label>
+      <label class="field"><span>Celular com DDD</span><input class="input" id="fcTel" type="tel" inputmode="tel" autocomplete="tel" maxlength="16" placeholder="(31) 99999-9999" required></label>
+      <label class="field"><span>Crie um PIN de 4 números</span><input class="input mono pin-input" id="fcPin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="new-password" required>
+        <small class="help">Você usa o PIN para trocar os pontos por prêmios.</small></label>
+      ${prog.indicacao && prog.indicacao.ativo ? `<label class="field"><span>Código de quem indicou (opcional)</span><input class="input mono" id="fcInd" maxlength="12" autocapitalize="characters" autocomplete="off" value="${esc(S.indicacao || '')}"></label>` : ''}
+      <label class="check"><input type="checkbox" id="fcAceite"> <span>Li e aceito o ${prog.regulamento ? '<button type="button" class="link" data-fid-ir="regulamento">regulamento</button>' : 'regulamento'} e autorizo o uso dos meus dados (nome, CPF, e-mail e celular) no programa de fidelidade de ${esc(nomeRest)}.</span></label>
+      <label class="check"><input type="checkbox" id="fcMkt"> <span>Quero receber novidades e promoções.</span></label>
+      <p class="form-error" id="fidErro" role="alert">${esc(S.aviso || '')}</p>
+      <button type="submit" class="btn btn-cobalt btn-block">Criar minha conta</button>
+    </form>`;
+  }
+
+  function tConta() {
+    const c = S.conta;
+    const agora = boostAgora();
+    const pendRes = c ? c.resgates.filter((x) => x.status === 'pendente') : [];
+    const notasPend = c ? c.notas.filter((n) => n.status === 'pendente').length : S.pendentes;
+    return `<div class="stack-lg fid">
+      <div class="plate fid-saldo"><span class="rivet r1"></span><span class="rivet r2"></span>
+        <small>Olá, ${esc(S.nome || '')}</small>
+        <b class="fid-pontos">${num(S.pontos)}<span>${Math.abs(S.pontos) === 1 ? 'ponto' : 'pontos'}</span></b>
+        ${notasPend ? `<p>${notasPend} ${notasPend === 1 ? 'nota em conferência' : 'notas em conferência'}</p>` : ''}
+      </div>
+      ${agora ? `<p class="note fid-agora">${icon('sparkle')}<span><b>Agora vale ${agora.mult === 2 ? 'o dobro' : `${String(agora.mult).replace('.', ',')}x`}!</b>${agora.nome ? ` ${esc(agora.nome)}.` : ''}</span></p>` : ''}
+      <div class="fid-acoes">
+        <button type="button" class="btn btn-cobalt" data-fid-nota>${icon('receipt')} Ler nota fiscal</button>
+        ${prog.indicacao && prog.indicacao.ativo ? `<button type="button" class="btn btn-line" data-fid-ir="indicar">${icon('users')} Indicar amigos</button>` : ''}
+      </div>
+      ${pendRes.length ? `<section class="stack"><h3 class="fid-h3">Mostre ao garçom</h3>${pendRes.map((x) => `<div class="fid-cod"><span>${esc(x.premio)}</span><b class="mono">${esc(x.codigo)}</b></div>`).join('')}</section>` : ''}
+      <section class="stack"><h3 class="fid-h3">Troque seus pontos</h3>${premiosHtml(true)}</section>
+      ${c ? extrato(c) : `<button type="button" class="btn btn-line btn-block" data-fid-ir="pin">${icon('lock')} Ver extrato (PIN)</button>`}
+      <p class="fid-rodape">${prog.regulamento ? '<button type="button" class="link" data-fid-ir="regulamento">Regulamento</button> · ' : ''}<button type="button" class="link" data-fid-sair>Não é você? Sair</button></p>
+    </div>`;
+  }
+
+  const STATUS = { pendente: 'Em conferência', creditada: 'Pontos creditados', recusada: 'Não valeu', estornada: 'Estornada' };
+  function extrato(c) {
+    const notas = c.notas.slice(0, 8);
+    const mov = c.movimentos.slice(0, 20);
+    return `<section class="stack"><h3 class="fid-h3">Notas</h3>
+        ${notas.length ? `<ul class="fid-lista">${notas.map((n) => `<li><span>${dataCurta(n.lida_em)} · nota …${esc(n.chave.slice(-6))}${n.valor ? ` · ${brl(n.valor)}` : ''}
+            ${n.motivo && n.status !== 'creditada' ? `<small>${esc(n.motivo)}</small>` : ''}</span>
+            <b class="fid-st fid-st--${n.status}">${n.status === 'creditada' && n.pontos != null ? `+${num(n.pontos)}` : STATUS[n.status] || n.status}</b></li>`).join('')}</ul>`
+          : '<p class="muted">Nenhuma nota ainda. Leia o QR Code da próxima nota com o seu CPF.</p>'}
+      </section>
+      <section class="stack"><h3 class="fid-h3">Extrato</h3>
+        ${mov.length ? `<ul class="fid-lista">${mov.map((m) => `<li><span>${dataCurta(m.criado_em)} · ${esc(m.descricao || m.tipo)}</span>
+            <b class="${m.pontos < 0 ? 'fid-neg' : 'fid-pos'}">${m.pontos > 0 ? '+' : ''}${num(m.pontos)}</b></li>`).join('')}</ul>`
+          : '<p class="muted">Sem movimentações ainda.</p>'}
+      </section>`;
+  }
+
+  function tPin() {
+    return `<form class="stack fid" id="fidPinForm" novalidate>
+      <p>Digite o PIN de 4 números que você criou no cadastro${S.premio ? ' para trocar os pontos' : ''}.</p>
+      <label class="field"><span>PIN</span><input class="input mono pin-input" id="fidPin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="current-password" data-foco></label>
+      <p class="form-error" id="fidErro" role="alert">${esc(S.aviso || '')}</p>
+      <button type="submit" class="btn btn-cobalt btn-block">Continuar</button>
+      <p class="help">Esqueceu o PIN? Peça para a equipe do restaurante redefinir. Depois, o próximo PIN que você digitar aqui passa a valer.</p>
+      <button type="button" class="btn btn-quiet btn-block" data-fid-ir="conta">Voltar</button>
+    </form>`;
+  }
+
+  function tResultado() {
+    const r = S.resultado || {};
+    const ok = r.status === 'creditada';
+    const titulo = ok ? `+${pts(r.pontos || 0)}!` : r.status === 'pendente' ? 'Nota recebida!' : r.status === 'repetida' ? 'Essa nota já está na sua conta' : 'Esta nota não valeu';
+    const texto = ok ? `Compra de ${brl(r.valor)} conferida. Os pontos já estão na sua conta.`
+      : r.status === 'pendente' ? 'Os pontos entram assim que o restaurante conferir a nota. Você acompanha aqui no extrato.'
+      : r.status === 'repetida' ? `Situação: ${STATUS[r.nota] || r.nota}${r.motivo ? ` (${r.motivo})` : ''}.`
+      : r.motivo || r.mensagem || 'Não foi possível registrar a nota.';
+    return `<div class="stack-lg fid fid-res ${ok || r.status === 'pendente' ? 'is-ok' : 'is-erro'}">
+      <span class="fid-res-ico">${icon(ok || r.status === 'pendente' ? 'check' : 'alert')}</span>
+      <h3>${esc(titulo)}</h3><p>${esc(texto)}</p>
+      <button type="button" class="btn btn-cobalt btn-block" data-fid-nota>${icon('receipt')} Ler outra nota</button>
+      <button type="button" class="btn btn-quiet btn-block" data-fid-ir="conta">Ver meus pontos</button>
+    </div>`;
+  }
+
+  function tResgatar() {
+    const p = S.premio;
+    return `<div class="stack-lg fid">
+      <div class="fid-premio fid-premio--grande">
+        <div class="fid-premio-img ${p.imagem ? '' : 'is-vazia'}">${p.imagem ? `<img src="${esc(p.imagem)}" alt="">` : icon('gift')}</div>
+        <div class="fid-premio-info"><h4>${esc(p.nome)}</h4>${p.descricao ? `<p>${esc(p.descricao)}</p>` : ''}<b class="fid-premio-pts">${pts(p.pontos)}</b></div>
+      </div>
+      <p>Você tem <b>${pts(S.pontos)}</b>. Depois da troca ficam <b>${pts(S.pontos - p.pontos)}</b>.</p>
+      <p class="muted">Você recebe um código para mostrar ao garçom. Ele entrega o prêmio.</p>
+      <button type="button" class="btn btn-cobalt btn-block" data-fid-confirmar ${S.ocupado ? 'disabled' : ''}>${icon('gift')} Trocar agora</button>
+      <button type="button" class="btn btn-quiet btn-block" data-fid-ir="conta">Voltar</button>
+    </div>`;
+  }
+
+  function tCodigo() {
+    const x = S.resgate;
+    return `<div class="stack-lg fid fid-res is-ok">
+      <span class="fid-res-ico">${icon('gift')}</span>
+      <h3>${esc(x.premio)}</h3>
+      <p>Mostre este código ao garçom:</p>
+      <b class="fid-codigo mono">${esc(x.codigo)}</b>
+      <p class="muted">O código também fica na sua conta até a entrega.</p>
+      <button type="button" class="btn btn-quiet btn-block" data-fid-ir="conta">Ver meus pontos</button>
+    </div>`;
+  }
+
+  function linkIndicacao() {
+    const u = new URL(location.origin + '/');
+    const r = new URLSearchParams(location.search).get('r');
+    if (r) u.searchParams.set('r', r);
+    u.searchParams.set('indicacao', S.conta.codigo);
+    return u.href;
+  }
+  function tIndicar() {
+    const c = S.conta;
+    const i = prog.indicacao;
+    const texto = `Entra no ${prog.nome} de ${nomeRest} com o meu código ${c.codigo}${i.indicado ? ` e ganha ${pts(i.indicado)} na primeira compra` : ''}: ${linkIndicacao()}`;
+    return `<div class="stack-lg fid">
+      <p>Quando alguém se cadastrar com o seu código e fizer a primeira compra com CPF na nota, ${i.indicador ? `você ganha <b>${pts(i.indicador)}</b>` : 'vocês dois ganham pontos'}${i.indicador && i.indicado ? ` e quem você indicou ganha <b>${pts(i.indicado)}</b>` : ''}.</p>
+      <div class="fid-cod fid-cod--ind"><span>Seu código</span><b class="mono">${esc(c.codigo)}</b></div>
+      <p class="muted">${c.indicacoes ? `${c.indicacoes} ${c.indicacoes === 1 ? 'pessoa já se cadastrou' : 'pessoas já se cadastraram'} com o seu código.` : 'Ninguém usou o seu código ainda.'}</p>
+      <a class="btn btn-cobalt btn-block" href="https://wa.me/?text=${encodeURIComponent(texto)}" target="_blank" rel="noopener">${icon('share')} Mandar no WhatsApp</a>
+      <button type="button" class="btn btn-line btn-block" data-fid-copiar="${esc(texto)}">${icon('copy')} Copiar convite</button>
+      <button type="button" class="btn btn-quiet btn-block" data-fid-ir="conta">Voltar</button>
+    </div>`;
+  }
+
+  function tRegulamento() {
+    return `<div class="stack fid">
+      <div class="fid-regulamento">${esc(prog.regulamento || '').replace(/\n/g, '<br>')}</div>
+      <button type="button" class="btn btn-quiet btn-block" data-fid-ir="${S.cpf ? (S.nome ? 'conta' : 'cadastro') : 'inicio'}">Voltar</button>
+    </div>`;
+  }
+
+  /* ---------- Ações ---------- */
+  const erro = (m) => { const e = $('#fidErro'); if (e) e.textContent = m; else toast(m, { tone: 'error', ms: 4500 }); };
+
+  async function atualizarConta() {
+    if (S.token) {
+      const c = await store.fidConta(S.token).catch(() => null);
+      if (c && c.status === 'ok') {
+        Object.assign(S, { conta: c, nome: c.nome.split(' ')[0], pontos: c.pontos, pendentes: c.notas.filter((n) => n.status === 'pendente').length });
+        gravar();
+        atualizarTile();
+        return true;
+      }
+      if (c && c.status === 'sem_sessao') { S.token = null; S.conta = null; }
+    }
+    if (!S.cpf) return false;
+    const r = await store.fidConsultar(S.cpf).catch(() => null);
+    if (r && r.status === 'ok') {
+      Object.assign(S, { nome: r.nome, pontos: r.pontos, pendentes: r.pendentes });
+      gravar();
+      atualizarTile();
+      return true;
+    }
+    if (r && r.status === 'novo') esquecer();
+    return false;
+  }
+
+  async function entrarCpf(cpf) {
+    S.aviso = null;
+    const r = await store.fidConsultar(cpf);
+    if (r.status === 'erro') return erro(r.mensagem);
+    if (r.status === 'inativo') return erro('O programa está pausado no momento.');
+    S.cpf = F.soDigitos(cpf);
+    if (r.status === 'novo') return ir('cadastro');
+    Object.assign(S, { nome: r.nome, pontos: r.pontos, pendentes: r.pendentes, token: null, conta: null });
+    gravar();
+    atualizarTile();
+    ir('conta');
+  }
+
+  function lerNota() {
+    if (!window.Leitor) return toast('Leitor indisponível. Recarregue a página.', { tone: 'error' });
+    Leitor.abrir({
+      titulo: 'Ler nota fiscal',
+      dica: 'Aponte a câmera para o QR Code no fim da nota fiscal.',
+      aceitar: (t) => {
+        const c = F.chaveDoTexto(t);
+        return c && F.chaveValida(c) ? null : 'Este QR não é de uma nota fiscal. Procure o QR Code no fim da nota (NFC-e).';
+      },
+      pronto: async (t) => {
+        corpo().innerHTML = '<div class="fid-carregando"><span class="dot"></span><p>Registrando a nota…</p></div>';
+        let r;
+        try {
+          r = await store.fidRegistrarNota({ cpf: S.cpf, qr: t });
+        } catch {
+          r = { status: 'erro', mensagem: 'Sem conexão. Confira a internet e leia a nota de novo.' };
+        }
+        if (r.status === 'sem_cadastro') return ir('cadastro');
+        S.resultado = r;
+        await atualizarConta();
+        ir('resultado');
+      },
+    });
+  }
+
+  function onClick(e) {
+    const t = e.target;
+    const irPara = t.closest('[data-fid-ir]');
+    if (irPara) {
+      S.aviso = null;
+      if (irPara.dataset.fidIr === 'indicar' && !S.token) { S.depoisPin = 'indicar'; return ir('pin'); }
+      return ir(irPara.dataset.fidIr);
+    }
+    if (t.closest('[data-fid-nota]')) return lerNota();
+    const r = t.closest('[data-fid-resgatar]');
+    if (r) {
+      S.premio = (prog.premios || []).find((p) => p.id === r.dataset.fidResgatar);
+      if (!S.premio) return;
+      if (!S.token) { S.depoisPin = 'resgatar'; return ir('pin'); }
+      return ir('resgatar');
+    }
+    if (t.closest('[data-fid-confirmar]')) return resgatar();
+    const cp = t.closest('[data-fid-copiar]');
+    if (cp) return copyText(cp.dataset.fidCopiar).then((ok) => toast(ok ? 'Convite copiado.' : 'Não foi possível copiar.', { tone: ok ? 'ok' : 'error' }));
+    if (t.closest('[data-fid-sair]')) {
+      if (S.token) store.fidSair(S.token).catch(() => {});
+      esquecer();
+      atualizarTile();
+      return ir('inicio');
+    }
+  }
+
+  async function resgatar() {
+    if (S.ocupado) return;
+    S.ocupado = true;
+    render();
+    const r = await store.fidResgatar(S.token, S.premio.id).catch(() => ({ status: 'erro', mensagem: 'Sem conexão. Tente de novo.' }));
+    S.ocupado = false;
+    if (r.status === 'sem_sessao') { S.token = null; gravar(); S.depoisPin = 'resgatar'; return ir('pin'); }
+    if (r.status !== 'ok') { render(); return toast(r.mensagem || 'Não foi possível trocar agora.', { tone: 'error', ms: 4500 }); }
+    S.resgate = r.resgate;
+    await atualizarConta();
+    ir('codigo');
+  }
+
+  async function onSubmit(e) {
+    e.preventDefault();
+    const f = e.target;
+    const btn = f.querySelector('[type=submit]');
+    btn.disabled = true;
+    try {
+      if (f.id === 'fidCpfForm') {
+        const cpf = $('#fidCpf').value;
+        if (!F.cpfValido(cpf)) return erro('CPF inválido. Confira os números.');
+        await entrarCpf(cpf);
+      } else if (f.id === 'fidCadForm') {
+        if (!$('#fcAceite').checked) return erro('Para participar, aceite o regulamento e o uso dos dados.');
+        const r = await store.fidCadastrar({
+          cpf: S.cpf, nome: $('#fcNome').value, email: $('#fcEmail').value, telefone: $('#fcTel').value,
+          pin: $('#fcPin').value, marketing: $('#fcMkt').checked, indicacao: $('#fcInd') ? $('#fcInd').value : null,
+        });
+        if (r.status !== 'ok') {
+          if (r.existe) { S.aviso = 'Este CPF já tem cadastro.'; return ir('inicio'); }
+          return erro(r.mensagem || 'Não foi possível cadastrar agora.');
+        }
+        S.token = r.token;
+        await atualizarConta();
+        toast('Conta criada! Agora é só pedir CPF na nota e ler o QR Code aqui.', { tone: 'ok', ms: 5000 });
+        ir('conta');
+      } else if (f.id === 'fidPinForm') {
+        const pin = $('#fidPin').value;
+        if (!/^\d{4}$/.test(pin)) return erro('O PIN tem 4 números.');
+        const r = await store.fidEntrar(S.cpf, pin);
+        if (r.status !== 'ok') { $('#fidPin').value = ''; return erro(r.mensagem || 'Não foi possível entrar.'); }
+        S.token = r.token;
+        await atualizarConta();
+        if (r.pin_novo) toast('PIN novo salvo.', { tone: 'ok' });
+        const depois = S.depoisPin;
+        S.depoisPin = null;
+        ir(depois === 'resgatar' && S.premio ? 'resgatar' : depois === 'indicar' ? 'indicar' : 'conta');
+      }
+    } catch (ex) {
+      console.error(ex);
+      erro('Sem conexão. Confira a internet e tente de novo.');
+    } finally {
+      if (document.contains(btn)) btn.disabled = false;
+    }
+  }
+
+  function onInput(e) {
+    const t = e.target;
+    if (t.id === 'fidCpf') t.value = fmtCpf(t.value);
+    if (t.id === 'fcTel') t.value = fmtTel(t.value);
+    if (t.id === 'fcPin' || t.id === 'fidPin') t.value = t.value.replace(/\D/g, '').slice(0, 4);
+  }
+
+  async function abrir() {
+    if (!prog || !prog.ativo) return;
+    S.tela = S.cpf ? 'conta' : 'inicio';
+    render();
+    openSheet('sh-fid');
+    if (S.cpf) {
+      await atualizarConta();
+      if (!S.cpf) S.tela = 'inicio';
+      if (['conta', 'inicio'].includes(S.tela)) render();
+    }
+  }
+
+  async function iniciar(o) {
+    store = o.store;
+    nomeRest = o.nomeRestaurante || '';
+    chave = `fid:${o.slug || 'demo'}`;
+    const salvo = ler();
+    Object.assign(S, { cpf: salvo.cpf || null, nome: salvo.nome || null, pontos: salvo.pontos ?? null, token: salvo.token || null });
+    try {
+      prog = await store.fidPrograma();
+    } catch (e) {
+      console.error(e);
+      prog = null;
+    }
+    if (!prog || !prog.ativo) return null;
+    const sh = $('#sh-fid');
+    sh.addEventListener('click', onClick);
+    sh.addEventListener('submit', onSubmit);
+    sh.addEventListener('input', onInput);
+    document.addEventListener('click', (e) => e.target.closest('[data-fid-abrir]') && abrir());
+    const p = new URLSearchParams(location.search);
+    S.indicacao = (p.get('indicacao') || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (S.indicacao && !S.cpf) {
+      store.fidIndicador(S.indicacao).then((r) => { if (r && r.status === 'ok') { S.indicador = r.nome; if (S.tela === 'inicio' && !$('#sh-fid').hidden) render(); } }).catch(() => {});
+    }
+    if (S.cpf) atualizarConta();
+    if (p.has('fidelidade') || S.indicacao) setTimeout(abrir, 300);
+    return prog;
+  }
+
+  window.Fidelidade = { iniciar, tile, abrir, get ativo() { return !!(prog && prog.ativo); } };
+})();

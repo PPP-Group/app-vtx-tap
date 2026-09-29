@@ -173,3 +173,5 @@ td.num small { display: block; font-size: 11.5px; color: var(--muted); }
   .etq-cod { display: grid; place-items: center; height: 10mm; border: .2mm dashed #ccc; border-radius: 1mm; }
   .etq-cod code { font-family: var(--font-mono); font-size: 7pt; letter-spacing: .08em; color: #000; }
 }
+.modulos { margin: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; }
+.modulos legend { padding: 0 6px; font-size: 12.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }

@@ -54,6 +54,21 @@ A página da mesa abre para qualquer um (cardápio, Wi-Fi etc.), mas o sino só 
 - **Fechar mesa** bloqueia o sino de todos e troca o código. A liberação vence sozinha depois de 6 h.
 - Garantido no banco: não existe chamado sem liberação válida, e mesa e restaurante vêm da liberação, não do link.
 
+### Programa de fidelidade (módulo)
+
+A central libera por restaurante (Editar restaurante → Módulos contratados → Programa de fidelidade). Com o módulo liberado:
+
+- **Cliente** (página da mesa, atalho logo depois do cardápio): cadastra com CPF, nome, e-mail, celular e um PIN de 4 números. Na próxima vez, o CPF acha a conta. Na hora de pagar, pede **CPF na nota** e lê o QR Code da NFC-e (câmera, foto ou digitando a chave). Troca pontos por prêmios e recebe um código de 4 números para mostrar ao garçom. Pode indicar alguém com o código dele (link `?indicacao=CÓDIGO`).
+- **Equipe** (aba Fidelidade do painel):
+  - **Hoje**: prêmios para entregar, com alerta sonoro; notas para conferir, com o link da SEFAZ (aprovar com o valor ou recusar); importação do XML/ZIP das NFC-e do caixa; lançar nota no balcão.
+  - **Clientes**: busca, ficha, extrato, redefinir PIN, editar, excluir e exportar CSV.
+  - **Prêmios**: catálogo com foto.
+  - **Regras**: pontos por R$, CNPJ das notas, prazo, dias e horários com mais pontos, indicação, lançamento manual (ex.: delivery), regulamento, link e QR do programa.
+- **Conferência das notas**: a SEFAZ-MG não deixa consultar a nota automaticamente (tem verificação anti-robô). A chave da nota é validada na hora: dígito, modelo 65, CNPJ do restaurante, prazo e se já foi usada. Os pontos entram:
+  - pelo **XML do caixa**: credita sozinho toda nota com CPF de cliente cadastrado, estorna as canceladas e corrige o valor de aprovações manuais;
+  - ou pela **aprovação da equipe**.
+- Link direto do programa: `https://<restaurante>.<domínio>/?fidelidade`.
+
 ### Central (painel da Vortex)
 
 - *Visão geral*: leituras por dia (7, 30 ou 90 dias), ranking dos restaurantes com variação contra o período anterior, **chamados e tempo médio de resposta** de cada restaurante, plaquinhas nunca lidas e alerta de restaurante parado há 7 dias.

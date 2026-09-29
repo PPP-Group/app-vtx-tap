@@ -573,20 +573,32 @@
           <span class="tile-go">${icon('external')}</span>
           <div><h3>${esc(w.label || 'Link')}</h3>${w.sub ? `<p>${esc(w.sub)}</p>` : ''}</div>
         </a>`;
+      case 'fidelidade':
+        return window.Fidelidade && Fidelidade.ativo ? Fidelidade.tile() : '';
       default:
         return '';
     }
   }
+  // O atalho do programa de fidelidade entra logo depois do cardápio, a não
+  // ser que o restaurante já o tenha posicionado (ou desligado) nos atalhos.
+  function widgetsDaPagina() {
+    const lista = live.widgets.slice();
+    if (live.modulos && live.modulos.fidelidade && !lista.some((w) => w.tipo === 'fidelidade')) {
+      const i = lista.findIndex((w) => w.tipo === 'cardapio');
+      lista.splice(i + 1, 0, { id: 'fidelidade', tipo: 'fidelidade', ativo: true, embutido: true });
+    }
+    return lista;
+  }
   // Grade dinâmica: os atalhos pequenos andam em pares; quando sobra um
   // (3, 5… ligados), o último ocupa a linha inteira para não deixar buraco.
   function renderTiles() {
-    const html = live.widgets.filter((w) => w.ativo !== false).map(widgetTile).filter(Boolean);
+    const html = widgetsDaPagina().filter((w) => w.ativo !== false).map(widgetTile).filter(Boolean);
     let seguidos = 0;
     const marcar = (fim) => {
       if (seguidos % 2) html[fim - 1] = html[fim - 1].replace('class="tile"', 'class="tile tile--full"');
       seguidos = 0;
     };
-    html.forEach((t, i) => (t.includes('tile--menu') ? marcar(i) : seguidos++));
+    html.forEach((t, i) => (/tile--(menu|fid)/.test(t) ? marcar(i) : seguidos++));
     marcar(html.length);
     const insta = instagramHandle(R.instagram);
     if (insta) {
@@ -1015,5 +1027,10 @@
       renderTiles();
       renderInfo();
       setInterval(renderTop, 60e3);
+      if (live.modulos && live.modulos.fidelidade && window.Fidelidade) {
+        Fidelidade.iniciar({ store, slug: cfg.backend.slug, nomeRestaurante: R.nome })
+          .then((p) => p && renderTiles())
+          .catch((e) => console.error(e));
+      }
     });
 })();
