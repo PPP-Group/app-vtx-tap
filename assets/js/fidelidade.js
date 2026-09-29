@@ -224,18 +224,28 @@
     </div>`;
   }
 
+  // Extrato do cliente: só pontos, nunca valores gastos.
+  function rotuloMov(m) {
+    const d = String(m.descricao || '');
+    const extra = d.includes(' · ') ? d.split(' · ').slice(1).filter((x) => !/R\$/.test(x)).join(' · ') : '';
+    if (m.tipo === 'compra') return `Compra${extra ? ` · ${extra}` : ''}`;
+    if (m.tipo === 'manual') return 'Compra lançada pela equipe';
+    if (m.tipo === 'ajuste') return 'Ajuste da nota';
+    if (m.tipo === 'estorno') return /^Resgate cancelado/.test(d) ? d.replace('Resgate cancelado', 'Troca cancelada') : 'Nota cancelada';
+    return d.replace(/\s*·?\s*R\$\s?[\d.]+,\d{2}/g, '') || m.tipo;
+  }
   const STATUS = { pendente: 'Em conferência', creditada: 'Pontos creditados', recusada: 'Não valeu', estornada: 'Estornada' };
   function extrato(c) {
     const notas = c.notas.slice(0, 8);
     const mov = c.movimentos.slice(0, 20);
     return `<section class="stack"><h3 class="fid-h3">Notas</h3>
-        ${notas.length ? `<ul class="fid-lista">${notas.map((n) => `<li><span>${dataCurta(n.lida_em)} · nota …${esc(n.chave.slice(-6))}${n.valor ? ` · ${brl(n.valor)}` : ''}
+        ${notas.length ? `<ul class="fid-lista">${notas.map((n) => `<li><span>${dataCurta(n.lida_em)} · nota …${esc(n.chave.slice(-6))}
             ${n.motivo && n.status !== 'creditada' ? `<small>${esc(n.motivo)}</small>` : ''}</span>
             <b class="fid-st fid-st--${n.status}">${n.status === 'creditada' && n.pontos != null ? `+${num(n.pontos)}` : STATUS[n.status] || n.status}</b></li>`).join('')}</ul>`
           : '<p class="muted">Nenhuma nota ainda. Leia o QR Code da próxima nota com o seu CPF.</p>'}
       </section>
       <section class="stack"><h3 class="fid-h3">Extrato</h3>
-        ${mov.length ? `<ul class="fid-lista">${mov.map((m) => `<li><span>${dataCurta(m.criado_em)} · ${esc(m.descricao || m.tipo)}</span>
+        ${mov.length ? `<ul class="fid-lista">${mov.map((m) => `<li><span>${dataCurta(m.criado_em)} · ${esc(rotuloMov(m))}</span>
             <b class="${m.pontos < 0 ? 'fid-neg' : 'fid-pos'}">${m.pontos > 0 ? '+' : ''}${num(m.pontos)}</b></li>`).join('')}</ul>`
           : '<p class="muted">Sem movimentações ainda.</p>'}
       </section>`;
@@ -256,7 +266,7 @@
     const r = S.resultado || {};
     const ok = r.status === 'creditada';
     const titulo = ok ? `+${pts(r.pontos || 0)}!` : r.status === 'pendente' ? 'Nota recebida!' : r.status === 'repetida' ? 'Essa nota já está na sua conta' : 'Esta nota não valeu';
-    const texto = ok ? `Compra de ${brl(r.valor)} conferida. Os pontos já estão na sua conta.`
+    const texto = ok ? 'Compra conferida. Os pontos já estão na sua conta.'
       : r.status === 'pendente' ? 'Os pontos entram assim que o restaurante conferir a nota. Você acompanha aqui no extrato.'
       : r.status === 'repetida' ? `Situação: ${STATUS[r.nota] || r.nota}${r.motivo ? ` (${r.motivo})` : ''}.`
       : r.motivo || r.mensagem || 'Não foi possível registrar a nota.';
