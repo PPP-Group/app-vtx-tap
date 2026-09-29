@@ -4,7 +4,7 @@
  * Fontes e bibliotecas externas: usa a cópia guardada e atualiza em segundo plano.
  * Dados do servidor (Supabase) nunca passam pelo cache.
  */
-const VERSAO = 'painel-v3';
+const VERSAO = 'painel-v4';
 const BASE = [
   '/admin/',
   '/assets/css/base.css',

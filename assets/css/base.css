@@ -350,3 +350,14 @@ img, svg { display: block; }
 .sem-rest p { max-width: 36ch; color: var(--muted); }
 .sem-rest-ico { display: grid; place-items: center; width: 64px; height: 64px; border-radius: 50%; background: var(--cobalt-soft); color: var(--cobalt-ink); }
 .sem-rest-ico .i { width: 30px; height: 30px; }
+
+/* Logo do sistema (VTX Tap): versão escura no tema claro e clara no tema escuro. */
+.vtx-logo { display: inline-block; line-height: 0; }
+.vtx-logo img { height: 100%; width: auto; }
+.vtx-logo .vtx-claro { display: none; }
+:root[data-theme="dark"] .vtx-logo .vtx-escuro { display: none; }
+:root[data-theme="dark"] .vtx-logo .vtx-claro { display: inline; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .vtx-logo .vtx-escuro { display: none; }
+  :root:not([data-theme="light"]) .vtx-logo .vtx-claro { display: inline; }
+}

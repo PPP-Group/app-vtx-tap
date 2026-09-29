@@ -175,3 +175,7 @@ td.num small { display: block; font-size: 11.5px; color: var(--muted); }
 }
 .modulos { margin: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; }
 .modulos legend { padding: 0 6px; font-size: 12.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+
+.vtx-logo--login { height: 64px; justify-self: center; margin: 0 auto 6px; display: block; text-align: center; }
+.vtx-logo--top { height: 30px; }
+.top-brand { font-size: 17px; opacity: .8; }
