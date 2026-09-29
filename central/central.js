@@ -531,15 +531,19 @@
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }
 
-  /* Gravação NFC (Chrome no Android). Dois modos:
+  /* Gravação NFC (Chrome no Android). Três modos:
      - câmera: lê o QR impresso na plaquinha e grava o MESMO código no NFC dela
        (não tem como trocar plaquinha, é o recomendado);
+     - digitar: digita o código impresso na plaquinha (sem câmera);
      - lista: segue os códigos selecionados, um por vez, mostrando qual gravar.
+     Câmera e NFC nunca ficam ligados ao mesmo tempo (em alguns Android o Chrome
+     trava com os dois juntos): o NFC só liga depois que a câmera desliga.
      Opcionalmente bloqueia cada etiqueta. Não regrava a mesma etiqueta duas
      vezes seguidas: compara o número de série. */
-  const G = { modo: 'camera', fila: [], i: 0, lido: null, feitos: 0, reader: null, ctrl: null, ultimaSerie: null, ultimoLink: null, ocupado: false, bloquear: true, stream: null, detector: null, camT: 0 };
+  const G = { modo: 'camera', fila: [], i: 0, lido: null, feitos: 0, reader: null, ctrl: null, ultimaSerie: null, ultimoLink: null, ocupado: false, bloquear: true, stream: null, detector: null, camT: 0, vigia: 0, errosCam: 0 };
   const temCamera = () => 'BarcodeDetector' in window && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
-  const atual = () => (G.modo === 'camera' ? G.lido : G.fila[G.i]);
+  const atual = () => (G.modo === 'lista' ? G.fila[G.i] : G.lido);
+  const espera = (ms) => new Promise((ok) => setTimeout(ok, ms));
   const codigoDoLink = (v) => {
     const m = String(v || '').match(/\/t\/([A-Za-z0-9]{4,16})\b|[?&]c=([A-Za-z0-9]{4,16})\b/);
     return m ? (m[1] || m[2]).toUpperCase() : null;
@@ -556,14 +560,15 @@
     }
     G.fila = selecionadas().sort((a, b) => a.codigo.localeCompare(b.codigo));
     G.i = Math.max(0, G.fila.findIndex((t) => !t.gravada));
-    G.modo = temCamera() ? 'camera' : 'lista';
+    const padrao = temCamera() ? 'camera' : 'digitar';
     $('#shBody').innerHTML = `<div class="stack">
       <div class="modo" role="radiogroup" aria-label="Como gravar">
-        ${temCamera() ? `<label><input type="radio" name="gModo" value="camera" checked><span><b>Ler o QR da plaquinha</b><small>Aponte a câmera para o QR já impresso e encoste a mesma plaquinha: o NFC recebe exatamente o código do QR. Recomendado.</small></span></label>` : ''}
-        <label><input type="radio" name="gModo" value="lista" ${temCamera() ? '' : 'checked'} ${G.fila.length ? '' : 'disabled'}><span><b>Seguir a lista selecionada</b><small>${G.fila.length ? `${G.fila.length} ${G.fila.length === 1 ? 'código' : 'códigos'} em ordem; a tela mostra qual plaquinha encostar.` : 'Selecione plaquinhas na lista para usar este modo.'}</small></span></label>
+        ${temCamera() ? `<label><input type="radio" name="gModo" value="camera" checked><span><b>Ler o QR da plaquinha</b><small>Aponte a câmera para o QR já impresso e depois encoste a mesma plaquinha: o NFC recebe exatamente o código do QR. Recomendado.</small></span></label>` : ''}
+        <label><input type="radio" name="gModo" value="digitar" ${padrao === 'digitar' ? 'checked' : ''}><span><b>Digitar o código da plaquinha</b><small>Digite o código impresso nela (ex.: K7P2QXA) e encoste. Não usa a câmera.</small></span></label>
+        <label><input type="radio" name="gModo" value="lista" ${G.fila.length ? '' : 'disabled'}><span><b>Seguir a lista selecionada</b><small>${G.fila.length ? `${G.fila.length} ${G.fila.length === 1 ? 'código' : 'códigos'} em ordem; a tela mostra qual plaquinha encostar.` : 'Selecione plaquinhas na lista para usar este modo.'}</small></span></label>
       </div>
       <label class="check"><input type="checkbox" id="gBloq" checked> Bloquear cada etiqueta depois de gravar (definitivo: ninguém consegue regravar)</label>
-      <button type="button" class="btn btn-cobalt btn-block" data-gravar="iniciar" ${temCamera() || G.fila.length ? '' : 'disabled'}>${icon('nfc')} Começar</button>
+      <button type="button" class="btn btn-cobalt btn-block" data-gravar="iniciar">${icon('nfc')} Começar</button>
     </div>`;
     openSheet('sh');
   }
@@ -579,79 +584,145 @@
     const prog = G.modo === 'lista' ? `${G.i + 1} de ${G.fila.length}` : `${G.feitos} ${G.feitos === 1 ? 'gravada' : 'gravadas'} nesta sessão`;
     const topo = t
       ? `<div class="gravar-cod"><small>Encoste a plaquinha</small><b class="mono">${t.codigo}</b></div>`
-      : `<video class="gravar-cam" id="gCam" playsinline muted></video>`;
-    const padrao = t ? (G.ocupado ? 'Gravando… mantenha encostada.' : 'Aguardando a etiqueta NFC…') : 'Aponte a câmera para o QR da plaquinha.';
+      : G.modo === 'camera'
+        ? `<video class="gravar-cam" id="gCam" playsinline muted></video>`
+        : `<form class="gravar-dig" id="gDig" novalidate>
+            <label class="field"><span>Código impresso na plaquinha</span>
+              <input class="input mono" id="gCodigo" maxlength="16" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="K7P2QXA" required></label>
+            <button type="submit" class="btn btn-cobalt">Continuar</button>
+          </form>`;
+    const padrao = t
+      ? (G.ocupado ? 'Gravando… mantenha encostada.' : 'Aguardando a etiqueta NFC…')
+      : G.modo === 'camera' ? 'Aponte a câmera para o QR da plaquinha.' : 'Digite o código que está impresso na plaquinha.';
     $('#shBody').innerHTML = `<div class="stack gravar">
       <p class="gravar-prog">${prog}</p>
       ${topo}
       <p class="gravar-msg ${tom}" aria-live="polite">${esc(msg || padrao)}</p>
       <div class="acts">
-        ${t ? `<button type="button" class="btn btn-line btn-sm" data-gravar="pular">${G.modo === 'camera' ? 'Ler outro QR' : 'Pular'}</button>` : ''}
+        ${t ? `<button type="button" class="btn btn-line btn-sm" data-gravar="pular">${G.modo === 'camera' ? 'Ler outro QR' : G.modo === 'digitar' ? 'Outro código' : 'Pular'}</button>` : ''}
+        ${!t && G.modo === 'camera' ? '<button type="button" class="btn btn-line btn-sm" data-gravar="digitar">Digitar o código</button>' : ''}
         <button type="button" class="btn btn-quiet btn-sm" data-gravar="parar">Parar</button>
       </div>
     </div>`;
-    if (G.modo === 'camera' && !t) ligarCamera();
+    if (!t && G.modo === 'camera') ligarCamera();
+    if (!t && G.modo === 'digitar') setTimeout(() => $('#gCodigo') && $('#gCodigo').focus(), 60);
+    // Com a plaquinha definida (e a câmera já desligada), liga o NFC.
+    if (t && !G.reader) ligarNfc();
+  }
+
+  function msgGravar(texto, tom = 'is-erro') {
+    const el = $('.gravar-msg');
+    if (!el) return;
+    el.textContent = texto;
+    el.className = `gravar-msg ${tom}`;
+  }
+
+  async function ligarNfc() {
+    desligarNfc();
+    const ctrl = new AbortController();
+    const reader = new NDEFReader();
+    G.ctrl = ctrl;
+    G.reader = reader;
+    try {
+      await reader.scan({ signal: ctrl.signal });
+    } catch (e) {
+      if (G.reader === reader) desligarNfc();
+      msgGravar(e.name === 'NotAllowedError' ? 'Permita o uso de NFC para este site (ícone ao lado do endereço).' : `NFC indisponível: ${e.message}. Confira se o NFC do celular está ligado.`);
+      return false;
+    }
+    reader.onreadingerror = () => atual() && msgGravar('Não deu para ler. Afaste e encoste de novo.');
+    reader.onreading = (ev) => gravarEtiqueta(ev);
+    return true;
+  }
+  function desligarNfc() {
+    G.ctrl && G.ctrl.abort();
+    G.ctrl = null;
+    G.reader = null;
   }
 
   async function ligarCamera() {
     const video = $('#gCam');
     if (!video) return;
+    const falhou = (texto) => {
+      desligarCamera();
+      msgGravar(texto);
+    };
     try {
-      G.stream = G.stream || (await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false }));
+      G.stream = G.stream || (await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false,
+      }));
       G.detector = G.detector || new BarcodeDetector({ formats: ['qr_code'] });
+      if (!document.contains(video)) return desligarCamera();
       video.srcObject = G.stream;
-      await video.play();
+      await Promise.race([video.play(), espera(6000).then(() => { throw new Error('tempo esgotado'); })]);
     } catch (e) {
-      $('.gravar-msg').textContent = e.name === 'NotAllowedError' ? 'Permita o uso da câmera para ler o QR.' : `Câmera indisponível: ${e.message}`;
-      $('.gravar-msg').className = 'gravar-msg is-erro';
-      return;
+      return falhou(e.name === 'NotAllowedError'
+        ? 'Permita o uso da câmera para ler o QR, ou toque em “Digitar o código”.'
+        : 'A câmera não abriu. Feche outros apps que usam a câmera ou reinicie o celular. Enquanto isso, toque em “Digitar o código”.');
     }
+    // Tela preta: a câmera "abriu" mas não manda imagem. Desliga antes de travar o Chrome.
+    clearTimeout(G.vigia);
+    G.vigia = setTimeout(() => {
+      if (G.stream && document.contains(video) && !video.videoWidth) {
+        falhou('A câmera ficou sem imagem. Reinicie o celular ou toque em “Digitar o código”.');
+      }
+    }, 5000);
+    G.errosCam = 0;
     clearTimeout(G.camT);
     const loop = async () => {
       if (!G.stream || G.lido || !document.contains(video)) return;
-      try {
-        for (const b of await G.detector.detect(video)) {
-          const c = codigoDoLink(b.rawValue);
-          if (!c) continue;
-          const tag = S.tags.find((x) => x.codigo === c);
-          if (!tag) {
-            $('.gravar-msg').textContent = `O QR ${c} não é de uma plaquinha cadastrada.`;
-            $('.gravar-msg').className = 'gravar-msg is-erro';
-            continue;
+      if (video.readyState >= 2 && video.videoWidth) {
+        try {
+          for (const b of await G.detector.detect(video)) {
+            const c = codigoDoLink(b.rawValue);
+            if (!c) continue;
+            const tag = S.tags.find((x) => x.codigo === c);
+            if (!tag) {
+              msgGravar(`O QR ${c} não é de uma plaquinha cadastrada.`);
+              continue;
+            }
+            G.lido = tag;
+            navigator.vibrate && navigator.vibrate(30);
+            desligarCamera();
+            // Dá um respiro para o Android soltar a câmera antes de ligar o NFC.
+            await espera(400);
+            return telaGravar(tag.gravada ? 'Esta plaquinha já consta como gravada. Encoste para conferir ou regravar.' : '');
           }
-          G.lido = tag;
-          navigator.vibrate && navigator.vibrate(30);
-          desligarCamera();
-          return telaGravar(tag.gravada ? 'Esta plaquinha já consta como gravada. Encoste para conferir ou regravar.' : '');
+          G.errosCam = 0;
+        } catch {
+          if (++G.errosCam >= 12) return falhou('O leitor de QR deste celular falhou. Toque em “Digitar o código”.');
         }
-      } catch {}
-      G.camT = setTimeout(loop, 250);
+      }
+      G.camT = setTimeout(loop, 300);
     };
     loop();
   }
   function desligarCamera() {
     clearTimeout(G.camT);
+    clearTimeout(G.vigia);
     G.stream && G.stream.getTracks().forEach((tr) => tr.stop());
     G.stream = null;
+    const v = $('#gCam');
+    if (v) v.srcObject = null;
   }
 
   async function iniciarGravar() {
-    const modo = ($('input[name="gModo"]:checked') || {}).value || 'lista';
+    const modo = ($('input[name="gModo"]:checked') || {}).value || 'digitar';
     G.modo = modo;
     G.bloquear = $('#gBloq').checked;
     G.lido = null;
     G.feitos = 0;
     G.ultimaSerie = null;
     G.ultimoLink = null;
-    G.ctrl = new AbortController();
-    G.reader = new NDEFReader();
-    try {
-      await G.reader.scan({ signal: G.ctrl.signal });
-    } catch (e) {
-      return telaGravar(e.name === 'NotAllowedError' ? 'Permita o uso de NFC para este site.' : `NFC indisponível: ${e.message}`, 'is-erro');
-    }
-    G.reader.onreadingerror = () => atual() && telaGravar('Não deu para ler. Afaste e encoste de novo.', 'is-erro');
-    G.reader.onreading = (ev) => gravarEtiqueta(ev);
+    G.ocupado = false;
+    if (G.modo === 'lista') return telaGravar();
+    // Pede a permissão do NFC agora (precisa do toque no botão) e solta em
+    // seguida: com câmera ou código digitado, o NFC só liga com a plaquinha definida.
+    $('#shBody').innerHTML = `<div class="stack gravar"><p class="gravar-msg" aria-live="polite">Liberando o NFC…</p>
+      <div class="acts"><button type="button" class="btn btn-quiet btn-sm" data-gravar="parar">Parar</button></div></div>`;
+    if (!(await ligarNfc())) return;
+    desligarNfc();
+    await espera(200);
     telaGravar();
   }
 
@@ -666,33 +737,47 @@
     if ((serie && serie === G.ultimaSerie) || (!serie && link && link === G.ultimoLink)) return;
     const meu = tagUrl(t.codigo);
     const outro = codigoDoLink(link);
-    if (outro && outro !== t.codigo) return telaGravar(`Esta etiqueta já tem outro código (${outro}). Confira se é a plaquinha certa.`, 'is-erro');
+    if (outro && outro !== t.codigo) return msgGravar(`Esta etiqueta já tem outro código (${outro}). Confira se é a plaquinha certa.`);
     G.ocupado = true;
-    telaGravar();
+    msgGravar('Gravando… mantenha encostada.', '');
+    const reader = G.reader;
     try {
-      if (link !== meu) await G.reader.write({ records: [{ recordType: 'url', data: meu }] });
-      if (G.bloquear) await G.reader.makeReadOnly();
-      await api.marcarGravadas([t.codigo], true);
-      t.gravada = true;
-      G.ultimaSerie = serie;
-      G.ultimoLink = meu;
-      G.feitos++;
-      navigator.vibrate && navigator.vibrate(60);
-      if (G.modo === 'camera') G.lido = null;
-      else G.i++;
-      G.ocupado = false;
-      telaGravar(`${t.codigo} gravada${G.bloquear ? ' e bloqueada' : ''}. ${G.modo === 'camera' ? 'Leia o QR da próxima.' : 'Afaste e encoste a próxima.'}`, 'is-ok');
+      if (link !== meu) await reader.write({ records: [{ recordType: 'url', data: meu }] });
     } catch (e) {
       G.ocupado = false;
-      telaGravar(`Falhou: ${e.message}. Afaste e encoste de novo.`, 'is-erro');
+      return msgGravar(`Não gravou: ${e.message}. Afaste e encoste de novo.`);
     }
+    try {
+      if (!t.gravada) await api.marcarGravadas([t.codigo], true);
+      t.gravada = true;
+    } catch (e) {
+      console.error(e);
+    }
+    if (G.bloquear) {
+      try {
+        await espera(250);
+        await reader.makeReadOnly();
+      } catch (e) {
+        G.ocupado = false;
+        return msgGravar(`${t.codigo} gravada, mas não bloqueou (${e.message}). Encoste de novo para bloquear; se ela já estiver bloqueada, toque em “${G.modo === 'lista' ? 'Pular' : G.modo === 'camera' ? 'Ler outro QR' : 'Outro código'}”.`);
+      }
+    }
+    G.ultimaSerie = serie;
+    G.ultimoLink = meu;
+    G.feitos++;
+    navigator.vibrate && navigator.vibrate(60);
+    G.ocupado = false;
+    if (G.modo === 'lista') G.i++;
+    else {
+      G.lido = null;
+      desligarNfc();
+    }
+    telaGravar(`${t.codigo} gravada${G.bloquear ? ' e bloqueada' : ''}. ${G.modo === 'camera' ? 'Leia o QR da próxima.' : G.modo === 'digitar' ? 'Digite o código da próxima.' : 'Afaste e encoste a próxima.'}`, 'is-ok');
   }
 
   function pararGravar() {
     desligarCamera();
-    G.ctrl && G.ctrl.abort();
-    G.ctrl = null;
-    G.reader = null;
+    desligarNfc();
     G.ocupado = false;
     G.lido = null;
     render();
@@ -784,9 +869,18 @@
     if (g) {
       if (g.dataset.gravar === 'iniciar') return iniciarGravar();
       if (g.dataset.gravar === 'pular') {
-        if (G.modo === 'camera') G.lido = null;
-        else G.i++;
+        if (G.modo === 'lista') G.i++;
+        else {
+          G.lido = null;
+          desligarNfc();
+        }
         G.ultimaSerie = null;
+        return telaGravar();
+      }
+      if (g.dataset.gravar === 'digitar') {
+        desligarCamera();
+        G.modo = 'digitar';
+        G.lido = null;
         return telaGravar();
       }
       if (g.dataset.gravar === 'parar') { pararGravar(); return closeSheet(); }
@@ -826,6 +920,18 @@
       b.focus();
       b.setSelectionRange(b.value.length, b.value.length);
     }, 250);
+  });
+
+  document.addEventListener('submit', (e) => {
+    if (e.target.id !== 'gDig') return;
+    e.preventDefault();
+    const c = String($('#gCodigo').value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const tag = S.tags.find((x) => x.codigo === c);
+    if (!c) return msgGravar('Digite o código impresso na plaquinha.');
+    if (!tag) return msgGravar(`O código ${c} não é de uma plaquinha cadastrada. Confira as letras e números.`);
+    G.lido = tag;
+    G.ultimaSerie = null;
+    telaGravar(tag.gravada ? 'Esta plaquinha já consta como gravada. Encoste para conferir ou regravar.' : '');
   });
 
   document.addEventListener('submit', async (e) => {

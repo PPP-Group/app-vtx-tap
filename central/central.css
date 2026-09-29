@@ -147,6 +147,8 @@ td.num small { display: block; font-size: 11.5px; color: var(--muted); }
 .gravar-fim h3 { font-size: 20px; }
 
 .gravar-cam { width: min(100%, 320px); aspect-ratio: 1; object-fit: cover; border-radius: 18px; background: #000; }
+.gravar-dig { display: grid; gap: 10px; width: min(100%, 320px); text-align: left; }
+.gravar-dig .input { font-size: 22px; letter-spacing: .12em; text-transform: uppercase; }
 .modo { display: grid; gap: 8px; }
 .modo label { display: flex; gap: 10px; align-items: flex-start; padding: 12px; border-radius: 14px; background: var(--surface-2); font-size: 14.5px; cursor: pointer; }
 .modo input { width: 20px; height: 20px; margin: 0; accent-color: var(--cobalt); flex: none; }
