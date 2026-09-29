@@ -159,23 +159,38 @@
   });
 
   // Valores iniciais, usados enquanto a equipe ainda não salvou nada pelo painel.
-  const seed = () => ({
+  // Demonstração: o restaurante de exemplo (Quintal Bistrô). Restaurante de verdade:
+  // tudo em branco, e o que não for preenchido não aparece para o cliente.
+  const RESTAURANTE_VAZIO = {
+    nome: '', descricao: '', endereco: '', telefone: '', instagram: '', googleUrl: '', logo: '', capa: '', cor: '',
+    taxaServico: 10, horarios: [],
+  };
+  const seed = (demo = true) => (demo ? {
     restaurante: cfg.restaurante,
     wifi: cfg.wifi,
     cardapio: cfg.cardapio,
     mesas: cfg.mesasPadrao,
     widgets: cfg.widgetsPadrao,
+  } : {
+    restaurante: RESTAURANTE_VAZIO,
+    wifi: { rede: '', senha: '', seguranca: 'WPA' },
+    cardapio: [],
+    mesas: { total: 20, areas: [{ nome: 'Salão', de: 1, ate: 20 }] },
+    // As informações (endereço, telefone, horários, Instagram) começam desligadas.
+    widgets: cfg.widgetsPadrao.map((w) => (w.tipo === 'info' ? { ...w, ativo: false } : w)),
   });
   // Completa o que foi salvo com os valores iniciais (campos novos em versões futuras).
   // Módulos: na demonstração vêm todos liberados; no servidor, a central libera.
   const mergeSettings = (saved, demo = false) => {
-    const base = seed();
+    const base = seed(demo);
     const out = { ...base };
     for (const k of Object.keys(base)) {
       const v = saved && saved[k];
       if (v == null) continue;
       out[k] = Array.isArray(v) || typeof v !== 'object' ? v : { ...base[k], ...v };
     }
+    // Lista de atalhos salva antes de existir o de informações: ele entra no fim, desligado.
+    if (!out.widgets.some((w) => w.tipo === 'info')) out.widgets = [...out.widgets, { id: 'info', tipo: 'info', label: 'Informações do restaurante', ativo: false, embutido: true }];
     out.modulos = { ...(demo ? { fidelidade: true } : {}), ...((saved && saved.modulos) || {}) };
     out.fidelidade = mergeFid(saved && saved.fidelidade ? saved.fidelidade : demo ? FID_DEMO : null);
     return out;
@@ -1327,6 +1342,8 @@
   }
 
   window.Store = {
+    // Ajustes iniciais (antes de carregar o que foi salvo): demonstração ou restaurante em branco.
+    padrao: (demo) => mergeSettings(null, demo),
     // Regras do programa de fidelidade usadas também pelas telas (validação e simulação).
     fid: { PADRAO: FID_PADRAO, cpfValido, chaveValida, chaveDoTexto, boost: fidBoost, calcular: fidCalcular, niveis: fidNiveis, nivelDe: fidNivelDe, soDigitos },
     create() {

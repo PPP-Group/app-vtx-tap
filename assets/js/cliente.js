@@ -10,7 +10,7 @@
 
   /* ---------------- Dados do restaurante: vêm do painel da equipe ---------------- */
   // Valor provisório até carregar; boot() reaplica tudo com os dados salvos.
-  let live = { restaurante: cfg.restaurante, wifi: cfg.wifi, cardapio: cfg.cardapio, mesas: cfg.mesasPadrao, widgets: cfg.widgetsPadrao };
+  let live = Store.padrao(store.mode === 'local');
   let R = live.restaurante;
 
   const readMesaBruta = () => {
@@ -61,10 +61,14 @@
     cover.style.backgroundImage = capaUrl ? `url("${capaUrl.replace(/"/g, '%22')}")` : '';
     const h = new Date().getHours();
     $('#greeting').textContent = h < 5 ? 'Boa noite' : h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite';
-    const st = openState();
+    // Sem horário cadastrado (ou informações desligadas): não mostra aberto/fechado.
     const pill = $('#openPill');
-    pill.textContent = st.open ? `Aberto até ${st.until}` : 'Fechado agora';
-    pill.classList.toggle('is-open', st.open);
+    pill.hidden = !infoLigada() || !(R.horarios || []).length;
+    if (!pill.hidden) {
+      const st = openState();
+      pill.textContent = st.open ? `Aberto até ${st.until}` : 'Fechado agora';
+      pill.classList.toggle('is-open', st.open);
+    }
   }
 
   const toMin = (t) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
@@ -532,6 +536,13 @@
 
   /* ---------------- Atalhos ---------------- */
   const menuCount = () => live.cardapio.reduce((n, c) => n + c.itens.length, 0);
+  // Informações do restaurante (endereço, telefone, horários, Instagram): atalho que o restaurante liga nos ajustes.
+  const infoLigada = () => !!(live.widgets.find((w) => w.tipo === 'info') || {}).ativo;
+  const telDe = (t) => String(t || '').replace(/\D/g, '');
+  const telTxt = (t) => {
+    const d = telDe(t);
+    return d.length === 11 ? `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}` : d.length === 10 ? `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}` : t;
+  };
   const googleUrl = () => googleReviewUrl(R);
 
   const TONES = ['cobalt', 'brass', 'leaf', 'pepper'];
@@ -539,6 +550,7 @@
     const tone = TONES[i % TONES.length];
     switch (w.tipo) {
       case 'cardapio': {
+        if (!menuCount()) return '';
         const cats = live.cardapio.map((c) => c.nome).join(' · ');
         return `<button type="button" class="tile tile--menu" data-open="sh-menu">
           <span class="tile-menu-count">${icon('book')} ${menuCount()} itens</span>
@@ -547,6 +559,7 @@
         </button>`;
       }
       case 'wifi':
+        if (!live.wifi || !live.wifi.rede) return '';
         return `<button type="button" class="tile" data-open="sh-wifi">
           <span class="tile-ico ico-${tone}">${icon('wifi')}</span>
           <div><h3>Wi-Fi</h3><p>${esc(live.wifi.rede)}</p></div>
@@ -557,6 +570,8 @@
           <div><h3>Dividir a conta</h3><p>Por pessoa, com serviço</p></div>
         </button>`;
       case 'google':
+        // Sem o link de avaliação cadastrado, o atalho não aparece.
+        if (!safeUrl(R.googleUrl)) return '';
         return `<a class="tile" href="${esc(googleUrl())}" target="_blank" rel="noopener">
           <span class="tile-ico ico-${tone}">${icon('star')}</span>
           <span class="tile-go">${icon('external')}</span>
@@ -600,7 +615,7 @@
     };
     html.forEach((t, i) => (/tile--(menu|fid)/.test(t) ? marcar(i) : seguidos++));
     marcar(html.length);
-    const insta = instagramHandle(R.instagram);
+    const insta = infoLigada() && instagramHandle(R.instagram);
     if (insta) {
       html.push(`<a class="tile tile--insta" href="${esc(instagramUrl(R.instagram))}" target="_blank" rel="noopener">
         ${icon('instagram')}<span><b>Siga no Instagram</b><small>@${esc(insta)}</small></span>${icon('arrow')}
@@ -621,12 +636,17 @@
       const h = R.horarios.find((x) => x.dias.includes(d));
       return h ? `${h.abre} – ${h.fecha}` : 'Fechado';
     };
+    // Só o que o restaurante preencheu, e só com as informações ligadas nos ajustes.
+    const ligada = infoLigada();
+    const temHorario = ligada && (R.horarios || []).length > 0;
+    const tel = ligada && telDe(R.telefone).length >= 10;
     $('#info').innerHTML = `
-      ${R.endereco ? `<a class="info-row" href="${esc(mapsUrl(R))}" target="_blank" rel="noopener">${icon('pin')}<span>${esc(R.endereco)}</span></a>` : ''}
-      <details class="info-row-wrap">
+      ${ligada && R.endereco ? `<a class="info-row" href="${esc(mapsUrl(R))}" target="_blank" rel="noopener">${icon('pin')}<span>${esc(R.endereco)}</span></a>` : ''}
+      ${tel ? `<a class="info-row" href="tel:+55${telDe(R.telefone)}">${icon('phone')}<span>${esc(telTxt(R.telefone))}</span></a>` : ''}
+      ${temHorario ? `<details class="info-row-wrap">
         <summary class="info-row">${icon('clock')}<span>Hoje: ${hoursOf(today)} · ver semana</span></summary>
         <div class="hours">${[1, 2, 3, 4, 5, 6, 0].map((d) => `<span class="${d === today ? 'is-today' : ''}">${dias[d]}</span><span class="${d === today ? 'is-today' : ''}">${hoursOf(d)}</span>`).join('')}</div>
-      </details>
+      </details>` : ''}
       <p class="info-foot">Nenhum cadastro é necessário para usar esta página.</p>`;
   }
 

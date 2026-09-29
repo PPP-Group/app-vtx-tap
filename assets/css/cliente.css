@@ -151,6 +151,7 @@
   color: var(--muted);
   box-shadow: var(--shadow-1);
 }
+.open-pill[hidden] { display: none; }
 .open-pill::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
 .open-pill.is-open { color: var(--leaf); }
 
@@ -351,8 +352,8 @@
   padding: 5px 10px;
   border-radius: 999px;
   font-size: 12.5px;
-  font-weight: 600;
-  background: var(--brass);
+  font-weight: 700;
+  background: #FFC61A;
   color: #231703;
 }
 
@@ -570,7 +571,7 @@ a.info-row:hover span { color: var(--ink); text-decoration: underline; }
   min-height: 0;
   gap: 12px;
   padding: 18px 20px;
-  background: linear-gradient(135deg, var(--brass) 0%, var(--brass-lo) 100%);
+  background: linear-gradient(135deg, #FFD84A 0%, #FFB300 100%);
   color: #231703;
 }
 .tile--fid h3 { font-family: var(--font-display); font-weight: 900; font-size: 32px; line-height: .95; text-transform: uppercase; }

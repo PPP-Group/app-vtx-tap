@@ -12,13 +12,7 @@
 
   const S = {
     user: null,
-    settings: {
-      restaurante: cfg.restaurante,
-      wifi: cfg.wifi,
-      cardapio: cfg.cardapio,
-      mesas: cfg.mesasPadrao,
-      widgets: cfg.widgetsPadrao,
-    },
+    settings: Store.padrao(isDemo),
     widgetEdit: null,
     itemEdit: null,
     ajTab: 'restaurante',
@@ -498,10 +492,78 @@
   }
 
   /* ============================== Telas ============================== */
+  /* ---------- Configuração inicial: o que falta preencher ---------- */
+  function infoPreenchida() {
+    const r = S.settings.restaurante;
+    return [
+      r.endereco && 'endereço',
+      String(r.telefone || '').replace(/\D/g, '').length >= 10 && 'telefone',
+      (r.horarios || []).length && 'horários',
+      instagramHandle(r.instagram) && 'Instagram',
+    ].filter(Boolean);
+  }
+  function passosConfig() {
+    const r = S.settings.restaurante;
+    const itens = S.settings.cardapio.reduce((n, c) => n + c.itens.length, 0);
+    const info = S.settings.widgets.find((w) => w.tipo === 'info');
+    return [
+      { ok: !!r.logo, txt: 'Logo', aba: 'restaurante' },
+      { ok: !!r.endereco, txt: 'Endereço', aba: 'restaurante' },
+      { ok: String(r.telefone || '').replace(/\D/g, '').length >= 10, txt: 'Telefone', aba: 'restaurante' },
+      { ok: (r.horarios || []).length > 0, txt: 'Horários', aba: 'restaurante' },
+      { ok: !!instagramHandle(r.instagram), txt: 'Instagram', aba: 'restaurante' },
+      { ok: !!r.googleUrl, txt: 'Link de avaliação do Google', aba: 'restaurante' },
+      { ok: !!(S.settings.wifi && S.settings.wifi.rede), txt: 'Wi-Fi', aba: 'restaurante' },
+      { ok: itens > 0, txt: 'Cardápio', aba: 'cardapio' },
+      { ok: !!(info && info.ativo), txt: 'Mostrar as informações para o cliente', aba: 'widgets' },
+    ];
+  }
+  const chavePulo = () => `nfc-config-pulada:${cfg.backend.slug || 'demo'}`;
+  function avisoConfig() {
+    if (S.settings.restaurante.configConcluida) return '';
+    const pulado = +get(chavePulo()) || 0;
+    if (Date.now() - pulado < 7 * 864e5) return '';
+    const passos = passosConfig();
+    const feitos = passos.filter((p) => p.ok).length;
+    if (feitos === passos.length) return '';
+    return `<section class="cfg-aviso" aria-label="Configuração do restaurante">
+      <div class="cfg-aviso-h">
+        <div><h2>Conclua a configuração do restaurante</h2>
+          <p>O que não estiver preenchido não aparece para o cliente. ${feitos} de ${passos.length} feitos.</p></div>
+        <span class="cfg-barra" aria-hidden="true"><i style="width:${Math.round((feitos / passos.length) * 100)}%"></i></span>
+      </div>
+      <ul class="cfg-passos">${passos.map((p) => `<li class="${p.ok ? 'is-ok' : ''}">${p.ok ? icon('check') : ''}<button type="button" class="link" data-cfg-ir="${p.aba}">${p.txt}</button></li>`).join('')}</ul>
+      <div class="vhead-actions">
+        <button type="button" class="btn btn-cobalt btn-sm" data-cfg-ir="${(passos.find((p) => !p.ok) || passos[0]).aba}">Continuar configuração</button>
+        <button type="button" class="btn btn-quiet btn-sm" data-cfg="pular">Pular por agora</button>
+        <button type="button" class="btn btn-quiet btn-sm" data-cfg="concluir">Marcar como concluída</button>
+      </div>
+    </section>`;
+  }
+  document.addEventListener('click', async (e) => {
+    const ir = e.target.closest('[data-cfg-ir]');
+    if (ir) {
+      S.ajTab = ir.dataset.cfgIr;
+      if (S.view === 'ajustes') renderView();
+      else go('ajustes');
+      return;
+    }
+    const b = e.target.closest('[data-cfg]');
+    if (!b) return;
+    if (b.dataset.cfg === 'pular') {
+      set(chavePulo(), String(Date.now()));
+      toast('Tudo bem. Lembramos de novo em 7 dias.');
+    } else {
+      await saveRestaurante({ configConcluida: true });
+      toast('Configuração marcada como concluída.', { tone: 'ok' });
+    }
+    renderView();
+  });
+
   function renderView() {
     const main = $('#main');
     main.dataset.view = S.view;
-    main.innerHTML = { chamados: vChamados, salao: vSalao, comentarios: vComentarios, plaquinhas: vPlaquinhas, ajustes: vAjustes, fidelidade: () => FidPainel.html() }[S.view]();
+    main.innerHTML = avisoConfig() + { chamados: vChamados, salao: vSalao, comentarios: vComentarios, plaquinhas: vPlaquinhas, ajustes: vAjustes, fidelidade: () => FidPainel.html() }[S.view]();
     if (S.view === 'ajustes' && S.ajTab === 'restaurante') carregarEquipe();
   }
 
@@ -929,8 +991,8 @@
   const saveRestaurante = (patch) => saveSettings({ restaurante: { ...S.settings.restaurante, ...patch } });
 
   /* ---------- Widgets do cliente ---------- */
-  const WIDGET_ICON = { fidelidade: 'gift', cardapio: 'book', wifi: 'wifi', dividir: 'users', google: 'star', comentario: 'msg' };
-  const WIDGET_LABEL = { fidelidade: 'Programa de fidelidade', cardapio: 'Cardápio', wifi: 'Wi-Fi', dividir: 'Dividir a conta', google: 'Avaliar no Google', comentario: 'Comentário anônimo' };
+  const WIDGET_ICON = { info: 'pin', fidelidade: 'gift', cardapio: 'book', wifi: 'wifi', dividir: 'users', google: 'star', comentario: 'msg' };
+  const WIDGET_LABEL = { info: 'Informações do restaurante', fidelidade: 'Programa de fidelidade', cardapio: 'Cardápio', wifi: 'Wi-Fi', dividir: 'Dividir a conta', google: 'Avaliar no Google', comentario: 'Comentário anônimo' };
   const WIDGET_ICONS = [
     ['link', 'Link'], ['book', 'Livro'], ['star', 'Estrela'], ['msg', 'Mensagem'], ['wifi', 'Wi-Fi'],
     ['users', 'Pessoas'], ['printer', 'Impressora'], ['qr', 'QR'], ['sparkle', 'Destaque'],
@@ -940,10 +1002,14 @@
     const r = S.settings.restaurante;
     if (tipo === 'cardapio') {
       const n = S.settings.cardapio.reduce((s, c) => s + c.itens.length, 0);
-      return `${n} ${n === 1 ? 'item' : 'itens'} · edite na aba Cardápio`;
+      return n ? `${n} ${n === 1 ? 'item' : 'itens'} · edite na aba Cardápio` : 'Sem itens: não aparece para o cliente · monte na aba Cardápio';
     }
-    if (tipo === 'wifi') return S.settings.wifi.rede ? `Rede ${S.settings.wifi.rede} · edite na aba Restaurante` : 'Rede não informada · edite na aba Restaurante';
-    if (tipo === 'google') return r.googleUrl ? 'Link de avaliação configurado' : 'Sem link: abre a busca do Google pelo nome';
+    if (tipo === 'wifi') return S.settings.wifi && S.settings.wifi.rede ? `Rede ${S.settings.wifi.rede} · edite na aba Restaurante` : 'Rede não informada: não aparece para o cliente · preencha na aba Restaurante';
+    if (tipo === 'google') return r.googleUrl ? 'Link de avaliação configurado' : 'Sem link: não aparece para o cliente · cole o link na aba Restaurante';
+    if (tipo === 'info') {
+      const tem = infoPreenchida();
+      return tem.length ? `${tem.join(', ')} · edite na aba Restaurante` : 'Nada preenchido ainda · preencha na aba Restaurante';
+    }
     if (tipo === 'dividir') return `Serviço de ${Number(r.taxaServico) || 0}%`;
     if (tipo === 'comentario') return 'Chega na aba Comentários';
     if (tipo === 'fidelidade') return (S.settings.fidelidade || {}).ativo ? 'Regras e prêmios na aba Fidelidade' : 'Pausado: coloque no ar na aba Fidelidade';
@@ -1083,6 +1149,7 @@
         <label class="field"><span>Nome do restaurante</span><input class="input" data-r="nome" required maxlength="40" value="${esc(r.nome)}" autocomplete="organization"></label>
         <label class="field"><span>Frase curta (opcional)</span><input class="input" data-r="descricao" maxlength="60" value="${esc(r.descricao || '')}" placeholder="Ex.: Cozinha de brasa e horta"></label>
         <label class="field"><span>Endereço</span><input class="input" data-r="endereco" maxlength="120" value="${esc(r.endereco || '')}" placeholder="Rua, número — bairro, cidade" autocomplete="street-address"></label>
+        <label class="field"><span>Telefone ou WhatsApp</span><input class="input" data-r="telefone" type="tel" inputmode="tel" maxlength="20" value="${esc(r.telefone || '')}" placeholder="(31) 99999-9999" autocomplete="tel"></label>
         <label class="field"><span>Instagram</span><input class="input" data-r="instagram" maxlength="80" value="${esc(instagramHandle(r.instagram) ? '@' + instagramHandle(r.instagram) : '')}" placeholder="@seurestaurante" autocapitalize="off" spellcheck="false"></label>
         <label class="field"><span>Link de avaliação do Google</span><input class="input" data-r="googleUrl" type="url" value="${esc(r.googleUrl || '')}" placeholder="https://g.page/r/…/review" spellcheck="false">
           <small class="help">No Perfil da Empresa no Google, toque em “Pedir avaliações” e cole o link aqui. Sem link, o botão abre a busca do Google pelo nome do restaurante.</small></label>
@@ -1443,6 +1510,12 @@
         v = instagramHandle(v);
         el.value = v ? '@' + v : '';
       }
+      if (k === 'telefone' && v) {
+        const d = v.replace(/\D/g, '').replace(/^55(?=\d{10,11}$)/, '');
+        if (!/^\d{10,11}$/.test(d)) return toast('Telefone com DDD, ex.: (31) 99999-9999.', { tone: 'error' });
+        v = d;
+        el.value = d.length === 11 ? `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}` : `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+      }
       if (k === 'taxaServico') {
         v = Math.min(30, Math.max(0, Math.round(Number(v) || 0)));
         el.value = v;
@@ -1687,7 +1760,10 @@
       const list = S.settings.widgets.slice();
       const i = +row.dataset.widx;
       list[i] = { ...list[i], ativo: wt.checked };
-      saveWidgets(list);
+      if (list[i].tipo === 'info' && wt.checked && !infoPreenchida().length) {
+        toast('Ligado, mas nada aparece ainda: preencha endereço, telefone, horários ou Instagram na aba Restaurante.', { ms: 6000 });
+      }
+      saveWidgets(list).then(() => S.view === 'ajustes' && renderView());
     }
   });
 
