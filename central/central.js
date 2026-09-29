@@ -225,7 +225,11 @@
         return must(await sb.from('restaurantes').select('*').order('nome'));
       },
       async salvarRestaurante({ id, senha, ...dados }) {
-        if (!id) return must(await sb.rpc('criar_restaurante', { p_nome: dados.nome, p_slug: dados.slug, p_senha_equipe: senha }));
+        if (!id) {
+          const novo = must(await sb.rpc('criar_restaurante', { p_nome: dados.nome, p_slug: dados.slug, p_senha_equipe: senha }));
+          if (novo && novo.id && dados.modulos) must(await sb.from('restaurantes').update({ modulos: dados.modulos }).eq('id', novo.id));
+          return novo && { ...novo, modulos: dados.modulos };
+        }
         const { data, error } = await sb.from('restaurantes').update(dados).eq('id', id).select().single();
         if (error) throw error.code === '23505' ? new Error('Esse subdomínio já está em uso. Escolha outro.') : error;
         if (senha) must(await sb.rpc('central_senha_equipe', { p_restaurante: id, p_senha: senha }));
@@ -516,6 +520,9 @@
         <small class="help">A equipe usa esta senha para criar a conta no painel (cada pessoa depois entra com o próprio PIN).</small></label>
       <label class="field"><span>Observação (opcional)</span><input class="input" id="rObs" maxlength="300" value="${esc(r.observacao || '')}"></label>
       <label class="check"><input type="checkbox" id="rAtivo" ${r.ativo !== false ? 'checked' : ''}> Ativo (desmarcado: as plaquinhas mostram “desativada”)</label>
+      <fieldset class="stack modulos"><legend>Módulos contratados</legend>
+        <label class="check"><input type="checkbox" id="rFid" ${r.modulos && r.modulos.fidelidade ? 'checked' : ''}> Programa de fidelidade (aba Fidelidade no painel; o restaurante configura as regras e coloca no ar)</label>
+      </fieldset>
       <p class="form-error" id="rErr" role="alert"></p>
       <button type="submit" class="btn btn-cobalt btn-block">${icon('check')} Salvar</button>
     </form>`;
@@ -1129,7 +1136,7 @@
         if (!nome) throw new Error('Informe o nome.');
         if (!slugOk(slug)) throw new Error('Subdomínio inválido: use letras minúsculas, números e hífen (sem acento nem espaço).');
         if ((!S.editRest || senha) && senha.length < 6) throw new Error('A senha da equipe precisa ter pelo menos 6 caracteres.');
-        const salvo = await api.salvarRestaurante({ ...(S.editRest ? { id: S.editRest } : {}), nome, slug, senha, observacao: $('#rObs').value.trim() || null, ativo: $('#rAtivo').checked });
+        const salvo = await api.salvarRestaurante({ ...(S.editRest ? { id: S.editRest } : {}), nome, slug, senha, observacao: $('#rObs').value.trim() || null, ativo: $('#rAtivo').checked, modulos: { ...((restDe(S.editRest) || {}).modulos || {}), fidelidade: $('#rFid').checked } });
         if (!S.editRest && salvo) {
           S.rests.push(salvo);
           mostrarAcesso(salvo, true, senha);
