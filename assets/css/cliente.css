@@ -667,3 +667,29 @@ a.info-row:hover span { color: var(--ink); text-decoration: underline; }
 .leitor-msg.is-erro { color: var(--pepper); font-weight: 500; }
 .leitor-acts { display: grid; gap: 8px; }
 .leitor-acts label.btn { cursor: pointer; }
+
+/* Níveis do clube: a cor de cada nível vem em --nv. */
+.fid-selo { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: #fff; background: var(--nv, var(--brass-lo)); white-space: nowrap; }
+.fid-selo .i { width: 12px; height: 12px; }
+.fid-selo--sm { padding: 2px 8px; font-size: 11px; }
+.tile-fid-top .fid-selo { margin-left: 4px; box-shadow: 0 0 0 2px rgba(255, 255, 255, .5); }
+.fid-nivel { display: grid; gap: 8px; width: 100%; padding: 14px 16px; border-radius: 18px; text-align: left; background: var(--surface); box-shadow: var(--shadow-1), inset 4px 0 0 var(--nv); color: inherit; font: inherit; }
+button.fid-nivel { cursor: pointer; }
+.fid-nivel-top { display: flex; align-items: center; gap: 10px; }
+.fid-nivel-top small { flex: 1; min-width: 0; color: var(--muted); font-size: 13.5px; }
+.fid-nivel-top > .i { width: 18px; height: 18px; color: var(--muted); margin-left: auto; }
+.fid-nivel > small { font-size: 13.5px; color: var(--ink-2); }
+.fid-barra--nv { height: 8px; margin: 0; }
+.fid-barra--nv i { background: var(--nv); }
+.fid-niveis { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.fid-niveis > li { display: grid; gap: 8px; padding: 14px 16px; border-radius: 18px; background: var(--surface); box-shadow: var(--shadow-1), inset 4px 0 0 var(--nv); }
+.fid-niveis > li.is-atual { box-shadow: 0 0 0 2px var(--nv), var(--shadow-1); }
+.fid-niveis-h { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.fid-niveis-h small { color: var(--muted); font-size: 13px; }
+.fid-voce { margin-left: auto; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--nv); }
+.fid-niveis p { font-size: 14px; color: var(--ink-2); }
+.fid-niveis ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 14px; }
+.fid-niveis ul li { display: flex; gap: 6px; align-items: flex-start; }
+.fid-niveis ul .i { width: 16px; height: 16px; flex: none; margin-top: 2px; color: var(--nv); }
+.fid-niveis-mini { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; color: var(--muted); }
+.fid-premio-info .fid-selo { align-self: flex-start; }

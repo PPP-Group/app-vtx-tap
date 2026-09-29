@@ -47,6 +47,7 @@
   const FID_PADRAO = {
     ativo: false, nome: 'Clube de pontos', pontosPorReal: 1, boosts: [], cnpjs: [], prazoDias: 7, inicio: null,
     manual: false, regulamento: '', fuso: 'America/Sao_Paulo', indicacao: { ativo: true, indicador: 50, indicado: 20 },
+    niveis: { ativo: false, base: 'sempre', meses: 12, lista: [] },
   };
   const soDigitos = (s) => String(s || '').replace(/\D/g, '');
   function cpfValido(c) {
@@ -101,10 +102,38 @@
     }
     return melhor;
   }
-  function fidCalcular(regras, valor, quando) {
+  // Pontos de uma compra: valor x pontos por real x dia com mais pontos x bônus do nível.
+  function fidCalcular(regras, valor, quando, nivel = null) {
     const ppr = Math.min(Math.max(Number(regras.pontosPorReal) || 0, 0), 1000);
     const b = fidBoost(regras, quando);
-    return { pontos: Math.floor(Math.max(Number(valor) || 0, 0) * ppr * b.mult + 1e-9), mult: b.mult, boost: b.nome };
+    const mn = nivel ? nivel.mult : 1;
+    const m = Math.round(b.mult * mn * 100) / 100;
+    return { pontos: Math.floor(Math.max(Number(valor) || 0, 0) * ppr * m + 1e-9), mult: m, boost: b.nome, nivel: mn > 1 ? nivel.nome : null };
+  }
+  // Níveis do clube (mesma arrumação de public.fid_niveis): ordem pelo mínimo, o primeiro começa em 0.
+  function fidNiveis(regras) {
+    const n = regras && regras.niveis;
+    if (!n || !n.ativo || !Array.isArray(n.lista)) return [];
+    const lista = n.lista.slice(0, 6).filter((x) => x && String(x.nome || '').trim() && /[A-Za-z0-9]/.test(x.id || ''))
+      .map((x) => ({
+        id: String(x.id).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 24), nome: String(x.nome).trim().slice(0, 30),
+        descricao: String(x.descricao || '').trim().slice(0, 80), cor: /^#[0-9a-f]{6}$/i.test(x.cor || '') ? x.cor : '#8C6416',
+        minimo: Math.round(Math.min(Math.max(+x.minimo || 0, 0), 1e7)), mult: Math.round(Math.min(Math.max(+x.mult || 1, 1), 5) * 100) / 100,
+        bonus: Math.round(Math.min(Math.max(+x.bonus || 0, 0), 1e5)),
+        beneficios: (Array.isArray(x.beneficios) ? x.beneficios : []).map((b) => String(b).trim().slice(0, 80)).filter(Boolean).slice(0, 8),
+      }))
+      .sort((a, b) => a.minimo - b.minimo);
+    if (lista.length) lista[0].minimo = 0;
+    return lista;
+  }
+  // Nível para uma quantidade de pontos de nível, com quanto falta para o próximo.
+  function fidNivelDe(lista, pontosNivel) {
+    if (!lista.length) return null;
+    let i = 0;
+    while (i + 1 < lista.length && lista[i + 1].minimo <= pontosNivel) i++;
+    const prox = lista[i + 1];
+    return { ...lista[i], indice: i, pontos_nivel: pontosNivel,
+      proximo: prox ? { id: prox.id, nome: prox.nome, cor: prox.cor, minimo: prox.minimo, falta: prox.minimo - pontosNivel } : null };
   }
   // Na demonstração o programa já vem no ar, para dar para experimentar.
   const FID_DEMO = {
@@ -114,8 +143,20 @@
       { id: 'b2', nome: 'Happy hour', mult: 1.5, dias: [1, 2, 3, 4, 5], de: '17:00', ate: '19:00', inicio: '', fim: '', ativo: true },
     ],
     regulamento: 'Demonstração: 1 ponto a cada R$ 1 gasto com CPF na nota. Os pontos valem por 12 meses.',
+    niveis: {
+      ativo: true, base: 'sempre', meses: 12,
+      lista: [
+        { id: 'bronze', nome: 'Bronze', descricao: 'Todo mundo começa aqui', cor: '#b45309', minimo: 0, mult: 1, bonus: 0, beneficios: ['Pontos em todas as compras'] },
+        { id: 'prata', nome: 'Prata', descricao: 'Cliente da casa', cor: '#64748b', minimo: 300, mult: 1.1, bonus: 30, beneficios: ['Sobremesa no aniversário'] },
+        { id: 'ouro', nome: 'Ouro', descricao: 'Os mais fiéis', cor: '#ca8a04', minimo: 1000, mult: 1.25, bonus: 100, beneficios: ['Prêmios exclusivos', 'Mesa garantida no fim de semana'] },
+      ],
+    },
   };
-  const mergeFid = (f) => ({ ...FID_PADRAO, ...(f || {}), indicacao: { ...FID_PADRAO.indicacao, ...((f && f.indicacao) || {}) } });
+  const mergeFid = (f) => ({
+    ...FID_PADRAO, ...(f || {}),
+    indicacao: { ...FID_PADRAO.indicacao, ...((f && f.indicacao) || {}) },
+    niveis: { ...FID_PADRAO.niveis, ...((f && f.niveis) || {}) },
+  });
 
   // Valores iniciais, usados enquanto a equipe ainda não salvou nada pelo painel.
   const seed = () => ({
@@ -216,6 +257,7 @@
         { id: 'p1', nome: 'Caipirinha da casa', descricao: 'Limão, morango ou maracujá.', pontos: 150, imagem: null, ativo: true, ordem: 1, criado_em: nowIso() },
         { id: 'p2', nome: 'Sobremesa do dia', descricao: '', pontos: 220, imagem: null, ativo: true, ordem: 2, criado_em: nowIso() },
         { id: 'p3', nome: 'Porção de fritas', descricao: 'Com maionese da casa.', pontos: 300, imagem: null, ativo: true, ordem: 3, criado_em: nowIso() },
+        { id: 'p4', nome: 'Drink autoral', descricao: 'Criação do bartender.', pontos: 400, imagem: null, ativo: true, ordem: 4, nivel_min: 'ouro', criado_em: nowIso() },
       ],
     });
     const regras = (db) => mergeSettings(db.configuracao, true).fidelidade;
@@ -234,7 +276,33 @@
       F(db).movimentos.push({ id: uid(), cpf, tipo, pontos, criado_em: nowIso(), valor: null, mult: null, descricao: null, nota_chave: null, resgate_id: null, por: null, ...extra });
       const c = cliDe(db, cpf);
       if (c) c.pontos += pontos;
+      if (['compra', 'manual', 'estorno', 'ajuste'].includes(tipo)) atualizarNivel(db, cpf);
     }
+    // Pontos que contam para o nível (compras, com estornos e ajustes), desde sempre ou nos últimos N meses.
+    function pontosNivel(db, cpf) {
+      const n = regras(db).niveis || {};
+      const desde = n.base === 'meses' ? Date.now() - Math.min(Math.max(+n.meses || 12, 1), 60) * 30.44 * DIA : 0;
+      return Math.max(F(db).movimentos.filter((m) => m.cpf === cpf && new Date(m.criado_em) > desde
+        && (['compra', 'manual'].includes(m.tipo) || (['estorno', 'ajuste'].includes(m.tipo) && !m.resgate_id)))
+        .reduce((t, m) => t + m.pontos, 0), 0);
+    }
+    const nivelDe = (db, cpf) => fidNivelDe(fidNiveis(regras(db)), pontosNivel(db, cpf));
+    function atualizarNivel(db, cpf, bonus = true) {
+      const c = cliDe(db, cpf);
+      const nv = nivelDe(db, cpf);
+      if (!c) return nv;
+      c.nivel = nv ? nv.id : null;
+      if (!nv || !bonus) return nv;
+      c.niveis_bonus = c.niveis_bonus || [];
+      for (const l of fidNiveis(regras(db))) {
+        if (l.minimo <= nv.pontos_nivel && l.bonus > 0 && !c.niveis_bonus.includes(l.id)) {
+          c.niveis_bonus.push(l.id);
+          mover(db, cpf, 'nivel', l.bonus, { descricao: `Bônus: chegou ao nível ${l.nome}` });
+        }
+      }
+      return nv;
+    }
+    const multTxt = (m) => String(m).replace('.', ',');
     function bonusIndicacao(db, cpf) {
       const r = regras(db).indicacao || {};
       const c = cliDe(db, cpf);
@@ -247,10 +315,10 @@
     }
     function creditar(db, n, valor, emitida, por) {
       if (!n || n.status !== 'pendente') return null;
-      const calc = fidCalcular(regras(db), valor, emitida || n.lida_em);
+      const calc = fidCalcular(regras(db), valor, emitida || n.lida_em, nivelDe(db, n.cpf));
       Object.assign(n, { status: 'creditada', valor, emitida_em: emitida || n.emitida_em || n.lida_em, pontos: calc.pontos, mult: calc.mult, conferida_em: nowIso(), conferida_por: por, motivo: null });
       mover(db, n.cpf, 'compra', calc.pontos, {
-        descricao: `Compra de ${brlTxt(valor)}${calc.boost ? ` · ${calc.boost}` : ''}${calc.mult > 1 ? ` (${String(calc.mult).replace('.', ',')}x)` : ''}`,
+        descricao: `Compra de ${brlTxt(valor)}${calc.boost ? ` · ${calc.boost}` : ''}${calc.nivel ? ` · nível ${calc.nivel}` : ''}${calc.mult > 1 ? ` (${multTxt(calc.mult)}x)` : ''}`,
         valor, mult: calc.mult, nota_chave: n.chave, por,
       });
       bonusIndicacao(db, n.cpf);
@@ -478,8 +546,11 @@
           throw new Error('Informe o CNPJ que sai nas notas fiscais antes de ativar o programa.');
         }
         const novo = { ...mergeSettings(db.configuracao, true), ...patch };
+        db.configuracao = novo;
+        // Regras novas: atualiza o nível guardado de cada cliente.
+        if (patch.fidelidade) F(db).clientes.forEach((c) => atualizarNivel(db, c.cpf, false));
         try {
-          localStorage.setItem(KEY, JSON.stringify({ ...db, configuracao: novo }));
+          localStorage.setItem(KEY, JSON.stringify(db));
         } catch {
           throw new Error('Sem espaço para salvar. Use imagens menores.');
         }
@@ -502,8 +573,9 @@
           indicacao: r.indicacao && r.indicacao.ativo ? { ativo: true, indicador: +r.indicacao.indicador || 0, indicado: +r.indicacao.indicado || 0 } : { ativo: false },
           boosts: (r.boosts || []).filter((b) => b.ativo !== false && +b.mult > 1 && !(b.fim && b.fim < hoje))
             .map(({ nome, mult, dias, de, ate, inicio: ini, fim }) => ({ nome, mult: +mult, dias: dias || [], de: de || '', ate: ate || '', inicio: ini || '', fim: fim || '' })),
+          niveis: fidNiveis(r).length ? { ativo: true, base: r.niveis.base === 'meses' ? 'meses' : 'sempre', meses: Math.min(Math.max(+r.niveis.meses || 12, 1), 60), lista: fidNiveis(r) } : { ativo: false },
           premios: F(db).premios.filter((p) => p.ativo).sort((a, b) => a.ordem - b.ordem || a.pontos - b.pontos)
-            .map(({ id, nome, descricao, pontos, imagem }) => ({ id, nome, descricao, pontos, imagem })),
+            .map(({ id, nome, descricao, pontos, imagem, nivel_min }) => ({ id, nome, descricao, pontos, imagem, nivel_min: nivel_min || null })),
         };
       },
       async fidConsultar(cpf) {
@@ -513,7 +585,7 @@
         if (!cpfValido(cpf)) return { status: 'erro', mensagem: 'CPF inválido. Confira os números.' };
         const c = cliDe(db, cpf);
         if (!c) return { status: 'novo' };
-        return { status: 'ok', nome: c.nome.split(' ')[0], pontos: c.pontos, pendentes: F(db).notas.filter((n) => n.cpf === cpf && n.status === 'pendente').length, tem_pin: !!F(db).pins[cpf] };
+        return { status: 'ok', nome: c.nome.split(' ')[0], pontos: c.pontos, nivel: nivelDe(db, cpf), pendentes: F(db).notas.filter((n) => n.cpf === cpf && n.status === 'pendente').length, tem_pin: !!F(db).pins[cpf] };
       },
       async fidIndicador(codigo) {
         const c = F(read()).clientes.find((x) => x.codigo === String(codigo || '').toUpperCase().replace(/[^A-Z0-9]/g, ''));
@@ -578,8 +650,10 @@
         const f = F(db);
         const c = cliDe(db, cpf);
         const desc = (a, b) => (a < b ? 1 : a > b ? -1 : 0);
+        const nivel = atualizarNivel(db, cpf, false);
+        write(db);
         return {
-          status: 'ok', ...c, indicacoes: f.clientes.filter((x) => x.indicado_por === cpf).length,
+          status: 'ok', ...c, nivel, indicacoes: f.clientes.filter((x) => x.indicado_por === cpf).length,
           notas: f.notas.filter((n) => n.cpf === cpf).sort((a, b) => desc(a.lida_em, b.lida_em)).slice(0, 20)
             .map((n) => ({ chave: n.chave, status: n.status, valor: n.valor ?? n.valor_informado, pontos: n.pontos, lida_em: n.lida_em, motivo: n.motivo })),
           movimentos: f.movimentos.filter((m) => m.cpf === cpf).slice(-40).reverse()
@@ -621,6 +695,12 @@
         const f = F(db);
         const p = f.premios.find((x) => x.id === premioId && x.ativo);
         if (!p) return { status: 'erro', mensagem: 'Este prêmio não está mais disponível.' };
+        // Prêmio exclusivo de um nível (se o nível não existe mais, vale para todos).
+        const lista = fidNiveis(regras(db));
+        const iMin = p.nivel_min ? lista.findIndex((l) => l.id === p.nivel_min) : -1;
+        if (iMin >= 0 && ((nivelDe(db, cpf) || {}).indice ?? -1) < iMin) {
+          return { status: 'erro', mensagem: `Este prêmio é exclusivo do nível ${lista[iMin].nome} em diante.` };
+        }
         const c = cliDe(db, cpf);
         if (c.pontos < p.pontos) return { status: 'erro', mensagem: `Faltam ${p.pontos - c.pontos} pontos para este prêmio.` };
         if (f.resgates.filter((x) => x.cpf === cpf && x.status === 'pendente').length >= 3) {
@@ -671,7 +751,7 @@
         const c = cliDe(db, cpf);
         if (!c) return null;
         return {
-          cliente: { ...c, tem_pin: !!f.pins[cpf], indicado_por_nome: c.indicado_por ? (cliDe(db, c.indicado_por) || {}).nome || null : null },
+          cliente: { ...c, nivel_atual: atualizarNivel(db, cpf, false), tem_pin: !!f.pins[cpf], indicado_por_nome: c.indicado_por ? (cliDe(db, c.indicado_por) || {}).nome || null : null },
           movimentos: f.movimentos.filter((m) => m.cpf === cpf).slice(-60).reverse(),
           notas: f.notas.filter((n) => n.cpf === cpf).sort((a, b) => (a.lida_em < b.lida_em ? 1 : -1)).slice(0, 40),
           resgates: f.resgates.filter((x) => x.cpf === cpf).sort((a, b) => (a.criado_em < b.criado_em ? 1 : -1)).slice(0, 30),
@@ -747,7 +827,7 @@
               }
               continue;
             }
-            const calc = fidCalcular(r, x.valor, x.emitida_em);
+            const calc = fidCalcular(r, x.valor, x.emitida_em, nivelDe(db, n.cpf));
             const dif = calc.pontos - (n.pontos || 0);
             const antes = n.valor;
             Object.assign(n, { valor: x.valor, emitida_em: x.emitida_em, pontos: calc.pontos, mult: calc.mult, conferida_em: nowIso(), conferida_por: 'XML da nota' });
@@ -779,7 +859,7 @@
         if (!(valor > 0 && valor < 1e5)) falha('Informe o valor da compra.');
         descricao = String(descricao || '').trim().slice(0, 100);
         if (!descricao) falha('Informe o motivo (ex.: pedido do delivery nº 123).');
-        const calc = fidCalcular(r, valor, nowIso());
+        const calc = fidCalcular(r, valor, nowIso(), nivelDe(db, cpf));
         mover(db, cpf, 'manual', calc.pontos, { descricao: `Lançado: ${descricao} · ${brlTxt(valor)}`, valor, mult: calc.mult, por: quem(db) });
         bonusIndicacao(db, cpf);
         write(db);
@@ -821,7 +901,7 @@
       async fidSalvarPremio(p) {
         const db = read();
         const f = F(db);
-        const dados = { nome: String(p.nome || '').trim().slice(0, 60), descricao: String(p.descricao || '').trim().slice(0, 160), pontos: Math.round(+p.pontos), imagem: p.imagem || '', ativo: p.ativo !== false, ordem: +p.ordem || 0 };
+        const dados = { nome: String(p.nome || '').trim().slice(0, 60), descricao: String(p.descricao || '').trim().slice(0, 160), pontos: Math.round(+p.pontos), imagem: p.imagem || '', ativo: p.ativo !== false, ordem: +p.ordem || 0, nivel_min: p.nivel_min || null };
         if (!dados.nome) falha('Informe o nome do prêmio.');
         if (!(dados.pontos >= 1 && dados.pontos <= 1e6)) falha('Informe quantos pontos vale o prêmio.');
         const atual = p.id && f.premios.find((x) => x.id === p.id);
@@ -1105,7 +1185,7 @@
         return { notas: must(notas), resgates: must(resgates) };
       },
       async fidClientes(busca = '') {
-        let q = sb.from('fid_clientes').select('cpf, nome, email, telefone, pontos, codigo, marketing, criado_em, indicado_por')
+        let q = sb.from('fid_clientes').select('cpf, nome, email, telefone, pontos, codigo, marketing, criado_em, indicado_por, nivel')
           .eq('restaurante_id', rid).order('criado_em', { ascending: false }).limit(300);
         const b = String(busca || '').trim();
         const d = soDigitos(b);
@@ -1122,6 +1202,7 @@
         ]);
         const cliente = must(c);
         if (!cliente) return null;
+        cliente.nivel_atual = must(await sb.rpc('fid_nivel_cliente', { p_cpf: cpf }));
         if (cliente.indicado_por) {
           const i = must(await sb.from('fid_clientes').select('nome').eq('restaurante_id', rid).eq('cpf', cliente.indicado_por).maybeSingle());
           cliente.indicado_por_nome = i ? i.nome : null;
@@ -1167,7 +1248,7 @@
       async fidSalvarPremio(p) {
         const dados = {
           nome: String(p.nome || '').trim().slice(0, 60), descricao: String(p.descricao || '').trim().slice(0, 160),
-          pontos: Math.round(+p.pontos), imagem: p.imagem || '', ativo: p.ativo !== false, ordem: +p.ordem || 0,
+          pontos: Math.round(+p.pontos), imagem: p.imagem || '', ativo: p.ativo !== false, ordem: +p.ordem || 0, nivel_min: p.nivel_min || null,
         };
         if (!dados.nome) throw new Error('Informe o nome do prêmio.');
         if (!(dados.pontos >= 1 && dados.pontos <= 1e6)) throw new Error('Informe quantos pontos vale o prêmio.');
@@ -1247,7 +1328,7 @@
 
   window.Store = {
     // Regras do programa de fidelidade usadas também pelas telas (validação e simulação).
-    fid: { PADRAO: FID_PADRAO, cpfValido, chaveValida, chaveDoTexto, boost: fidBoost, calcular: fidCalcular, soDigitos },
+    fid: { PADRAO: FID_PADRAO, cpfValido, chaveValida, chaveDoTexto, boost: fidBoost, calcular: fidCalcular, niveis: fidNiveis, nivelDe: fidNivelDe, soDigitos },
     create() {
       const b = cfg.backend || {};
       if (b.tipo === 'supabase' && b.supabaseUrl && b.supabaseAnonKey) return SupabaseAdapter();
