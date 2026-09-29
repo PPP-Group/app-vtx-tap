@@ -29,7 +29,7 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 .vhead h1 { font-family: var(--font-display); font-weight: 900; font-size: 36px; text-transform: uppercase; line-height: 1; }
 .vhead p { color: var(--muted); font-size: 14.5px; margin-top: 6px; max-width: 70ch; }
 
-.strip { display: grid; grid-template-columns: repeat(4, 1fr); margin: 0 0 16px; border-radius: 18px; background: var(--surface); box-shadow: var(--shadow-1); overflow: hidden; }
+.strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); margin: 0 0 16px; border-radius: 18px; background: var(--surface); box-shadow: var(--shadow-1); overflow: hidden; }
 .strip > div { padding: 12px 16px; border-left: 1px solid var(--line); min-width: 0; }
 .strip > div:first-child { border-left: 0; }
 .strip dt { font-size: 12px; color: var(--muted); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -179,3 +179,14 @@ td.num small { display: block; font-size: 11.5px; color: var(--muted); }
 .vtx-logo--login { height: 64px; justify-self: center; margin: 0 auto 6px; display: block; text-align: center; }
 .vtx-logo--top { height: 30px; }
 .top-brand { font-size: 17px; opacity: .8; }
+
+/* Planos */
+.rcard-plano { font-size: 13.5px; font-weight: 600; color: var(--cobalt-ink); margin-top: 6px; }
+.rcard-plano.is-sem { color: var(--amber); }
+.plano-linha { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+.plano-preco { font-size: 15px; }
+.plano-preco b { font-family: var(--font-mono); color: var(--cobalt-ink); }
+.card-sec .sec-h { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+tr.is-nova td { background: var(--cobalt-soft); }
+.up { color: var(--leaf); font-weight: 700; font-size: 12.5px; }
+.down { color: var(--pepper); font-weight: 700; font-size: 12.5px; }

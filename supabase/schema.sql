@@ -118,6 +118,106 @@ create table if not exists private.equipe_senha (
   senha_hash     text not null
 );
 
+
+-- ---------------------------------------------------------------------------
+-- Plano contratado: serviços (página + cardápio, chamar o garçom, fidelidade),
+-- mesas, domínio e contrato. Sem plano definido = tudo liberado, como antes.
+-- A mensalidade segue a tabela de preços (combo dos três = R$ 329).
+-- ---------------------------------------------------------------------------
+alter table public.restaurantes add column if not exists plano jsonb;
+
+-- Arruma um plano (valores válidos). Erro se nenhum serviço for escolhido.
+create or replace function public.plano_normalizar(p jsonb) returns jsonb
+language plpgsql immutable set search_path = public as $$
+declare s jsonb := coalesce(p -> 'servicos', '{}'::jsonb); n jsonb;
+begin
+  n := jsonb_build_object(
+    'servicos', jsonb_build_object(
+      'pagina', coalesce(s ->> 'pagina', '') = 'true',
+      'garcom', coalesce(s ->> 'garcom', '') = 'true',
+      'fidelidade', coalesce(s ->> 'fidelidade', '') = 'true'),
+    'mesas', least(greatest(coalesce(public.num_ou(p ->> 'mesas', 20), 20), 1), 500)::int,
+    'dominio', case when p ->> 'dominio' in ('proprio', 'registro') then p ->> 'dominio' else 'sub' end,
+    'contrato', case when p ->> 'contrato' = '12' then 12 else 6 end,
+    'inicio', case when coalesce(p ->> 'inicio', '') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' then p ->> 'inicio' end,
+    'definido', true);
+  if not (n -> 'servicos' @> '{"pagina": true}' or n -> 'servicos' @> '{"garcom": true}' or n -> 'servicos' @> '{"fidelidade": true}') then
+    raise exception 'Escolha pelo menos um serviço.';
+  end if;
+  return n;
+end $$;
+
+-- Plano em vigor (sem plano definido: tudo liberado e até 500 mesas).
+create or replace function public.plano_de(p_restaurante uuid) returns jsonb
+language sql stable security definer set search_path = public as $$
+  select case when plano is null then jsonb_build_object(
+      'servicos', jsonb_build_object('pagina', true, 'garcom', true, 'fidelidade', coalesce(modulos ->> 'fidelidade', '') = 'true'),
+      'mesas', 500, 'dominio', 'sub', 'contrato', 6, 'inicio', null, 'definido', false)
+    else plano end
+  from public.restaurantes where id = p_restaurante;
+$$;
+
+-- Mensalidade do plano, em reais.
+create or replace function public.plano_preco(p jsonb) returns numeric
+language sql immutable set search_path = public as $$
+  select (case when coalesce(p -> 'servicos' ->> 'pagina', '') = 'true' and coalesce(p -> 'servicos' ->> 'garcom', '') = 'true'
+                and coalesce(p -> 'servicos' ->> 'fidelidade', '') = 'true' then 329
+              else (case when coalesce(p -> 'servicos' ->> 'pagina', '') = 'true' then 99 else 0 end)
+                 + (case when coalesce(p -> 'servicos' ->> 'garcom', '') = 'true' then 99 else 0 end)
+                 + (case when coalesce(p -> 'servicos' ->> 'fidelidade', '') = 'true' then 199 else 0 end) end)
+       + (case when p ->> 'dominio' in ('proprio', 'registro') then 19 else 0 end);
+$$;
+
+create or replace function public.plano_tem(p_restaurante uuid, p_servico text) returns boolean
+language sql stable security definer set search_path = public as $$
+  select coalesce(public.plano_de(p_restaurante) -> 'servicos' ->> p_servico, '') = 'true';
+$$;
+
+-- Histórico das mudanças de plano (feitas pela central ou pelo próprio restaurante).
+create table if not exists public.plano_mudancas (
+  id             uuid primary key default gen_random_uuid(),
+  restaurante_id uuid not null references public.restaurantes (id) on delete cascade,
+  antes          jsonb,
+  depois         jsonb not null,
+  mensal_antes   numeric(10, 2),
+  mensal_depois  numeric(10, 2) not null,
+  origem         text not null check (origem in ('central', 'restaurante')),
+  por            text check (char_length(por) <= 120),
+  visto          boolean not null default false,
+  criado_em      timestamptz not null default now()
+);
+create index if not exists plano_mudancas_rest_idx on public.plano_mudancas (restaurante_id, criado_em desc);
+create index if not exists plano_mudancas_visto_idx on public.plano_mudancas (visto, criado_em desc);
+alter table public.plano_mudancas enable row level security;
+revoke all on public.plano_mudancas from anon;
+drop policy if exists "operador ve mudancas" on public.plano_mudancas;
+create policy "operador ve mudancas" on public.plano_mudancas
+  for all to authenticated using (public.eh_operador()) with check (public.eh_operador());
+
+-- Aplica um plano: guarda, sincroniza a fidelidade, corta mesas acima do contratado e registra a mudança.
+create or replace function public.plano_aplicar(p_restaurante uuid, p_plano jsonb, p_origem text, p_por text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare antes jsonb := public.plano_de(p_restaurante); novo jsonb := public.plano_normalizar(p_plano); n int;
+begin
+  if antes is null then raise exception 'Restaurante não encontrado.'; end if;
+  n := (novo ->> 'mesas')::int;
+  update public.restaurantes set
+    plano = novo,
+    modulos = coalesce(modulos, '{}'::jsonb) || jsonb_build_object('fidelidade', novo -> 'servicos' -> 'fidelidade'),
+    mesas = case when mesas is not null and coalesce((mesas ->> 'total')::int, 0) > n then jsonb_build_object('total', n,
+        'areas', coalesce((select jsonb_agg(jsonb_set(a, '{ate}', to_jsonb(least((a ->> 'ate')::int, n))))
+                             from jsonb_array_elements(case when jsonb_typeof(mesas -> 'areas') = 'array' then mesas -> 'areas' else '[]'::jsonb end) a
+                            where (a ->> 'de')::int <= n), '[]'::jsonb))
+      else mesas end
+  where id = p_restaurante;
+  if (antes - 'definido' - 'inicio') is distinct from (novo - 'definido' - 'inicio') or not coalesce((antes ->> 'definido')::boolean, false) then
+    insert into public.plano_mudancas (restaurante_id, antes, depois, mensal_antes, mensal_depois, origem, por)
+    values (p_restaurante, case when coalesce((antes ->> 'definido')::boolean, false) then antes end, novo,
+            case when coalesce((antes ->> 'definido')::boolean, false) then public.plano_preco(antes) end, public.plano_preco(novo), p_origem, left(p_por, 120));
+  end if;
+  return novo;
+end $$;
+
 create or replace function public.restaurante_ativo(p_restaurante uuid) returns boolean
 language sql stable security definer set search_path = public as $$
   select exists (select 1 from public.restaurantes where id = p_restaurante and ativo);
@@ -125,7 +225,9 @@ $$;
 
 create or replace function public.total_mesas(p_restaurante uuid) returns int
 language sql stable security definer set search_path = public as $$
-  select coalesce((select (mesas ->> 'total')::int from public.restaurantes where id = p_restaurante), 500);
+  -- Mesas configuradas, nunca acima das contratadas no plano.
+  select least(coalesce((select (mesas ->> 'total')::int from public.restaurantes where id = p_restaurante), 500),
+               coalesce((public.plano_de(p_restaurante) ->> 'mesas')::int, 500));
 $$;
 
 -- Dados públicos do restaurante para a página da mesa e o painel (sem código de ativação).
@@ -133,7 +235,8 @@ create or replace function public.restaurante_publico(p_slug text) returns jsonb
 language sql stable security definer set search_path = public as $$
   select jsonb_build_object('id', id, 'slug', slug, 'nome', nome, 'restaurante', restaurante,
     'wifi', wifi, 'cardapio', cardapio, 'mesas', mesas, 'widgets', widgets,
-    'modulos', modulos, 'fidelidade', fidelidade)
+    'modulos', modulos, 'fidelidade', fidelidade,
+    'plano', jsonb_build_object('servicos', public.plano_de(id) -> 'servicos', 'mesas', public.plano_de(id) -> 'mesas'))
   from public.restaurantes where slug = lower(btrim(p_slug)) and ativo;
 $$;
 
@@ -192,6 +295,9 @@ begin
     if coalesce(f ->> 'ativo', '') = 'true' and (jsonb_typeof(f -> 'cnpjs') <> 'array' or jsonb_array_length(f -> 'cnpjs') = 0) then
       raise exception 'Informe o CNPJ que sai nas notas fiscais antes de ativar o programa.';
     end if;
+  end if;
+  if p_patch ? 'mesas' and coalesce(public.num_ou(p_patch -> 'mesas' ->> 'total', 0), 0) > (public.plano_de(r) ->> 'mesas')::int then
+    raise exception 'Seu plano tem % mesas. Para usar mais, aumente as mesas na aba Plano.', public.plano_de(r) ->> 'mesas';
   end if;
   update public.restaurantes set
     restaurante = case when p_patch ? 'restaurante' then p_patch -> 'restaurante' else restaurante end,
@@ -524,6 +630,7 @@ declare
 begin
   perform public.expira_sessoes();
   if not public.restaurante_ativo(p_restaurante) then raise exception 'Restaurante indisponível.'; end if;
+  if not public.plano_tem(p_restaurante, 'garcom') then raise exception 'Este restaurante não usa o chamado pelo celular.'; end if;
   if p_mesa is null or p_mesa < 1 or p_mesa > public.total_mesas(p_restaurante) then
     raise exception 'Mesa inválida.';
   end if;
@@ -568,6 +675,7 @@ begin
   if not found then
     raise exception using errcode = 'VT401', message = 'O sino não está liberado para este celular.';
   end if;
+  if not public.plano_tem(s.restaurante_id, 'garcom') then raise exception 'Este restaurante não usa o chamado pelo celular.'; end if;
   insert into public.chamados (restaurante_id, mesa, tipo, nota, pagamento, itens, sessao_id)
   values (s.restaurante_id, s.mesa, p_tipo, nullif(left(btrim(coalesce(p_nota, '')), 80), ''), p_pagamento, p_itens, s.id)
   returning id into v_id;
@@ -1875,6 +1983,42 @@ create policy "equipe gerencia premios" on public.fid_premios
   for all to authenticated using (restaurante_id = public.meu_restaurante())
   with check (restaurante_id = public.meu_restaurante());
 
+
+-- ---------------------------------------------------------------------------
+-- Plano: a central muda o de qualquer restaurante; a equipe muda o seu (serviços e mesas).
+-- ---------------------------------------------------------------------------
+create or replace function public.plano_alterar_central(p_restaurante uuid, p_plano jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+begin
+  if not public.eh_operador() then raise exception 'Acesso negado.'; end if;
+  return public.plano_aplicar(p_restaurante, p_plano, 'central',
+    coalesce((select email from auth.users where id = auth.uid()), 'central'));
+end $$;
+
+create or replace function public.meu_plano() returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare r uuid := public.meu_restaurante(); p jsonb;
+begin
+  if r is null then raise exception 'Acesso negado.'; end if;
+  p := public.plano_de(r);
+  return jsonb_build_object('plano', p, 'mensal', public.plano_preco(p),
+    'historico', coalesce((select jsonb_agg(jsonb_build_object('criado_em', criado_em, 'origem', origem, 'por', por,
+        'antes', antes, 'depois', depois, 'mensal_antes', mensal_antes, 'mensal_depois', mensal_depois) order by criado_em desc)
+      from (select * from public.plano_mudancas where restaurante_id = r order by criado_em desc limit 20) m), '[]'::jsonb));
+end $$;
+
+-- Upsell/downsell pelo próprio restaurante: muda serviços e mesas; domínio e contrato ficam com a central.
+create or replace function public.meu_plano_alterar(p_plano jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare r uuid := public.meu_restaurante(); atual jsonb;
+begin
+  if r is null then raise exception 'Acesso negado.'; end if;
+  atual := public.plano_de(r);
+  return public.plano_aplicar(r, jsonb_build_object('servicos', p_plano -> 'servicos', 'mesas', p_plano -> 'mesas',
+    'dominio', atual -> 'dominio', 'contrato', atual -> 'contrato', 'inicio', atual -> 'inicio'),
+    'restaurante', coalesce(public.fid_quem(), 'Equipe'));
+end $$;
+
 -- ---------------------------------------------------------------------------
 -- Quem pode chamar cada função
 -- ---------------------------------------------------------------------------
@@ -1894,7 +2038,9 @@ begin
     'public.fid_mover(uuid, text, text, int, text, numeric, numeric, text, uuid, text)',
     'public.fid_bonus_indicacao(uuid, text)', 'public.fid_creditar(text, numeric, timestamptz, text)',
     'public.fid_conferir_xml(text)', 'public.fid_auto_creditar(text)', 'public.fid_chave_problema(uuid, text)',
-    'public.fid_nova_sessao(uuid, text)', 'public.fid_quem()'] loop
+    'public.fid_nova_sessao(uuid, text)', 'public.fid_quem()',
+    'public.plano_normalizar(jsonb)', 'public.plano_de(uuid)', 'public.plano_preco(jsonb)', 'public.plano_tem(uuid, text)',
+    'public.plano_aplicar(uuid, jsonb, text, text)'] loop
     execute format('revoke execute on function %s from public, anon, authenticated', f);
   end loop;
   -- Só a função "equipe" (service_role).
@@ -1930,6 +2076,7 @@ begin
     'public.fid_resumo()', 'public.fid_aprovar_nota(text, numeric, timestamptz)', 'public.fid_recusar_nota(text, text)',
     'public.fid_importar_xml(jsonb)', 'public.fid_resgate_decidir(uuid, boolean)', 'public.fid_lancar(text, numeric, text)',
     'public.fid_redefinir_pin(text)', 'public.fid_excluir_cliente(text)', 'public.fid_nivel_cliente(text)',
+    'public.plano_alterar_central(uuid, jsonb)', 'public.meu_plano()', 'public.meu_plano_alterar(jsonb)',
     'public.fid_editar_cliente(text, text, text, text, boolean)'] loop
     execute format('revoke execute on function %s from public, anon', f);
     execute format('grant execute on function %s to authenticated', f);

@@ -30,8 +30,9 @@ window.NFC_CONFIG = {
     descricao: 'Cozinha de brasa e horta',
     endereco: 'Rua dos Pinheiros, 412 — Pinheiros, São Paulo',
     instagram: 'quintalbistro',
+    telefone: '11987654321',
     // Link "Pedir avaliações" do Perfil da Empresa no Google. Vazio = busca pelo nome.
-    googleUrl: '',
+    googleUrl: 'https://www.google.com/search?q=Quintal+Bistr%C3%B4+avalia%C3%A7%C3%B5es',
     logo: '',
     capa: '',
     // Taxa de serviço sugerida (%) usada na calculadora de divisão da conta.
@@ -65,6 +66,7 @@ window.NFC_CONFIG = {
     { id: 'dividir', tipo: 'dividir', label: 'Dividir a conta', ativo: true, embutido: true },
     { id: 'google', tipo: 'google', label: 'Avaliar no Google', ativo: true, embutido: true },
     { id: 'comentario', tipo: 'comentario', label: 'Comentário anônimo', ativo: true, embutido: true },
+    { id: 'info', tipo: 'info', label: 'Informações do restaurante', ativo: true, embutido: true },
   ],
 
   // Motivos de chamado exibidos para o cliente e para a equipe.

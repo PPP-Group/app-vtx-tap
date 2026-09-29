@@ -723,3 +723,50 @@
 .fp-meses[hidden] { display: none; }
 
 .vtx-logo--login { height: 70px; justify-self: center; }
+
+/* Aviso de configuração inicial */
+.cfg-aviso { display: grid; gap: 14px; margin-bottom: 18px; padding: 18px 20px; border-radius: 20px; background: var(--cobalt-soft); box-shadow: inset 0 0 0 1.5px var(--cobalt); max-width: 1100px; }
+.cfg-aviso-h { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 20px; }
+.cfg-aviso h2 { font-family: var(--font-display); font-weight: 900; font-size: 24px; text-transform: uppercase; line-height: 1; }
+.cfg-aviso p { font-size: 14px; color: var(--ink-2); margin-top: 4px; }
+.cfg-barra { display: block; width: min(220px, 100%); height: 8px; border-radius: 99px; background: var(--surface); overflow: hidden; }
+.cfg-barra i { display: block; height: 100%; background: var(--cobalt); border-radius: inherit; }
+.cfg-passos { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.cfg-passos li { display: inline-flex; align-items: center; gap: 4px; padding: 5px 12px; border-radius: 999px; background: var(--surface); font-size: 13.5px; }
+.cfg-passos li .link { text-decoration: none; color: var(--ink); font-weight: 600; }
+.cfg-passos li.is-ok { opacity: .6; }
+.cfg-passos li.is-ok .link { text-decoration: line-through; font-weight: 500; }
+.cfg-passos .i { width: 14px; height: 14px; color: var(--leaf); }
+
+/* Plano (Ajustes → Plano) */
+.plano-grid { grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 960px) { .plano-grid { grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); } .plano-grid > .panel:last-child { grid-column: 1 / -1; } }
+.plano-atual { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 14.5px; }
+.plano-atual li { display: flex; align-items: center; gap: 8px; color: var(--muted); text-decoration: line-through; }
+.plano-atual li.is-on { color: var(--ink); text-decoration: none; font-weight: 600; }
+.plano-atual .i { width: 16px; height: 16px; }
+.plano-atual li.is-on .i { color: var(--leaf); }
+.plano-valor { font-size: 15px; color: var(--muted); }
+.plano-valor b { font-family: var(--font-display); font-weight: 900; font-size: 40px; color: var(--ink); margin-right: 4px; }
+.plano-ops { display: grid; gap: 10px; }
+.plano-op { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 6px 14px; padding: 14px; border-radius: 16px; border: 1.5px solid var(--line); cursor: pointer; }
+.plano-op.is-on { border-color: var(--cobalt); background: var(--cobalt-soft); }
+.plano-op > span:first-child { display: grid; gap: 2px; min-width: 0; }
+.plano-op small { font-size: 13px; color: var(--muted); }
+.plano-op-preco { font-family: var(--font-mono); font-size: 13.5px; font-weight: 600; color: var(--cobalt-ink); white-space: nowrap; }
+@media (max-width: 520px) { .plano-op { grid-template-columns: minmax(0, 1fr) auto; } .plano-op-preco { grid-column: 1; grid-row: 2; } }
+.plano-stepper { display: flex; align-items: center; gap: 8px; }
+.plano-stepper .input { width: 96px; text-align: center; }
+.plano-resumo { display: grid; gap: 2px; padding: 14px 16px; border-radius: 16px; background: var(--surface-2); }
+.plano-resumo > span { font-size: 12.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.plano-resumo b { font-family: var(--font-display); font-weight: 900; font-size: 36px; line-height: 1; }
+.plano-resumo b small { font-family: var(--font-body); font-size: 14px; font-weight: 600; color: var(--muted); }
+.plano-resumo > small { font-size: 13.5px; color: var(--ink-2); }
+.plano-resumo.is-up > small { color: var(--leaf); font-weight: 600; }
+.plano-resumo.is-down > small { color: var(--pepper); font-weight: 600; }
+.plano-avisos { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.plano-avisos li { display: flex; gap: 8px; align-items: flex-start; padding: 10px 12px; border-radius: 12px; background: var(--amber-soft); color: var(--ink-2); font-size: 13.5px; }
+.plano-avisos .i { width: 16px; height: 16px; flex: none; color: var(--amber); margin-top: 2px; }
+.plano-hist { list-style: none; margin: 0; padding: 0; display: grid; }
+.plano-hist li { display: grid; gap: 2px; padding: 10px 0; font-size: 14px; }
+.plano-hist li + li { border-top: 1px solid var(--line); }

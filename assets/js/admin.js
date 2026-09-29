@@ -12,13 +12,7 @@
 
   const S = {
     user: null,
-    settings: {
-      restaurante: cfg.restaurante,
-      wifi: cfg.wifi,
-      cardapio: cfg.cardapio,
-      mesas: cfg.mesasPadrao,
-      widgets: cfg.widgetsPadrao,
-    },
+    settings: Store.padrao(isDemo),
     widgetEdit: null,
     itemEdit: null,
     ajTab: 'restaurante',
@@ -54,7 +48,14 @@
   ];
   // Fidelidade aparece quando a central libera o módulo para o restaurante.
   const temFid = () => !!(S.settings.modulos && S.settings.modulos.fidelidade && window.FidPainel);
-  const views = () => (temFid() ? [...VIEWS.slice(0, 3), { id: 'fidelidade', label: 'Fidelidade', curto: 'Pontos', icon: 'gift' }, ...VIEWS.slice(3)] : VIEWS);
+  // Sem o serviço de chamar o garçom no plano, somem Chamados e Salão.
+  const temServico = (k) => !S.settings.plano || !!S.settings.plano.servicos[k];
+  const views = () => {
+    const base = VIEWS.filter((v) => temServico('garcom') || !['chamados', 'salao'].includes(v.id));
+    if (!temFid()) return base;
+    const i = base.findIndex((v) => v.id === 'plaquinhas');
+    return [...base.slice(0, i), { id: 'fidelidade', label: 'Fidelidade', curto: 'Pontos', icon: 'gift' }, ...base.slice(i)];
+  };
 
   const motivo = (id) => cfg.motivos.find((m) => m.id === id) || { label: id, curto: id };
   const areaDe = (n) => (S.settings.mesas.areas.find((a) => n >= a.de && n <= a.ate) || {}).nome || '';
@@ -490,7 +491,7 @@
   }
   function route() {
     const v = location.hash.replace('#', '');
-    S.view = views().some((x) => x.id === v) ? v : 'chamados';
+    S.view = views().some((x) => x.id === v) ? v : views()[0].id;
     renderChrome();
     renderView();
     $('#main').scrollTop = 0;
@@ -498,10 +499,78 @@
   }
 
   /* ============================== Telas ============================== */
+  /* ---------- Configuração inicial: o que falta preencher ---------- */
+  function infoPreenchida() {
+    const r = S.settings.restaurante;
+    return [
+      r.endereco && 'endereço',
+      String(r.telefone || '').replace(/\D/g, '').length >= 10 && 'telefone',
+      (r.horarios || []).length && 'horários',
+      instagramHandle(r.instagram) && 'Instagram',
+    ].filter(Boolean);
+  }
+  function passosConfig() {
+    const r = S.settings.restaurante;
+    const itens = S.settings.cardapio.reduce((n, c) => n + c.itens.length, 0);
+    const info = S.settings.widgets.find((w) => w.tipo === 'info');
+    return [
+      { ok: !!r.logo, txt: 'Logo', aba: 'restaurante' },
+      { ok: !!r.endereco, txt: 'Endereço', aba: 'restaurante' },
+      { ok: String(r.telefone || '').replace(/\D/g, '').length >= 10, txt: 'Telefone', aba: 'restaurante' },
+      { ok: (r.horarios || []).length > 0, txt: 'Horários', aba: 'restaurante' },
+      { ok: !!instagramHandle(r.instagram), txt: 'Instagram', aba: 'restaurante' },
+      { ok: !!r.googleUrl, txt: 'Link de avaliação do Google', aba: 'restaurante' },
+      { ok: !!(S.settings.wifi && S.settings.wifi.rede), txt: 'Wi-Fi', aba: 'restaurante' },
+      { ok: itens > 0, txt: 'Cardápio', aba: 'cardapio' },
+      { ok: !!(info && info.ativo), txt: 'Mostrar as informações para o cliente', aba: 'widgets' },
+    ];
+  }
+  const chavePulo = () => `nfc-config-pulada:${cfg.backend.slug || 'demo'}`;
+  function avisoConfig() {
+    if (S.settings.restaurante.configConcluida) return '';
+    const pulado = +get(chavePulo()) || 0;
+    if (Date.now() - pulado < 7 * 864e5) return '';
+    const passos = passosConfig();
+    const feitos = passos.filter((p) => p.ok).length;
+    if (feitos === passos.length) return '';
+    return `<section class="cfg-aviso" aria-label="Configuração do restaurante">
+      <div class="cfg-aviso-h">
+        <div><h2>Conclua a configuração do restaurante</h2>
+          <p>O que não estiver preenchido não aparece para o cliente. ${feitos} de ${passos.length} feitos.</p></div>
+        <span class="cfg-barra" aria-hidden="true"><i style="width:${Math.round((feitos / passos.length) * 100)}%"></i></span>
+      </div>
+      <ul class="cfg-passos">${passos.map((p) => `<li class="${p.ok ? 'is-ok' : ''}">${p.ok ? icon('check') : ''}<button type="button" class="link" data-cfg-ir="${p.aba}">${p.txt}</button></li>`).join('')}</ul>
+      <div class="vhead-actions">
+        <button type="button" class="btn btn-cobalt btn-sm" data-cfg-ir="${(passos.find((p) => !p.ok) || passos[0]).aba}">Continuar configuração</button>
+        <button type="button" class="btn btn-quiet btn-sm" data-cfg="pular">Pular por agora</button>
+        <button type="button" class="btn btn-quiet btn-sm" data-cfg="concluir">Marcar como concluída</button>
+      </div>
+    </section>`;
+  }
+  document.addEventListener('click', async (e) => {
+    const ir = e.target.closest('[data-cfg-ir]');
+    if (ir) {
+      S.ajTab = ir.dataset.cfgIr;
+      if (S.view === 'ajustes') renderView();
+      else go('ajustes');
+      return;
+    }
+    const b = e.target.closest('[data-cfg]');
+    if (!b) return;
+    if (b.dataset.cfg === 'pular') {
+      set(chavePulo(), String(Date.now()));
+      toast('Tudo bem. Lembramos de novo em 7 dias.');
+    } else {
+      await saveRestaurante({ configConcluida: true });
+      toast('Configuração marcada como concluída.', { tone: 'ok' });
+    }
+    renderView();
+  });
+
   function renderView() {
     const main = $('#main');
     main.dataset.view = S.view;
-    main.innerHTML = { chamados: vChamados, salao: vSalao, comentarios: vComentarios, plaquinhas: vPlaquinhas, ajustes: vAjustes, fidelidade: () => FidPainel.html() }[S.view]();
+    main.innerHTML = avisoConfig() + { chamados: vChamados, salao: vSalao, comentarios: vComentarios, plaquinhas: vPlaquinhas, ajustes: vAjustes, fidelidade: () => FidPainel.html() }[S.view]();
     if (S.view === 'ajustes' && S.ajTab === 'restaurante') carregarEquipe();
   }
 
@@ -759,7 +828,8 @@
     const mesasCfg = `<div class="panel stack" id="mesasCfg">
         <h2>Quantidade de mesas</h2>
         <label class="field" style="max-width:220px"><span>Total no restaurante</span>
-          <input class="input mono" id="totalMesas" type="number" min="1" max="300" value="${total}"></label>
+          <input class="input mono" id="totalMesas" type="number" min="1" max="${Math.min(300, S.settings.plano.mesas)}" value="${total}"></label>
+        ${S.settings.plano.mesas < 500 ? `<p class="help">Seu plano tem ${S.settings.plano.mesas} mesas. Para usar mais, <button type="button" class="link" data-cfg-ir="plano">aumente no Plano</button>.</p>` : ''}
         <h2 style="margin-top:6px">Áreas do salão</h2>
         <p class="muted" style="font-size:13px">Dê nome aos grupos de mesa (salão, varanda, mezanino…). Uma mesa fora de qualquer faixa aparece sem área.</p>
         ${areaErro ? `<p class="area-erro" role="alert">${icon('alert')} <span>${esc(areaErro)} Corrija a faixa abaixo.</span></p>` : ''}
@@ -914,7 +984,7 @@
       return true;
     } catch (e) {
       console.error(e);
-      toast(/espaço/i.test(e.message || '') ? e.message : 'Não foi possível salvar. Confira a conexão e tente de novo.', { tone: 'error', ms: 4500 });
+      toast(/espaço|plano/i.test(e.message || '') ? e.message : 'Não foi possível salvar. Confira a conexão e tente de novo.', { tone: 'error', ms: 4500 });
       return false;
     }
   }
@@ -929,8 +999,8 @@
   const saveRestaurante = (patch) => saveSettings({ restaurante: { ...S.settings.restaurante, ...patch } });
 
   /* ---------- Widgets do cliente ---------- */
-  const WIDGET_ICON = { fidelidade: 'gift', cardapio: 'book', wifi: 'wifi', dividir: 'users', google: 'star', comentario: 'msg' };
-  const WIDGET_LABEL = { fidelidade: 'Programa de fidelidade', cardapio: 'Cardápio', wifi: 'Wi-Fi', dividir: 'Dividir a conta', google: 'Avaliar no Google', comentario: 'Comentário anônimo' };
+  const WIDGET_ICON = { info: 'pin', fidelidade: 'gift', cardapio: 'book', wifi: 'wifi', dividir: 'users', google: 'star', comentario: 'msg' };
+  const WIDGET_LABEL = { info: 'Informações do restaurante', fidelidade: 'Programa de fidelidade', cardapio: 'Cardápio', wifi: 'Wi-Fi', dividir: 'Dividir a conta', google: 'Avaliar no Google', comentario: 'Comentário anônimo' };
   const WIDGET_ICONS = [
     ['link', 'Link'], ['book', 'Livro'], ['star', 'Estrela'], ['msg', 'Mensagem'], ['wifi', 'Wi-Fi'],
     ['users', 'Pessoas'], ['printer', 'Impressora'], ['qr', 'QR'], ['sparkle', 'Destaque'],
@@ -940,10 +1010,14 @@
     const r = S.settings.restaurante;
     if (tipo === 'cardapio') {
       const n = S.settings.cardapio.reduce((s, c) => s + c.itens.length, 0);
-      return `${n} ${n === 1 ? 'item' : 'itens'} · edite na aba Cardápio`;
+      return n ? `${n} ${n === 1 ? 'item' : 'itens'} · edite na aba Cardápio` : 'Sem itens: não aparece para o cliente · monte na aba Cardápio';
     }
-    if (tipo === 'wifi') return S.settings.wifi.rede ? `Rede ${S.settings.wifi.rede} · edite na aba Restaurante` : 'Rede não informada · edite na aba Restaurante';
-    if (tipo === 'google') return r.googleUrl ? 'Link de avaliação configurado' : 'Sem link: abre a busca do Google pelo nome';
+    if (tipo === 'wifi') return S.settings.wifi && S.settings.wifi.rede ? `Rede ${S.settings.wifi.rede} · edite na aba Restaurante` : 'Rede não informada: não aparece para o cliente · preencha na aba Restaurante';
+    if (tipo === 'google') return r.googleUrl ? 'Link de avaliação configurado' : 'Sem link: não aparece para o cliente · cole o link na aba Restaurante';
+    if (tipo === 'info') {
+      const tem = infoPreenchida();
+      return tem.length ? `${tem.join(', ')} · edite na aba Restaurante` : 'Nada preenchido ainda · preencha na aba Restaurante';
+    }
     if (tipo === 'dividir') return `Serviço de ${Number(r.taxaServico) || 0}%`;
     if (tipo === 'comentario') return 'Chega na aba Comentários';
     if (tipo === 'fidelidade') return (S.settings.fidelidade || {}).ativo ? 'Regras e prêmios na aba Fidelidade' : 'Pausado: coloque no ar na aba Fidelidade';
@@ -1005,12 +1079,13 @@
     { id: 'cardapio', label: 'Cardápio', intro: 'Categorias e pratos que o cliente vê no cardápio da mesa.' },
     { id: 'widgets', label: 'Widgets', intro: 'Escolha o que aparece na página da mesa e em que ordem.' },
     { id: 'aparelho', label: 'Aparelho', intro: 'Preferências deste aparelho. Cada pessoa da equipe ajusta o seu.' },
+    { id: 'plano', label: 'Plano', intro: 'Serviços e mesas contratados. Aumente ou diminua aqui: a mudança vale na hora e a nova mensalidade entra na próxima cobrança.' },
   ];
   const DIAS = [[1, 'Segunda'], [2, 'Terça'], [3, 'Quarta'], [4, 'Quinta'], [5, 'Sexta'], [6, 'Sábado'], [0, 'Domingo']];
 
   function vAjustes() {
     const tab = AJ_TABS.find((t) => t.id === S.ajTab) || AJ_TABS[0];
-    const body = { restaurante: ajRestaurante, cardapio: ajCardapio, widgets: ajWidgets, aparelho: ajAparelho }[tab.id]();
+    const body = { restaurante: ajRestaurante, cardapio: ajCardapio, widgets: ajWidgets, aparelho: ajAparelho, plano: ajPlano }[tab.id]();
     return `<div class="vhead"><div><h1>Ajustes</h1><p>${tab.intro}</p></div><span class="save-state" id="saveState" role="status"></span></div>
       <div class="aj-tabs" role="tablist" aria-label="Seções de ajustes">
         ${AJ_TABS.map((t) => `<button type="button" role="tab" aria-selected="${t.id === tab.id}" data-aj="${t.id}">${t.label}</button>`).join('')}
@@ -1083,6 +1158,7 @@
         <label class="field"><span>Nome do restaurante</span><input class="input" data-r="nome" required maxlength="40" value="${esc(r.nome)}" autocomplete="organization"></label>
         <label class="field"><span>Frase curta (opcional)</span><input class="input" data-r="descricao" maxlength="60" value="${esc(r.descricao || '')}" placeholder="Ex.: Cozinha de brasa e horta"></label>
         <label class="field"><span>Endereço</span><input class="input" data-r="endereco" maxlength="120" value="${esc(r.endereco || '')}" placeholder="Rua, número — bairro, cidade" autocomplete="street-address"></label>
+        <label class="field"><span>Telefone ou WhatsApp</span><input class="input" data-r="telefone" type="tel" inputmode="tel" maxlength="20" value="${esc(r.telefone || '')}" placeholder="(31) 99999-9999" autocomplete="tel"></label>
         <label class="field"><span>Instagram</span><input class="input" data-r="instagram" maxlength="80" value="${esc(instagramHandle(r.instagram) ? '@' + instagramHandle(r.instagram) : '')}" placeholder="@seurestaurante" autocapitalize="off" spellcheck="false"></label>
         <label class="field"><span>Link de avaliação do Google</span><input class="input" data-r="googleUrl" type="url" value="${esc(r.googleUrl || '')}" placeholder="https://g.page/r/…/review" spellcheck="false">
           <small class="help">No Perfil da Empresa no Google, toque em “Pedir avaliações” e cole o link aqui. Sem link, o botão abre a busca do Google pelo nome do restaurante.</small></label>
@@ -1297,6 +1373,115 @@
 
   /* Este aparelho */
   const temaAtual = () => get('nfc-tema-painel') || 'light';
+  /* Plano: upsell e downsell pelo próprio restaurante */
+  const SERVICOS = [
+    ['pagina', 'Página da mesa e cardápio', 99, 'Cardápio, Wi-Fi, avaliação no Google, comentários e informações do restaurante.'],
+    ['garcom', 'Chamar o garçom', 99, 'O sino na página da mesa e as abas Chamados e Salão do painel.'],
+    ['fidelidade', 'Programa de fidelidade', 199, 'Pontos pela nota fiscal, prêmios, níveis e indicação.'],
+  ];
+  const reais = (v) => 'R$ ' + Number(v || 0).toLocaleString('pt-BR');
+  const planoTxt = (p) => (p ? SERVICOS.filter(([k]) => p.servicos[k]).map(([, n]) => n).join(', ') + ` · ${p.mesas} mesas` : '—');
+  async function carregarPlano() {
+    try {
+      S.plano = await store.meuPlano();
+      S.planoEd = { servicos: { ...S.plano.plano.servicos }, mesas: S.plano.plano.mesas };
+    } catch (e) {
+      console.error(e);
+      toast('Não foi possível carregar o plano.', { tone: 'error' });
+    }
+    if (S.view === 'ajustes' && S.ajTab === 'plano') renderView();
+  }
+  function ajPlano() {
+    if (!S.plano) {
+      carregarPlano();
+      return '<p class="muted">Carregando o plano…</p>';
+    }
+    const atual = S.plano.plano;
+    const ed = S.planoEd;
+    const novoPreco = Store.precoPlano({ ...atual, ...ed });
+    const dif = novoPreco - S.plano.mensal;
+    const mudou = SERVICOS.some(([k]) => !!ed.servicos[k] !== !!atual.servicos[k]) || ed.mesas !== atual.mesas;
+    const avisos = [
+      atual.servicos.garcom && !ed.servicos.garcom && 'Sem “Chamar o garçom”, o sino some da página da mesa e as abas Chamados e Salão saem do painel.',
+      atual.servicos.pagina && !ed.servicos.pagina && 'Sem a página e o cardápio, somem o cardápio, o Wi-Fi, a avaliação no Google e as informações.',
+      atual.servicos.fidelidade && !ed.servicos.fidelidade && 'Sem a fidelidade, o clube de pontos some da página. Os pontos dos clientes ficam guardados se vocês voltarem.',
+      ed.mesas < S.settings.mesas.total && `Hoje vocês usam ${S.settings.mesas.total} mesas. As mesas acima da ${ed.mesas} deixam de funcionar.`,
+    ].filter(Boolean);
+    return `<div class="aj-grid plano-grid">
+      <section class="panel stack">
+        <h2>Seu plano hoje</h2>
+        ${atual.definido === false ? '<p class="note">A VTX ainda não definiu o plano deste restaurante: hoje tudo está liberado.</p>' : ''}
+        <ul class="plano-atual">${SERVICOS.map(([k, n]) => `<li class="${atual.servicos[k] ? 'is-on' : ''}">${icon(atual.servicos[k] ? 'check' : 'x')} ${n}</li>`).join('')}
+          <li class="is-on">${icon('grid')} ${atual.mesas >= 500 ? 'Mesas sem limite' : `${atual.mesas} mesas`}</li></ul>
+        <p class="plano-valor"><b>${reais(S.plano.mensal)}</b> por mês</p>
+        <p class="help">Endereço (domínio) e tempo de contrato: fale com a VTX.</p>
+      </section>
+      <section class="panel stack">
+        <h2>Mudar o plano</h2>
+        <div class="plano-ops">${SERVICOS.map(([k, n, v, d]) => `<label class="plano-op ${ed.servicos[k] ? 'is-on' : ''}">
+            <span><b>${n}</b><small>${d}</small></span>
+            <span class="plano-op-preco">R$ ${v}/mês</span>
+            <span class="switch"><input type="checkbox" data-plano-sv="${k}" ${ed.servicos[k] ? 'checked' : ''} aria-label="${n}"><span></span></span>
+          </label>`).join('')}</div>
+        <label class="field plano-mesas"><span>Mesas contratadas</span>
+          <span class="plano-stepper"><button type="button" class="icon-btn" data-plano-mesas="-1" aria-label="Menos mesas">${icon('minus')}</button>
+          <input class="input mono" id="planoMesas" type="number" min="1" max="500" value="${ed.mesas}">
+          <button type="button" class="icon-btn" data-plano-mesas="1" aria-label="Mais mesas">${icon('plus')}</button></span></label>
+        <div class="plano-resumo ${dif > 0 ? 'is-up' : dif < 0 ? 'is-down' : ''}">
+          <span>Nova mensalidade</span><b>${reais(novoPreco)}<small> por mês</small></b>
+          ${mudou ? `<small>${dif > 0 ? `+${reais(dif)} por mês` : dif < 0 ? `−${reais(-dif)} por mês` : 'mesmo valor'} (hoje ${reais(S.plano.mensal)})${ed.servicos.pagina && ed.servicos.garcom && ed.servicos.fidelidade ? ' · combo dos três aplicado' : ''}</small>` : '<small>Mude os serviços ou as mesas acima.</small>'}
+        </div>
+        ${avisos.length ? `<ul class="plano-avisos">${avisos.map((a) => `<li>${icon('alert')} <span>${esc(a)}</span></li>`).join('')}</ul>` : ''}
+        <button type="button" class="btn btn-cobalt" data-plano-confirmar ${mudou ? '' : 'disabled'}>${icon('check')} Confirmar mudança</button>
+        <small class="help">A mudança vale na hora. A nova mensalidade entra na próxima cobrança.</small>
+      </section>
+      <section class="panel stack">
+        <h2>Histórico</h2>
+        ${S.plano.historico.length ? `<ul class="plano-hist">${S.plano.historico.map((h) => `<li>
+            <span><b>${h.mensal_antes == null ? 'Plano definido' : h.mensal_depois > h.mensal_antes ? 'Aumento' : h.mensal_depois < h.mensal_antes ? 'Redução' : 'Ajuste'}</b> · ${esc(planoTxt(h.depois))}</span>
+            <small class="muted">${new Date(h.criado_em).toLocaleDateString('pt-BR')} · ${h.origem === 'restaurante' ? esc(h.por || 'Equipe') : 'VTX'} · ${h.mensal_antes == null ? '' : `${reais(h.mensal_antes)} → `}${reais(h.mensal_depois)}/mês</small>
+          </li>`).join('')}</ul>` : '<p class="muted">Nenhuma mudança ainda.</p>'}
+      </section>
+    </div>`;
+  }
+  document.addEventListener('change', (e) => {
+    const sv = e.target.closest('[data-plano-sv]');
+    if (sv && S.planoEd) {
+      S.planoEd.servicos[sv.dataset.planoSv] = sv.checked;
+      return renderView();
+    }
+    if (e.target.id === 'planoMesas' && S.planoEd) {
+      S.planoEd.mesas = Math.min(500, Math.max(1, parseInt(e.target.value, 10) || S.planoEd.mesas));
+      renderView();
+    }
+  });
+  document.addEventListener('click', async (e) => {
+    const st = e.target.closest('[data-plano-mesas]');
+    if (st && S.planoEd) {
+      S.planoEd.mesas = Math.min(500, Math.max(1, S.planoEd.mesas + +st.dataset.planoMesas));
+      return renderView();
+    }
+    const ok = e.target.closest('[data-plano-confirmar]');
+    if (!ok || !S.planoEd) return;
+    const ed = S.planoEd;
+    if (!Object.values(ed.servicos).some(Boolean)) return toast('Escolha pelo menos um serviço.', { tone: 'error' });
+    const preco = Store.precoPlano({ ...S.plano.plano, ...ed });
+    if (!confirm(`Confirmar o novo plano (${planoTxt(ed)})? A mensalidade passa a ${reais(preco)} por mês.`)) return;
+    ok.disabled = true;
+    try {
+      await store.alterarPlano(ed);
+      S.settings = await store.getSettings();
+      S.plano = null;
+      await carregarPlano();
+      toast(`Plano atualizado. Nova mensalidade: ${reais(preco)} por mês.`, { tone: 'ok', ms: 5000 });
+      renderChrome();
+    } catch (ex) {
+      console.error(ex);
+      toast(ex.message || 'Não foi possível mudar o plano.', { tone: 'error', ms: 5000 });
+      ok.disabled = false;
+    }
+  });
+
   function ajAparelho() {
     const tema = temaAtual();
     const perm = 'Notification' in window ? Notification.permission : 'unsupported';
@@ -1442,6 +1627,12 @@
       if (k === 'instagram') {
         v = instagramHandle(v);
         el.value = v ? '@' + v : '';
+      }
+      if (k === 'telefone' && v) {
+        const d = v.replace(/\D/g, '').replace(/^55(?=\d{10,11}$)/, '');
+        if (!/^\d{10,11}$/.test(d)) return toast('Telefone com DDD, ex.: (31) 99999-9999.', { tone: 'error' });
+        v = d;
+        el.value = d.length === 11 ? `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}` : `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
       }
       if (k === 'taxaServico') {
         v = Math.min(30, Math.max(0, Math.round(Number(v) || 0)));
@@ -1653,7 +1844,12 @@
       if (s.dataset.set === 'tela') { S.telaLigada = s.checked; set('nfc-tela', S.telaLigada ? '1' : '0'); applyWakeLock(); }
     }
     if (e.target.id === 'totalMesas') {
-      const n = Math.min(300, Math.max(1, parseInt(e.target.value, 10) || S.settings.mesas.total));
+      const pedido = Math.min(300, Math.max(1, parseInt(e.target.value, 10) || S.settings.mesas.total));
+      if (pedido > S.settings.plano.mesas) {
+        e.target.value = S.settings.mesas.total;
+        return toast(`Seu plano tem ${S.settings.plano.mesas} mesas. Para usar mais, aumente as mesas em Ajustes → Plano.`, { tone: 'error', ms: 5000 });
+      }
+      const n = pedido;
       // Faixas que passavam do novo total são cortadas; as que ficaram inteiras fora, removidas.
       const areas = S.settings.mesas.areas.filter((a) => a.de <= n).map((a) => ({ ...a, ate: Math.min(a.ate, n) }));
       saveMesas({ total: n, areas }).then(renderView);
@@ -1687,7 +1883,10 @@
       const list = S.settings.widgets.slice();
       const i = +row.dataset.widx;
       list[i] = { ...list[i], ativo: wt.checked };
-      saveWidgets(list);
+      if (list[i].tipo === 'info' && wt.checked && !infoPreenchida().length) {
+        toast('Ligado, mas nada aparece ainda: preencha endereço, telefone, horários ou Instagram na aba Restaurante.', { ms: 6000 });
+      }
+      saveWidgets(list).then(() => S.view === 'ajustes' && renderView());
     }
   });
 
