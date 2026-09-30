@@ -30,7 +30,7 @@
  *   Programa de fidelidade (módulo liberado pela Vortex; regras em settings.fidelidade):
  *   cliente: fidPrograma() / fidConsultar(cpf) / fidIndicador(codigo) / fidCadastrar(dados) /
  *            fidEntrar(cpf, pin) / fidConta(token) / fidSair(token) /
- *            fidRegistrarNota({ cpf, qr, valor }) / fidSefaz({ cpf, qr }) / fidRanking(token) / fidResgatar(token, premioId)
+ *            fidNotaSituacao({ cpf, qr }) / fidRegistrarNota({ cpf, qr, valor }) / fidSefaz({ cpf, qr }) / fidRanking(token) / fidResgatar(token, premioId)
  *            → sempre { status, ... } (status 'erro' traz a mensagem)
  *   equipe:  fidResumo() / fidPendencias() / fidClientes(busca) / fidCliente(cpf) / fidRecentes() /
  *            fidAprovarNota(chave, valor, emitidaIso) / fidRecusarNota(chave, motivo) /
@@ -834,6 +834,16 @@
         delete F(db).sessoes[token];
         write(db);
       },
+      async fidNotaSituacao({ cpf, qr }) {
+        const db = read();
+        if (!noAr(db)) return { status: 'inativo' };
+        const chave = chaveDoTexto(qr);
+        if (!chave) return { status: 'nova' };
+        const n = F(db).notas.find((x) => x.chave === chave);
+        if (n) return n.cpf !== soDigitos(cpf) ? { status: 'erro', mensagem: 'Esta nota já foi registrada em outra conta.' } : { status: 'repetida', nota: n.status, pontos: n.pontos, motivo: n.motivo };
+        const prob = chaveProblema(db, chave);
+        return prob ? { status: 'erro', mensagem: prob } : { status: 'nova' };
+      },
       async fidRegistrarNota({ cpf, qr, valor }) {
         const db = read();
         if (!noAr(db)) return { status: 'inativo' };
@@ -1472,6 +1482,13 @@
       },
       async fidSair(token) {
         must(await sb.rpc('fid_sair', { p_token: token }));
+      },
+      async fidNotaSituacao({ cpf, qr }) {
+        try {
+          return must(await sb.rpc('fid_nota_situacao', { p_restaurante: rid, p_cpf: soDigitos(cpf), p_qr: qr }));
+        } catch {
+          return { status: 'nova' }; // na dúvida segue; o registro confere de novo
+        }
       },
       async fidRegistrarNota({ cpf, qr, valor }) {
         return must(await sb.rpc('fid_registrar_nota', { p_restaurante: rid, p_cpf: soDigitos(cpf), p_qr: qr, p_valor: valor || null }));

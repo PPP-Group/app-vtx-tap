@@ -731,7 +731,7 @@
     }
     ocrCamera(qr);
   }
-  const DICA_CAM = 'Aponte a câmera para o <b>VALOR A PAGAR</b>, bem de perto. Se demorar, toque em <b>Ler agora</b>, tire uma foto ou digite o valor.';
+  const DICA_CAM = 'Enquadre o fim da nota, do <b>SUBTOTAL</b> até a <b>forma de pagamento</b>. Se demorar, toque em <b>Ler agora</b>, tire uma foto ou digite o valor.';
   function ocrCamera(qr) {
     const f = formDoQr(qr);
     if (!f) return;
@@ -759,7 +759,7 @@
     const v = await cam.capturar().catch(() => null);
     if (!formDoQr(qr) || O.estado !== 'camera') return;
     if (v) return ocrAchou(qr, v);
-    ocrMsg('Ainda não deu. Chegue mais perto do <b>VALOR A PAGAR</b>, deixe a nota reta e acenda a luz — ou tire uma foto.', 'camera');
+    ocrMsg('Ainda não deu. Deixe a nota reta e parada, com o total e a forma de pagamento na moldura, e acenda a luz — ou tire uma foto.', 'camera');
   }
   async function ocrLanterna() {
     if (!pararCam) return;
@@ -1137,9 +1137,19 @@
                 return recarregar();
               }
               if (['repetida', 'recusada', 'erro', 'sem_cadastro', 'inativo'].includes(r.status)) {
-                const msg = r.status === 'repetida' ? `Esta nota já foi registrada (${STATUS[r.nota] || r.nota}).`
+                const msg = r.status === 'repetida' ? `Esta nota já foi lida: cada nota vale uma vez (${STATUS[r.nota] || r.nota}).`
                   : r.status === 'sem_cadastro' ? 'Este CPF não tem cadastro no programa.'
                   : r.status === 'inativo' ? 'O programa está pausado.' : r.motivo || r.mensagem || 'Esta nota não vale pontos.';
+                $('#fpBody').innerHTML = `<div class="stack"><p class="form-error">${esc(msg)}</p><button type="button" class="btn btn-quiet btn-block" data-close>Fechar</button></div>`;
+                return;
+              }
+            }
+            // Sem a SEFAZ: antes de pedir o valor, confere se a nota já foi lida.
+            if (ctx.store.fidNotaSituacao) {
+              const r = await ctx.store.fidNotaSituacao({ cpf, qr: tx });
+              if (r.status !== 'nova') {
+                const msg = r.status === 'repetida' ? `Esta nota já foi lida: cada nota vale uma vez (${STATUS[r.nota] || r.nota}).`
+                  : r.status === 'inativo' ? 'O programa está pausado.' : r.mensagem || 'Esta nota não vale pontos.';
                 $('#fpBody').innerHTML = `<div class="stack"><p class="form-error">${esc(msg)}</p><button type="button" class="btn btn-quiet btn-block" data-close>Fechar</button></div>`;
                 return;
               }

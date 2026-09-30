@@ -1754,6 +1754,33 @@ begin
   return jsonb_build_object('status', 'pendente');
 end $$;
 
+-- Confere a nota logo depois da leitura do QR, antes de pedir o valor: já lida, de outro CNPJ, fora do prazo…
+-- Não registra nada ('nova' = pode seguir para o valor).
+create or replace function public.fid_nota_situacao(p_restaurante uuid, p_cpf text, p_qr text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  v_cpf   text := regexp_replace(coalesce(p_cpf, ''), '[^0-9]', '', 'g');
+  v_chave text := substring(regexp_replace(btrim(coalesce(p_qr, '')), '[\s.-]', '', 'g') from '([0-9]{44})');
+  prob    text;
+  n public.fid_notas;
+begin
+  if not public.fid_no_ar(p_restaurante) then return jsonb_build_object('status', 'inativo'); end if;
+  if v_chave is null then return jsonb_build_object('status', 'nova'); end if;
+  if not public.equipe_pode_tentar('fid-situacao:' || public.ip_do_pedido(), 120, 10) then
+    return jsonb_build_object('status', 'nova');
+  end if;
+  select * into n from public.fid_notas where chave = v_chave;
+  if found then
+    if n.cpf <> v_cpf then
+      return jsonb_build_object('status', 'erro', 'mensagem', 'Esta nota já foi registrada em outra conta.');
+    end if;
+    return jsonb_build_object('status', 'repetida', 'nota', n.status, 'pontos', n.pontos, 'motivo', n.motivo);
+  end if;
+  prob := public.fid_chave_problema(p_restaurante, v_chave);
+  if prob is not null then return jsonb_build_object('status', 'erro', 'mensagem', prob); end if;
+  return jsonb_build_object('status', 'nova');
+end $$;
+
 create or replace function public.fid_resgatar(p_token uuid, p_premio uuid) returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare
@@ -2147,6 +2174,7 @@ begin
     'public.fid_programa(uuid)', 'public.fid_consultar(uuid, text)', 'public.fid_indicador(uuid, text)',
     'public.fid_cadastrar(uuid, text, text, text, text, text, boolean, text)', 'public.fid_entrar(uuid, text, text)',
     'public.fid_conta(uuid)', 'public.fid_sair(uuid)', 'public.fid_registrar_nota(uuid, text, text, numeric)',
+    'public.fid_nota_situacao(uuid, text, text)',
     'public.fid_resgatar(uuid, uuid)'] loop
     execute format('revoke execute on function %s from public', f);
     execute format('grant execute on function %s to anon, authenticated', f);

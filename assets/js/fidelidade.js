@@ -317,10 +317,10 @@
   function tResultado() {
     const r = S.resultado || {};
     const ok = r.status === 'creditada';
-    const titulo = ok ? `+${pts(r.pontos || 0)}!` : r.status === 'pendente' ? 'Nota recebida!' : r.status === 'repetida' ? 'Essa nota já está na sua conta' : 'Esta nota não valeu';
+    const titulo = ok ? `+${pts(r.pontos || 0)}!` : r.status === 'pendente' ? 'Nota recebida!' : r.status === 'repetida' ? 'Essa nota já foi lida' : 'Esta nota não valeu';
     const texto = ok ? (r.sefaz ? 'Nota conferida na SEFAZ. Os pontos já estão na sua conta.' : 'Compra conferida. Os pontos já estão na sua conta.')
       : r.status === 'pendente' ? 'Os pontos entram assim que o restaurante conferir a nota. Você acompanha aqui no extrato.'
-      : r.status === 'repetida' ? `Situação: ${STATUS[r.nota] || r.nota}${r.motivo ? ` (${r.motivo})` : ''}.`
+      : r.status === 'repetida' ? `Cada nota vale pontos uma vez só, e esta já está na sua conta. Situação: ${STATUS[r.nota] || r.nota}${r.nota === 'creditada' && r.pontos ? ` (${pts(r.pontos)})` : ''}${r.motivo ? ` (${r.motivo})` : ''}.`
       : r.motivo || r.mensagem || 'Não foi possível registrar a nota.';
     return `<div class="stack-lg fid fid-res ${ok || r.status === 'pendente' ? 'is-ok' : 'is-erro'}">
       <span class="fid-res-ico">${icon(ok || r.status === 'pendente' ? 'check' : 'alert')}</span>
@@ -346,7 +346,7 @@
   function msgOcr() {
     const v = S.valorNota;
     if (v) return `Achamos <b>${esc(brl(v))}</b> na nota. Confira e toque em Confirmar.`;
-    if (S.ocr === 'camera') return S.ocrDica || 'Aponte a câmera para o <b>VALOR A PAGAR</b>, bem de perto. Se demorar, toque em <b>Ler agora</b> ou tire uma foto.';
+    if (S.ocr === 'camera') return S.ocrDica || 'Enquadre o fim da nota, do <b>SUBTOTAL</b> até a <b>forma de pagamento</b> (cartão, Pix…). Se demorar, toque em <b>Ler agora</b> ou tire uma foto.';
     if (S.ocr === 'capturando') return 'Lendo a imagem com calma… segure a nota parada.';
     if (S.ocr === 'foto') return `Lendo a foto… (${S.ocrPasso || 1} de ${S.ocrPassos || 4})`;
     if (S.ocr === 'lendo') return 'Procurando o valor na nota…';
@@ -482,7 +482,16 @@
             return ir('resultado');
           }
         }
-        // 2) Sem a conferência automática: o valor vem da foto/câmera, o cliente confere e a equipe aprova.
+        // 2) Sem a conferência automática: antes de pedir o valor, confere se a nota já foi lida.
+        if (store.fidNotaSituacao) {
+          corpo().innerHTML = '<div class="fid-carregando"><span class="dot"></span><p>Conferindo a nota…</p></div>';
+          const s = await store.fidNotaSituacao({ cpf: S.cpf, qr: t });
+          if (s.status !== 'nova') {
+            S.resultado = s.status === 'inativo' ? { status: 'erro', mensagem: 'O programa está pausado no momento.' } : s;
+            return ir('resultado');
+          }
+        }
+        // O valor vem da foto/câmera, o cliente confere e a equipe aprova.
         S.qr = t;
         S.valorNota = F.valorDoQr ? F.valorDoQr(t) : null;
         S.ocr = S.valorNota ? 'qr' : 'lendo';
@@ -541,7 +550,7 @@
       aviso: (a) => {
         if (!naTelaDoValor(qr)) return;
         if (a === 'camera' && pararCam) { S.temLanterna = pararCam.temLanterna(); return mostrarOcr(); }
-        if (a === 'carregando' && S.ocr === 'camera') { S.ocrDica = 'Preparando a leitura… já pode apontar para o <b>VALOR A PAGAR</b>.'; return mostrarOcr(); }
+        if (a === 'carregando' && S.ocr === 'camera') { S.ocrDica = 'Preparando a leitura… já pode enquadrar o fim da nota, do <b>SUBTOTAL</b> até a forma de pagamento.'; return mostrarOcr(); }
         if (a === 'lendo' && S.ocr === 'camera') { S.ocrDica = null; return mostrarOcr(); }
         if (a === 'sem-camera' || a === 'sem-ocr') { pararOcr(); S.ocr = 'falhou'; mostrarOcr(); }
       },
@@ -558,7 +567,7 @@
     if (!naTelaDoValor(qr) || S.valorNota) return;
     if (v) return achouValor(v);
     S.ocr = 'camera';
-    S.ocrDica = 'Ainda não deu. Chegue mais perto do <b>VALOR A PAGAR</b>, deixe a nota reta e acenda a luz — ou tire uma foto.';
+    S.ocrDica = 'Ainda não deu. Deixe a nota reta e parada, com o total e a forma de pagamento na moldura, e acenda a luz — ou tire uma foto.';
     mostrarOcr();
   }
   async function alternarLanterna() {
