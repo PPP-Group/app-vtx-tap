@@ -1039,6 +1039,36 @@
     if (mesa) atualizarSessao();
   }
 
+  /* ---------------- Entrada: mesa ou delivery ----------------
+     Link aberto sem mesa e sem plaquinha (ex.: pelo Instagram) num restaurante com delivery:
+     pergunta antes se a pessoa está no restaurante ou quer pedir para entrega. */
+  const ENTRADA = 'nfc-entrada';
+  function entrada() {
+    const el = $('#entrada');
+    const p = new URLSearchParams(location.search);
+    const temDelivery = !!(live.plano && live.plano.servicos && live.plano.servicos.delivery);
+    let escolheu = null;
+    try { escolheu = sessionStorage.getItem(ENTRADA); } catch {}
+    if (mesa || tag || !temDelivery || escolheu === 'mesa' || p.has('fidelidade') || p.has('indicacao')) return;
+    $('#entradaTitulo').textContent = R.nome || 'Bem-vindo';
+    const logo = $('#heroLogo');
+    $('#entradaLogo').innerHTML = logo ? logo.innerHTML : '';
+    $('#entradaLogo').className = logo ? logo.className.replace('hero-logo', 'entrada-logo') : 'entrada-logo';
+    el.querySelectorAll('[data-ico]').forEach((s) => (s.innerHTML = icon(s.dataset.ico)));
+    el.hidden = false;
+    document.body.classList.add('com-entrada');
+    el.querySelector('.entrada-box').focus();
+  }
+  $('#entrada').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-entrada="mesa"]');
+    if (!b) return;
+    try { sessionStorage.setItem(ENTRADA, 'mesa'); } catch {}
+    $('#entrada').hidden = true;
+    document.body.classList.remove('com-entrada');
+    const campo = $('#tableInput');
+    if (campo && !$('#tablePicker').hidden) campo.focus();
+  });
+
   async function resolverTag() {
     if (!tag) return;
     try {
@@ -1070,6 +1100,7 @@
       boot();
       renderTiles();
       renderInfo();
+      entrada();
       setInterval(renderTop, 60e3);
       if (live.modulos && live.modulos.fidelidade && window.Fidelidade) {
         Fidelidade.iniciar({ store, slug: cfg.backend.slug, nomeRestaurante: R.nome })

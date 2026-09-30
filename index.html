@@ -22,6 +22,22 @@
   </script>
 </head>
 <body class="cliente">
+  <!-- Aberta sem mesa e sem plaquinha, num restaurante com delivery: pergunta se a pessoa está na mesa ou quer pedir para entrega. -->
+  <div class="entrada" id="entrada" role="dialog" aria-modal="true" aria-labelledby="entradaTitulo" hidden>
+    <div class="entrada-box" tabindex="-1">
+      <div class="entrada-logo" id="entradaLogo" aria-hidden="true"></div>
+      <h1 class="entrada-nome" id="entradaTitulo"></h1>
+      <p class="entrada-sub">Como você quer continuar?</p>
+      <button type="button" class="entrada-op" data-entrada="mesa">
+        <span class="entrada-ico" data-ico="bell"></span>
+        <span><b>Estou no restaurante</b><small>Cardápio, chamar o garçom e clube de pontos</small></span>
+      </button>
+      <a class="entrada-op entrada-op--dl" href="/delivery/" data-entrada="delivery">
+        <span class="entrada-ico" data-ico="bag"></span>
+        <span><b>Quero pedir delivery</b><small>Escolha no cardápio e receba em casa</small></span>
+      </a>
+    </div>
+  </div>
   <div class="app">
     <header class="hero">
       <div class="hero-cover" id="heroCover">
