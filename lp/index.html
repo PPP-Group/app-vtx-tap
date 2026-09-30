@@ -114,6 +114,17 @@
   .op-top { display: flex; justify-content: space-between; align-items: baseline; gap: 4px 12px; flex-wrap: wrap; }
   .op b { font-weight: 600; }
   .op small { color: var(--muted); font-size: 13.5px; overflow-wrap: anywhere; }
+  .placas { display: grid; gap: 10px; grid-template-columns: minmax(0, 1fr); }
+  @media (min-width: 560px) { .placas { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  .placa-op { position: relative; display: grid; gap: 6px; align-content: start; padding: 12px; border-radius: 16px; border: 1.5px solid var(--line); cursor: pointer; min-width: 0; transition: border-color .15s, background-color .15s; }
+  .placa-op:hover { border-color: var(--roxo); }
+  .placa-op:has(input:checked) { border-color: var(--roxo); background: var(--roxo-soft); }
+  .placa-op:has(input:focus-visible) { outline: 3px solid var(--roxo); outline-offset: 2px; }
+  .placa-op input { position: absolute; top: 10px; right: 10px; width: 20px; height: 20px; margin: 0; accent-color: var(--roxo); z-index: 1; }
+  .placa-op img { width: 100%; height: auto; margin-bottom: 4px; border-radius: 5px; box-shadow: 0 6px 18px rgba(20, 11, 51, .18); }
+  .placa-op b { font-weight: 600; }
+  .placa-op small { color: var(--muted); font-size: 13px; }
+  .placa-op .preco { font-family: var(--mono); font-weight: 600; font-size: 14px; color: var(--roxo-ink); white-space: nowrap; }
   .op .preco { font-family: var(--mono); font-weight: 600; font-size: 14px; color: var(--roxo-ink); white-space: nowrap; }
   code { font-family: var(--mono); font-size: .92em; overflow-wrap: anywhere; }
 
@@ -236,11 +247,19 @@
 
         <div class="bloco">
           <div class="bloco-h"><h3>Plaquinhas <span class="tipo tipo--unico">Pagamento único</span></h3></div>
-          <div class="opcoes">
-            <label class="op"><input type="radio" name="placa" id="plPadrao" value="padrao" checked><span class="op-txt"><span class="op-top"><b>Padrão</b><span class="preco" id="precoPadrao"></span></span>
-              <small>Arte VTX Tap com o número da mesa, NFC e QR Code. Quanto mais plaquinhas, menor o preço de cada uma.</small></span></label>
-            <label class="op"><input type="radio" name="placa" id="plPerso" value="personalizada"><span class="op-txt"><span class="op-top"><b>Personalizada</b><span class="preco">Sob consulta</span></span>
-              <small>Com a logo e as cores do restaurante. O valor depende da arte, do material e da quantidade.</small></span></label>
+          <div class="placas" role="radiogroup" aria-label="Modelo da plaquinha">
+            <label class="placa-op"><input type="radio" name="placa" id="plPadrao" value="padrao" checked>
+              <img src="/assets/img/placas/placa-padrao.webp" width="1200" height="757" alt="Plaquinha padrão: QR Code com a logo da VTX Tap à esquerda e, à direita, o ícone de NFC com Aproxime o celular">
+              <span class="op-top"><b>Padrão</b><span class="preco" id="precoPadrao"></span></span>
+              <small>Tamanho de cartão de crédito, com NFC e QR Code. Logo da VTX Tap no meio do QR.</small></label>
+            <label class="placa-op"><input type="radio" name="placa" id="plBasica" value="basica">
+              <img src="/assets/img/placas/placa-personalizada-basica.webp" width="1200" height="757" alt="Plaquinha personalizada básica: a logo do restaurante no meio do QR e os detalhes na cor do restaurante">
+              <span class="op-top"><b>Personalizada básica</b><span class="preco" id="precoBasica"></span></span>
+              <small>Você envia a logo: ela vai no meio do QR, e os detalhes saem na cor do restaurante. R$ 20 a mais por plaquinha.</small></label>
+            <label class="placa-op"><input type="radio" name="placa" id="plDemanda" value="demanda">
+              <img src="/assets/img/placas/placa-sob-demanda.webp" width="1200" height="757" alt="Exemplo de plaquinha sob demanda, com arte própria do restaurante em fundo verde e dourado">
+              <span class="op-top"><b>Personalizada sob demanda</b><span class="preco">Sob consulta</span></span>
+              <small>Você manda a arte ou conta como quer. Nosso time avalia e faz o orçamento. Imagem ilustrativa.</small></label>
           </div>
           <div class="bloco-h"><label for="placasNum" class="dica">Quantidade de plaquinhas (uma por mesa, ou mais se quiser duas em mesas grandes)</label></div>
           <div class="qtd">
@@ -332,11 +351,11 @@
       </div>
       <div class="tabela-wrap">
         <table>
-          <thead><tr><th>Plaquinha padrão (NFC + QR Code)</th><th class="v">Valor único por plaquinha</th></tr></thead>
+          <thead><tr><th>Plaquinhas (valor único, por unidade)</th><th class="v">Padrão</th><th class="v">Personalizada básica</th></tr></thead>
           <tbody id="tabPlacas"></tbody>
         </table>
       </div>
-      <p class="muted">A implantação inclui o cadastro do restaurante, o cardápio montado, as mesas e áreas, a instalação das plaquinhas no local e 1 hora de treinamento da equipe. Plaquinha personalizada, com a logo do restaurante: sob consulta.</p>
+      <p class="muted">A implantação inclui o cadastro do restaurante, o cardápio montado, as mesas e áreas, a instalação das plaquinhas no local e 1 hora de treinamento da equipe. A personalizada básica usa a logo e a cor do restaurante; a sob demanda segue a arte que você mandar.</p>
     </div>
 
     <div class="grupo-tab">
@@ -394,6 +413,8 @@
       { de: 100, ate: Infinity, valor: 42 },
     ];
     const precoPlaca = (q) => FAIXAS.find((f) => q >= f.de && q <= f.ate).valor;
+    // Personalizada básica: o preço da padrão + R$ 20 por plaquinha. Sob demanda: orçamento.
+    const PLACA_BASICA = 20;
     function implantacao(m) {
       if (m <= 20) return { valor: 590, porte: 'até 20 mesas' };
       if (m <= 50) return { valor: 890, porte: '21 a 50 mesas' };
@@ -402,8 +423,8 @@
     const linha = (dt, dd, cls = '') => `<div class="linha ${cls}"><dt>${dt}</dt><dd>${dd}</dd></div>`;
     const faixaTxt = (f) => (f.ate === Infinity ? `${f.de} ou mais` : `${f.de} a ${f.ate}`);
 
-    $('tabPlacas').innerHTML = FAIXAS.map((f) => `<tr><td>${faixaTxt(f)} plaquinhas</td><td class="v">${brl(f.valor)} cada</td></tr>`).join('')
-      + '<tr><td>Personalizada, com a logo do restaurante</td><td class="v">Sob consulta</td></tr>';
+    $('tabPlacas').innerHTML = FAIXAS.map((f) => `<tr><td>${faixaTxt(f)} plaquinhas</td><td class="v">${brl(f.valor)}</td><td class="v">${brl(f.valor + PLACA_BASICA)}</td></tr>`).join('')
+      + '<tr><td>Personalizada sob demanda<small>Arte do restaurante, avaliada pelo nosso time.</small></td><td class="v" colspan="2">Sob consulta</td></tr>';
 
     let placasManual = false;
     function calcular() {
@@ -418,6 +439,8 @@
       const pu = precoPlaca(q);
       $('porte').textContent = `Implantação: ${imp.porte}`;
       $('precoPadrao').textContent = `${brl(pu)} cada`;
+      $('precoBasica').textContent = `${brl(pu + PLACA_BASICA)} cada`;
+      const puPlaca = placa === 'basica' ? pu + PLACA_BASICA : pu;
 
       // Pagamento único
       const u = [];
@@ -431,16 +454,16 @@
         totU += impTotal;
       }
       let totPlacas = 0;
-      if (placa === 'padrao') {
-        totPlacas = q * pu;
-        u.push(linha(`${q} plaquinhas padrão × ${brl(pu)}`, brl(totPlacas)));
+      if (placa !== 'demanda') {
+        totPlacas = q * puPlaca;
+        u.push(linha(`${q} plaquinhas ${placa === 'basica' ? 'personalizadas básicas' : 'padrão'} × ${brl(puPlaca)}`, brl(totPlacas)));
         totU += totPlacas;
       } else {
-        u.push(linha(`${q} plaquinhas personalizadas`, '<span class="consulta">sob consulta</span>'));
+        u.push(linha(`${q} plaquinhas sob demanda`, '<span class="consulta">sob consulta</span>'));
       }
       if (dom !== 'sub') { u.push(linha('Configuração do domínio próprio', brl(PRECO.domSetup))); totU += PRECO.domSetup; }
       $('lnUnico').innerHTML = u.join('');
-      $('totUnico').textContent = brl(totU) + (placa === 'padrao' ? '' : ' + plaquinhas');
+      $('totUnico').textContent = brl(totU) + (placa !== 'demanda' ? '' : ' + plaquinhas');
 
       // Todo mês
       const mm = [];
@@ -463,22 +486,22 @@
         : cb.economia ? `Desconto aplicado: ${brl(cb.economia)} a menos por mês.`
         : 'Dois serviços juntos têm 10% de desconto; três, 15%; os quatro saem por ' + brl(Precos.TODOS) + '.';
 
-      if (INTERNO) interno({ q, pu, placa, totPlacas, impTotal, totM, dom, meses });
+      if (INTERNO) interno({ q, pu: puPlaca, placa, totPlacas, impTotal, totM, dom, meses });
     }
 
     // Visão interna: custo e lucro.
     function interno({ q, pu, placa, totPlacas, impTotal, totM, dom, meses }) {
       const custo = Math.max(+$('custoPlaca').value || 0, 0);
       const infra = Math.max(+$('custoInfra').value || 0, 0);
-      const custoPlacas = placa === 'padrao' ? q * custo : 0;
+      const custoPlacas = placa !== 'demanda' ? q * custo : 0;
       const lucroPlacas = totPlacas - custoPlacas;
       const regDom = dom === 'registro' ? 40 : 0;
       const lucroMes = totM - infra;
       const lucroEntrada = lucroPlacas + impTotal + (dom !== 'sub' ? PRECO.domSetup : 0);
       $('lnInterno').innerHTML = [
-        placa === 'padrao' ? linha(`Plaquinhas: custo ${q} × ${brl(custo)}`, brl(custoPlacas)) : linha('Plaquinhas personalizadas', 'orçar: custo × 2,5'),
-        placa === 'padrao' ? linha(`Margem da plaquinha (${brl(pu)} ÷ ${brl(custo)})`, custo ? (pu / custo).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + 'x' : '—') : '',
-        placa === 'padrao' ? linha('Lucro nas plaquinhas', brl(lucroPlacas)) : '',
+        placa !== 'demanda' ? linha(`Plaquinhas: custo ${q} × ${brl(custo)}`, brl(custoPlacas)) : linha('Plaquinhas sob demanda', 'orçar: custo × 2,5'),
+        placa !== 'demanda' ? linha(`Margem da plaquinha (${brl(pu)} ÷ ${brl(custo)})`, custo ? (pu / custo).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + 'x' : '—') : '',
+        placa !== 'demanda' ? linha('Lucro nas plaquinhas', brl(lucroPlacas)) : '',
         linha('Implantação (tempo, sem custo direto)', brl(impTotal)),
         linha('Lucro no pagamento único', brl(lucroEntrada), 'forte'),
         linha(`Lucro por mês (mensalidade − ${brl(infra)} de servidor)`, brl(lucroMes), 'forte'),

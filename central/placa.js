@@ -52,14 +52,22 @@
   const LOGO_VTX = '/admin/icons/icon-512.png';          // marca quadrada (miolo do QR)
   const LOGO_VTX_TEXTO = '/assets/img/vtx-tap-escuro.png'; // logo com texto (ao lado do @)
 
-  /* Ícone de NFC: círculo com as ondas e o celular chegando perto. */
+  /* Ícone de NFC: círculo com as ondas e uma mão segurando o celular, chegando perto. */
+  // Dedo/polegar: cápsula com contorno (linha escura grossa e linha branca por cima).
+  const capsula = (d, w) => `<path d="${d}" stroke="${TINTA}" stroke-width="${w + 4.8}" fill="none"/><path d="${d}" stroke="#fff" stroke-width="${w}" fill="none"/>`;
   const NFC = (pal) => ({
     w: 64, h: 48,
-    svg: `<g fill="none" stroke="${TINTA}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-      <circle cx="17" cy="19" r="13" stroke="${pal.claro}" fill="${pal.fundo}"/>
-      <path d="M13 13.5a8 8 0 0 1 0 11" stroke="${pal.forte}"/><path d="M17.5 10.5a12.5 12.5 0 0 1 0 17" stroke="${pal.forte}"/><path d="M9 16a4 4 0 0 1 0 6" stroke="${pal.forte}"/>
-      <g transform="rotate(14 42 22)"><rect x="32" y="3" width="19" height="36" rx="3.5" fill="#fff"/><path d="M39 6.5h5"/><circle cx="41.5" cy="34.5" r="1.2" fill="${TINTA}" stroke="none"/></g>
-      <path d="M43 47c0-4-2-7-4.5-10.5-1.2-1.8.8-3.8 2.6-2.5L46 38V26.5c0-1.6 2.2-2 2.8-.5l6 13c1 2.4 1 5-.2 8" fill="#fff"/>
+    svg: `<g fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="17" cy="19" r="13" stroke="${pal.claro}" stroke-width="2.4" fill="${pal.fundo}"/>
+      <g stroke="${pal.forte}" stroke-width="2.4"><path d="M13 13.5a8 8 0 0 1 0 11"/><path d="M17.5 10.5a12.5 12.5 0 0 1 0 17"/><path d="M9 16a4 4 0 0 1 0 6"/></g>
+      <g transform="translate(0 2.5) rotate(16 44 22)">
+        <rect x="34" y="1.5" width="18" height="31" rx="3.5" fill="#fff" stroke="${TINTA}" stroke-width="2.4"/>
+        <path d="M40 5h6" stroke="${TINTA}" stroke-width="2.4"/>
+        <path d="M39 46.5C38 41.5 38.5 36.5 41.5 32.5L50 29.5C55 30.5 57.5 34.5 57.5 40L57.5 46.5z" fill="#fff" stroke="none"/>
+        <path d="M39 46.5C38 41.5 38.5 36.5 41.5 32.5M50 29.5C55 30.5 57.5 34.5 57.5 40L57.5 46.5" stroke="${TINTA}" stroke-width="2.4"/>
+        ${capsula('M49 12.5H55', 3.8)}${capsula('M49 18.3H55.8', 3.8)}${capsula('M49 24.1H55.6', 3.8)}
+        ${capsula('M40 36Q36.6 30.5 37.2 23.5', 3.8)}
+      </g>
     </g>`,
   });
   const NFC_W = 64;
