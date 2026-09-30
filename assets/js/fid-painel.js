@@ -207,7 +207,7 @@
         <small>Lida ${dataHora(n.lida_em)}${n.lida_por && n.lida_por !== 'Cliente' ? ` por ${esc(n.lida_por)}` : ''} · nota nº ${num(+n.chave.slice(25, 34))}${n.valor_informado ? ` · cliente disse ${brl(n.valor_informado)}` : ''}</small>
         ${url ? `<a class="link fp-sefaz" href="${esc(url)}" target="_blank" rel="noopener">${icon('external')} Abrir na SEFAZ</a>` : '<small class="muted">Chave digitada: confira pela chave no portal da SEFAZ.</small>'}</div>
       <form class="fp-aprovar" data-fp-aprovar="${esc(n.chave)}" novalidate>
-        <label class="field"><span>Valor total</span><input class="input mono" name="valor" inputmode="decimal" placeholder="0,00" value="${n.valor_informado ? String(n.valor_informado).replace('.', ',') : ''}" required></label>
+        <label class="field"><span>Valor total</span><input class="input mono" name="valor" inputmode="decimal" placeholder="0,00" value="${n.valor_informado ? Number(n.valor_informado).toFixed(2).replace('.', ',') : ''}" required></label>
         ${campoData('data', mesDaChave(n.chave), 'Data da compra')}
         <button type="submit" class="btn btn-cobalt btn-sm">${icon('check')} Aprovar</button>
         <button type="button" class="btn btn-quiet btn-sm" data-fp-recusar="${esc(n.chave)}">Recusar</button>
@@ -382,12 +382,16 @@
       </div>
       <div class="aj-col">
         <section class="panel stack">
-          <div class="set-row fp-row"><div><h3>Indicação</h3><p>O cliente convida alguém com o código dele. Os pontos entram na primeira compra de quem foi indicado.</p></div>
+          <div class="set-row fp-row"><div><h3>Indicação</h3><p>O cliente convida alguém com o código dele e os dois ganham pontos.</p></div>
             <label class="switch"><input type="checkbox" name="indAtivo" ${ind.ativo ? 'checked' : ''} aria-label="Indicação"><span></span></label></div>
           <div class="fp-manual-row">
             <label class="field"><span>Quem indica ganha</span><input class="input mono" name="indIndicador" type="number" min="0" max="100000" value="${esc(ind.indicador || 0)}"></label>
             <label class="field"><span>Quem foi indicado ganha</span><input class="input mono" name="indIndicado" type="number" min="0" max="100000" value="${esc(ind.indicado || 0)}"></label>
           </div>
+          <label class="field"><span>Os pontos entram</span><select class="input" name="indQuando">
+            <option value="cadastro" ${ind.quando !== 'compra' ? 'selected' : ''}>Assim que o indicado se cadastra</option>
+            <option value="compra" ${ind.quando === 'compra' ? 'selected' : ''}>Na primeira compra do indicado (mais seguro)</option>
+          </select></label>
         </section>
         <section class="panel stack">
           <div class="set-row fp-row"><div><h3>Lançamento manual</h3><p>Deixa a equipe lançar compras sem nota (ex.: delivery) na ficha do cliente. Fica registrado quem lançou.</p></div>
@@ -486,7 +490,7 @@
       return x || '';
     };
     r.inicio = di(v('inicio').value, 'Vale para compras desde') || null;
-    r.indicacao = { ativo: v('indAtivo').checked, indicador: Math.round(+v('indIndicador').value || 0), indicado: Math.round(+v('indIndicado').value || 0) };
+    r.indicacao = { ativo: v('indAtivo').checked, indicador: Math.round(+v('indIndicador').value || 0), indicado: Math.round(+v('indIndicado').value || 0), quando: v('indQuando').value === 'compra' ? 'compra' : 'cadastro' };
     r.manual = v('manual').checked;
     r.regulamento = v('regulamento').value.trim();
     r.boosts = [...f.querySelectorAll('.fp-boost')].map((el, i) => {

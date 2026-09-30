@@ -980,7 +980,7 @@ language sql stable security definer set search_path = public as $$
   select jsonb_build_object(
     'ativo', false, 'nome', 'Clube de pontos', 'pontosPorReal', 1, 'boosts', '[]'::jsonb,
     'cnpjs', '[]'::jsonb, 'prazoDias', 7, 'inicio', null, 'manual', false, 'regulamento', '',
-    'fuso', 'America/Sao_Paulo', 'indicacao', jsonb_build_object('ativo', true, 'indicador', 50, 'indicado', 20),
+    'fuso', 'America/Sao_Paulo', 'indicacao', jsonb_build_object('ativo', true, 'indicador', 50, 'indicado', 20, 'quando', 'cadastro'),
     'niveis', jsonb_build_object('ativo', false, 'base', 'sempre', 'meses', 12, 'lista', '[]'::jsonb)
   ) || coalesce((select fidelidade from public.restaurantes where id = p_restaurante), '{}'::jsonb);
 $$;
@@ -1330,7 +1330,8 @@ begin
   end if;
   if p_ind > 0 and exists (select 1 from public.fid_clientes where restaurante_id = p_restaurante and cpf = cli.indicado_por) then
     perform public.fid_mover(p_restaurante, cli.indicado_por, 'indicacao', p_ind,
-      'Indicação: ' || split_part(cli.nome, ' ', 1) || ' fez a primeira compra');
+      'Indicação: ' || split_part(cli.nome, ' ', 1)
+        || case when c -> 'indicacao' ->> 'quando' = 'compra' then ' fez a primeira compra' else ' entrou no clube' end);
   end if;
 end $$;
 
@@ -1455,7 +1456,8 @@ begin
     'regulamento', left(coalesce(c ->> 'regulamento', ''), 4000),
     'indicacao', case when coalesce(c -> 'indicacao' ->> 'ativo', '') = 'true' then jsonb_build_object('ativo', true,
         'indicador', least(greatest(public.num_ou(c -> 'indicacao' ->> 'indicador', 0), 0), 100000)::int,
-        'indicado', least(greatest(public.num_ou(c -> 'indicacao' ->> 'indicado', 0), 0), 100000)::int)
+        'indicado', least(greatest(public.num_ou(c -> 'indicacao' ->> 'indicado', 0), 0), 100000)::int,
+        'quando', case when c -> 'indicacao' ->> 'quando' = 'compra' then 'compra' else 'cadastro' end)
       else jsonb_build_object('ativo', false) end,
     'boosts', coalesce((select jsonb_agg(jsonb_build_object('nome', b ->> 'nome', 'mult', least(greatest(public.num_ou(b ->> 'mult', 1), 1), 10),
           'dias', case when jsonb_typeof(b -> 'dias') = 'array' then b -> 'dias' else '[]'::jsonb end,
@@ -1558,6 +1560,10 @@ begin
   values (p_restaurante, v_cpf, v_nome, v_email, v_tel, v_codigo, v_indicador, coalesce(p_marketing, false));
   insert into private.fid_pins (restaurante_id, cpf, pin_hash)
   values (p_restaurante, v_cpf, extensions.crypt(p_pin, extensions.gen_salt('bf')));
+  -- Indicação paga no cadastro (padrão) ou só na primeira compra, conforme as regras.
+  if coalesce(c -> 'indicacao' ->> 'quando', '') <> 'compra' then
+    perform public.fid_bonus_indicacao(p_restaurante, v_cpf);
+  end if;
   -- Notas com este CPF que a equipe já importou entram na hora.
   perform public.fid_auto_creditar(x.chave) from public.fid_xml x
    where x.restaurante_id = p_restaurante and x.cpf = v_cpf;

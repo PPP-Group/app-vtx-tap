@@ -46,7 +46,7 @@
   /* ---------- Fidelidade: regras puras (as mesmas de public.fid_* no schema.sql) ---------- */
   const FID_PADRAO = {
     ativo: false, nome: 'Clube de pontos', pontosPorReal: 1, boosts: [], cnpjs: [], prazoDias: 7, inicio: null,
-    manual: false, regulamento: '', fuso: 'America/Sao_Paulo', indicacao: { ativo: true, indicador: 50, indicado: 20 },
+    manual: false, regulamento: '', fuso: 'America/Sao_Paulo', indicacao: { ativo: true, indicador: 50, indicado: 20, quando: 'cadastro' },
     niveis: { ativo: false, base: 'sempre', meses: 12, lista: [] },
   };
   const soDigitos = (s) => String(s || '').replace(/\D/g, '');
@@ -75,6 +75,16 @@
   }
   // Chave de acesso dentro do texto do QR (URL da SEFAZ) ou digitada com espaços.
   const chaveDoTexto = (t) => (String(t || '').replace(/[\s.-]/g, '').match(/\d{44}/) || [])[0] || null;
+  // Valor total da nota, quando o QR traz (NFC-e emitida em contingência: chave|versão|amb|dia|vNF|...).
+  // A NFC-e emitida online não traz o valor no QR.
+  const valorDoQr = (t) => {
+    const m = String(t || '').match(/[?&]p=([^&#]+)/);
+    if (!m) return null;
+    const p = decodeURIComponent(m[1]).split('|');
+    if (p.length < 8 || !/^\d+(\.\d{1,2})?$/.test(p[4] || '')) return null;
+    const v = +p[4];
+    return v > 0 && v < 1e5 ? v : null;
+  };
   const minutos = (hhmm) => (/^\d{1,2}:\d{2}$/.test(hhmm || '') ? +hhmm.split(':')[0] * 60 + +hhmm.split(':')[1] : null);
   const diaIso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   // Maior multiplicador que vale no momento (hora local do aparelho).
@@ -338,7 +348,7 @@
       c.bonus_indicacao = true;
       if (+r.indicado > 0) mover(db, cpf, 'boas_vindas', +r.indicado, { descricao: 'Bônus de boas-vindas (indicação)' });
       if (+r.indicador > 0 && cliDe(db, c.indicado_por)) {
-        mover(db, c.indicado_por, 'indicacao', +r.indicador, { descricao: `Indicação: ${c.nome.split(' ')[0]} fez a primeira compra` });
+        mover(db, c.indicado_por, 'indicacao', +r.indicador, { descricao: `Indicação: ${c.nome.split(' ')[0]} ${r.quando === 'compra' ? 'fez a primeira compra' : 'entrou no clube'}` });
       }
     }
     function creditar(db, n, valor, emitida, por) {
@@ -625,7 +635,7 @@
         const hoje = diaIso(new Date());
         return {
           ativo: true, nome: r.nome || 'Clube de pontos', pontosPorReal: +r.pontosPorReal || 0, prazoDias: prazo(db), regulamento: r.regulamento || '',
-          indicacao: r.indicacao && r.indicacao.ativo ? { ativo: true, indicador: +r.indicacao.indicador || 0, indicado: +r.indicacao.indicado || 0 } : { ativo: false },
+          indicacao: r.indicacao && r.indicacao.ativo ? { ativo: true, indicador: +r.indicacao.indicador || 0, indicado: +r.indicacao.indicado || 0, quando: r.indicacao.quando === 'compra' ? 'compra' : 'cadastro' } : { ativo: false },
           boosts: (r.boosts || []).filter((b) => b.ativo !== false && +b.mult > 1 && !(b.fim && b.fim < hoje))
             .map(({ nome, mult, dias, de, ate, inicio: ini, fim }) => ({ nome, mult: +mult, dias: dias || [], de: de || '', ate: ate || '', inicio: ini || '', fim: fim || '' })),
           niveis: fidNiveis(r).length ? { ativo: true, base: r.niveis.base === 'meses' ? 'meses' : 'sempre', meses: Math.min(Math.max(+r.niveis.meses || 12, 1), 60), lista: fidNiveis(r) } : { ativo: false },
@@ -675,6 +685,7 @@
         while (f.clientes.some((x) => x.codigo === codigo));
         f.clientes.push({ cpf, nome, email, telefone, pontos: 0, codigo, indicado_por, bonus_indicacao: false, marketing: !!marketing, criado_em: nowIso() });
         f.pins[cpf] = await hashTxt(cpf + ':' + pin);
+        if (regras(db).indicacao.quando !== 'compra') bonusIndicacao(db, cpf);
         f.xml.filter((x) => x.cpf === cpf).forEach((x) => autoCreditar(db, x.chave));
         const token = uid();
         f.sessoes[token] = cpf;
@@ -1394,7 +1405,7 @@
     padrao: (demo) => mergeSettings(null, demo),
     precoPlano,
     // Regras do programa de fidelidade usadas também pelas telas (validação e simulação).
-    fid: { PADRAO: FID_PADRAO, cpfValido, chaveValida, chaveDoTexto, boost: fidBoost, calcular: fidCalcular, niveis: fidNiveis, nivelDe: fidNivelDe, soDigitos },
+    fid: { PADRAO: FID_PADRAO, cpfValido, chaveValida, chaveDoTexto, valorDoQr, boost: fidBoost, calcular: fidCalcular, niveis: fidNiveis, nivelDe: fidNivelDe, soDigitos },
     create() {
       const b = cfg.backend || {};
       if (b.tipo === 'supabase' && b.supabaseUrl && b.supabaseAnonKey) return SupabaseAdapter();

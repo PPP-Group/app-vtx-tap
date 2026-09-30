@@ -84,7 +84,7 @@
   const corpo = () => $('#fidBody');
   function render() {
     const html = {
-      inicio: tInicio, cadastro: tCadastro, conta: tConta, pin: tPin, resultado: tResultado,
+      inicio: tInicio, cadastro: tCadastro, conta: tConta, pin: tPin, resultado: tResultado, valor: tValor,
       resgatar: tResgatar, codigo: tCodigo, indicar: tIndicar, regulamento: tRegulamento, niveis: tNiveis,
     }[S.tela]();
     corpo().innerHTML = html;
@@ -163,7 +163,7 @@
       <div class="plate fid-hero"><span class="rivet r1"></span><span class="rivet r2"></span>
         <small>Programa de fidelidade</small><b>${esc(prog.nome)}</b><p>Ganhe ${esc(regraTexto())} e troque por prêmios.</p></div>
       ${boosts()}
-      ${S.indicador ? `<p class="note">${icon('users')}<span>Você foi indicado por <b>${esc(S.indicador)}</b>. Cadastre-se e ganhe pontos de boas-vindas na primeira compra.</span></p>` : ''}
+      ${S.indicador ? `<p class="note">${icon('users')}<span>Você foi indicado por <b>${esc(S.indicador)}</b>. Cadastre-se e ganhe pontos de boas-vindas${prog.indicacao && prog.indicacao.quando === 'compra' ? ' na primeira compra' : ''}.</span></p>` : ''}
       <form class="stack" id="fidCpfForm" novalidate>
         <label class="field"><span>Seu CPF</span><input class="input mono" id="fidCpf" inputmode="numeric" autocomplete="off" maxlength="14" placeholder="000.000.000-00" data-foco value="${esc(fmtCpf(S.cpf || ''))}"></label>
         <p class="form-error" id="fidErro" role="alert">${esc(S.aviso || '')}</p>
@@ -278,6 +278,16 @@
     </div>`;
   }
 
+  function tValor() {
+    return `<form class="stack-lg fid" id="fidValorForm" novalidate>
+      <p>Nota lida! Para agilizar, digite o <b>valor total</b> que está impresso na nota.</p>
+      <label class="field"><span>Valor total da nota</span><input class="input mono" id="fidValor" inputmode="decimal" autocomplete="off" placeholder="0,00" data-foco></label>
+      <p class="form-error" id="fidErro" role="alert">${esc(S.aviso || '')}</p>
+      <button type="submit" class="btn btn-cobalt btn-block">${icon('check')} Enviar nota</button>
+      <button type="button" class="btn btn-quiet btn-block" data-fid-semvalor>Não sei o valor</button>
+    </form>`;
+  }
+
   function tResgatar() {
     const p = S.premio;
     return `<div class="stack-lg fid">
@@ -314,9 +324,10 @@
   function tIndicar() {
     const c = S.conta;
     const i = prog.indicacao;
-    const texto = `Entra no ${prog.nome} de ${nomeRest} com o meu código ${c.codigo}${i.indicado ? ` e ganha ${pts(i.indicado)} na primeira compra` : ''}: ${linkIndicacao()}`;
+    const naCompra = i.quando === 'compra';
+    const texto = `Entra no ${prog.nome} de ${nomeRest} com o meu código ${c.codigo}${i.indicado ? ` e ganha ${pts(i.indicado)} ${naCompra ? 'na primeira compra' : 'no cadastro'}` : ''}: ${linkIndicacao()}`;
     return `<div class="stack-lg fid">
-      <p>Quando alguém se cadastrar com o seu código e fizer a primeira compra com CPF na nota, ${i.indicador ? `você ganha <b>${pts(i.indicador)}</b>` : 'vocês dois ganham pontos'}${i.indicador && i.indicado ? ` e quem você indicou ganha <b>${pts(i.indicado)}</b>` : ''}.</p>
+      <p>Quando alguém se cadastrar com o seu código${naCompra ? ' e fizer a primeira compra com CPF na nota' : ''}, ${i.indicador ? `você ganha <b>${pts(i.indicador)}</b>` : 'vocês dois ganham pontos'}${i.indicador && i.indicado ? ` e quem você indicou ganha <b>${pts(i.indicado)}</b>` : ''}.</p>
       <div class="fid-cod fid-cod--ind"><span>Seu código</span><b class="mono">${esc(c.codigo)}</b></div>
       <p class="muted">${c.indicacoes ? `${c.indicacoes} ${c.indicacoes === 1 ? 'pessoa já se cadastrou' : 'pessoas já se cadastraram'} com o seu código.` : 'Ninguém usou o seu código ainda.'}</p>
       <a class="btn btn-cobalt btn-block" href="https://wa.me/?text=${encodeURIComponent(texto)}" target="_blank" rel="noopener">${icon('share')} Mandar no WhatsApp</a>
@@ -380,21 +391,35 @@
         const c = F.chaveDoTexto(t);
         return c && F.chaveValida(c) ? null : 'Este QR não é de uma nota fiscal. Procure o QR Code no fim da nota (NFC-e).';
       },
-      pronto: async (t) => {
-        corpo().innerHTML = '<div class="fid-carregando"><span class="dot"></span><p>Registrando a nota…</p></div>';
-        let r;
-        try {
-          r = await store.fidRegistrarNota({ cpf: S.cpf, qr: t });
-        } catch {
-          r = { status: 'erro', mensagem: 'Sem conexão. Confira a internet e leia a nota de novo.' };
-        }
-        if (r.status === 'sem_cadastro') return ir('cadastro');
-        S.resultado = r;
-        await atualizarConta();
-        ir('resultado');
+      pronto: (t) => {
+        // O QR da NFC-e emitida online não traz o valor: o cliente informa e a equipe só confere.
+        const v = F.valorDoQr ? F.valorDoQr(t) : null;
+        if (v) return enviarNota(t, v);
+        S.qr = t;
+        ir('valor');
       },
     });
   }
+
+  async function enviarNota(qr, valor) {
+    corpo().innerHTML = '<div class="fid-carregando"><span class="dot"></span><p>Registrando a nota…</p></div>';
+    let r;
+    try {
+      r = await store.fidRegistrarNota({ cpf: S.cpf, qr, valor: valor || null });
+    } catch {
+      r = { status: 'erro', mensagem: 'Sem conexão. Confira a internet e leia a nota de novo.' };
+    }
+    S.qr = null;
+    if (r.status === 'sem_cadastro') return ir('cadastro');
+    S.resultado = r;
+    await atualizarConta();
+    ir('resultado');
+  }
+  const valorDe = (t) => {
+    const s = String(t || '').trim().replace(/[^\d,.]/g, '');
+    const v = /,\d{1,2}$/.test(s) ? +s.replace(/\./g, '').replace(',', '.') : +s.replace(/,/g, '');
+    return Number.isFinite(v) ? Math.round(v * 100) / 100 : NaN;
+  };
 
   function onClick(e) {
     const t = e.target;
@@ -405,6 +430,7 @@
       return ir(irPara.dataset.fidIr);
     }
     if (t.closest('[data-fid-nota]')) return lerNota();
+    if (t.closest('[data-fid-semvalor]') && S.qr) return enviarNota(S.qr, null);
     const r = t.closest('[data-fid-resgatar]');
     if (r) {
       S.premio = (prog.premios || []).find((p) => p.id === r.dataset.fidResgatar);
@@ -460,6 +486,11 @@
         await atualizarConta();
         toast('Conta criada! Agora é só pedir CPF na nota e ler o QR Code aqui.', { tone: 'ok', ms: 5000 });
         ir('conta');
+      } else if (f.id === 'fidValorForm') {
+        const v = valorDe($('#fidValor').value);
+        if (!(v > 0 && v < 1e5)) return erro('Digite o valor total da nota. Ex.: 87,50');
+        if (!S.qr) return ir('conta');
+        await enviarNota(S.qr, v);
       } else if (f.id === 'fidPinForm') {
         const pin = $('#fidPin').value;
         if (!/^\d{4}$/.test(pin)) return erro('O PIN tem 4 números.');
