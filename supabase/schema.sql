@@ -329,6 +329,14 @@ language sql stable security definer set search_path = public as $$
 $$;
 revoke execute on function public.eu_admin() from public, anon;
 grant execute on function public.eu_admin() to authenticated;
+-- Quem está logado (o painel usa ao abrir a página para manter a sessão).
+create or replace function public.eu_membro() returns json
+language sql stable security definer set search_path = public as $$
+  select json_build_object('nome', nome, 'admin', admin, 'restaurante_id', restaurante_id)
+    from public.equipe_membros where user_id = auth.uid();
+$$;
+revoke execute on function public.eu_membro() from public, anon;
+grant execute on function public.eu_membro() to authenticated;
 drop policy if exists "equipe ve a equipe" on public.equipe_membros;
 create policy "equipe ve a equipe" on public.equipe_membros
   for select to authenticated using (restaurante_id = public.meu_restaurante());

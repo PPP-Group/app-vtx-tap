@@ -470,12 +470,23 @@
     const on = !!(r.sefaz && r.sefaz.ativo);
     const adm = !!(ctx.S.user && ctx.S.user.admin);
     const preco = window.Precos ? Precos.SEFAZ_NOTA : 0.25;
-    return `<section class="panel stack fp-sefaz">
-      <div class="set-row fp-row"><div><h3>Conferência automática na SEFAZ</h3>
-        <p>Cada nota lida é conferida na hora no site da SEFAZ: valor oficial, CPF e produtos. Os pontos entram sem a equipe aprovar e os produtos alimentam o ranking de mais pedidos.</p></div>
-        <label class="switch"><input type="checkbox" name="sefazAtivo" ${on ? 'checked' : ''} ${adm ? '' : 'disabled'} aria-label="Conferência automática na SEFAZ"><span></span></label></div>
-      <p class="note">${icon('receipt')}<span><b>${brl(preco)} por nota conferida</b>, somado à mensalidade no fim do mês. Sem limite: não para no meio do mês. O uso aparece em Ajustes → Plano.</span></p>
-      <p class="help">${on ? '' : 'Desligada: o cliente confirma o valor da nota e a equipe aprova em Fidelidade → Hoje (sem custo). '}${adm ? '' : 'Só o administrador liga ou desliga.'}${on && r.sefaz.em ? ` Ligada em ${new Date(r.sefaz.em).toLocaleDateString('pt-BR')}${r.sefaz.por ? ` por ${esc(r.sefaz.por)}` : ''}.` : ''}</p>
+    const quem = on && r.sefaz.em ? `Ligada em ${new Date(r.sefaz.em).toLocaleDateString('pt-BR')}${r.sefaz.por ? ` por ${esc(r.sefaz.por)}` : ''}. ` : '';
+    return `<section class="panel stack fp-conf" data-sefaz="${on ? 'on' : 'off'}">
+      <div class="fp-conf-head">
+        <div><h3>Conferência automática na SEFAZ</h3><p class="muted">Escolha como o valor das notas é conferido.</p></div>
+        <label class="switch"><input type="checkbox" name="sefazAtivo" ${on ? 'checked' : ''} ${adm ? '' : 'disabled'} aria-label="Conferência automática na SEFAZ"><span></span></label>
+      </div>
+      <div class="fp-conf-opcoes">
+        <div class="fp-conf-op" data-op="off">
+          <div class="fp-conf-op-top"><b>Desligada</b><span class="fp-conf-tag">Grátis</span></div>
+          <ul><li>O cliente confirma o valor (foto ou digitando).</li><li>A equipe aprova as notas em <b>Fidelidade → Hoje</b>.</li></ul>
+        </div>
+        <div class="fp-conf-op" data-op="on">
+          <div class="fp-conf-op-top"><b>Ligada</b><span class="fp-conf-tag">${brl(preco)} por nota</span></div>
+          <ul><li>Valor, CPF e produtos conferidos na hora no site da SEFAZ.</li><li>Os pontos entram sozinhos, sem a equipe aprovar.</li><li>Os produtos entram no ranking de mais pedidos.</li><li>Cobrado junto com a mensalidade. O uso aparece em <b>Ajustes → Plano</b>.</li></ul>
+        </div>
+      </div>
+      ${quem || !adm ? `<p class="help">${quem}${adm ? '' : 'Só o administrador liga ou desliga.'}</p>` : ''}
     </section>`;
   }
   function niveisForm(r) {
@@ -973,6 +984,7 @@
     if (t.closest('#fpRegras')) {
       marcarSujo();
       if (t.name === 'nvBase') $('.fp-meses').hidden = t.value !== 'meses';
+      if (t.name === 'sefazAtivo') $('.fp-conf').dataset.sefaz = t.checked ? 'on' : 'off';
     }
     if (t.matches('[data-fp-xml]')) {
       const files = [...(t.files || [])];

@@ -1650,12 +1650,14 @@
           if (!data.session) return null;
           // Confere no servidor: quem foi removido da equipe perde o acesso.
           const { data: u, error } = await sb.auth.getUser();
+          if (error && !(error.status >= 400 && error.status < 500)) throw error; // sem internet: mantém a sessão
           if (error || !u.user) {
             await sb.auth.signOut();
             return null;
           }
-          const { data: m } = await sb.from('equipe_membros').select('nome, admin').eq('user_id', u.user.id).maybeSingle();
-          if (!m) {
+          const { data: m, error: e2 } = await sb.rpc('eu_membro');
+          if (e2) throw e2; // falha de rede/servidor: não derruba a sessão
+          if (!m || (rid && m.restaurante_id !== rid)) {
             await sb.auth.signOut();
             return null;
           }
