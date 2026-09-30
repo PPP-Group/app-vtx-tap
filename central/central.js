@@ -34,8 +34,9 @@
   const tagUrl = (c) => (env.CENTRAL_HOST
     ? `https://${env.CENTRAL_HOST}/t/${c}`
     : new URL(`/central/t.html?c=${c}`, location.origin).href);
-  // Endereço do restaurante: subdomínio do domínio base (ou ?r= no teste local).
-  const siteDe = (r) => (BASE ? `https://${r.slug}.${BASE}/` : new URL(`/?r=${r.slug}`, location.origin).href);
+  // Endereço do restaurante: o domínio próprio no ar, senão o subdomínio do domínio base (ou ?r= no teste local).
+  const dominioDe = (r) => (r && r.dominios && r.dominios.status === 'ativo' ? r.dominios.dominio : '');
+  const siteDe = (r) => (dominioDe(r) ? `https://${dominioDe(r)}/` : BASE ? `https://${r.slug}.${BASE}/` : new URL(`/?r=${r.slug}`, location.origin).href);
   const siteCurto = (r) => siteDe(r).replace(/^https?:\/\//, '').replace(/\/$/, '');
   const slugOk = (v) => /^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$/.test(v) && !['tap', 'www', 'admin', 'api', 'app', 'central', 'mail', 'ftp', 'painel'].includes(v);
   const paraSlug = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
@@ -58,7 +59,8 @@
     await Placa.baixarPdf(lista.map((c) => ({ codigo: c, url: tagUrl(c), logo: logoDe(c), cor: restDaPlaca(c).cor || '' })), `${nomeArq(titulo)}.pdf`, { modelo: modeloPlaca });
   }
   // Painel da equipe do restaurante.
-  const painelDe = (r) => (BASE ? `https://${r.slug}.${BASE}/admin/` : new URL(`/admin/?r=${r.slug}`, location.origin).href);
+  const painelDe = (r) => (dominioDe(r) ? `https://${dominioDe(r)}/admin/` : BASE ? `https://${r.slug}.${BASE}/admin/` : new URL(`/admin/?r=${r.slug}`, location.origin).href);
+  const DOM_STATUS = { dns: 'aguardando o DNS', certificado: 'gerando o certificado HTTPS', ativo: 'no ar' };
   // Texto pronto para mandar ao restaurante (WhatsApp, e-mail).
   const textoAcesso = (r, senha) => [
     `*${r.nome}*`,
@@ -271,7 +273,7 @@
       },
       async sair() { await sb.auth.signOut(); },
       async listRestaurantes() {
-        return must(await sb.from('restaurantes').select('*').order('nome'));
+        return must(await sb.from('restaurantes').select('*, dominios(dominio, status)').order('nome'));
       },
       // Conferência na SEFAZ: notas por restaurante e total do mês (cobrado e custo estimado).
       async sefazUso() {
@@ -644,6 +646,7 @@
           <div><h3>${esc(r.nome)}</h3>
             <p class="rcard-links"><a href="${esc(siteDe(r))}" target="_blank" rel="noopener" class="mono">${esc(siteCurto(r))}</a>
               <a href="${esc(painelDe(r))}" target="_blank" rel="noopener" class="mono">painel</a></p>
+            ${r.dominios && r.dominios.dominio && r.dominios.status !== 'ativo' ? `<p class="rcard-plano">Domínio próprio <b class="mono">${esc(r.dominios.dominio)}</b>: ${esc(DOM_STATUS[r.dominios.status] || r.dominios.status)}</p>` : ''}
             ${r.observacao ? `<p>${esc(r.observacao)}</p>` : ''}
             <p class="rcard-plano ${r.plano ? '' : 'is-sem'}">${esc(planoResumo(r.plano))}</p>
             ${sefazLigada(r) || sefazDoMes(r.id).notas ? `<p class="rcard-plano">SEFAZ ${sefazLigada(r) ? 'ligada' : 'desligada'} · ${sefazDoMes(r.id).notas} notas este mês · ${brl(sefazDoMes(r.id).valor)}</p>` : ''}</div>
@@ -714,7 +717,7 @@
       <label class="field"><span>Nome</span><input class="input" id="rNome" maxlength="80" required value="${esc(r.nome)}"></label>
       <label class="field"><span>Endereço (subdomínio)</span>
         <span class="slug-campo"><input class="input mono" id="rSlug" maxlength="40" required value="${esc(r.slug || '')}" spellcheck="false" autocapitalize="off" autocomplete="off" placeholder="quintal"><span class="slug-base mono">.${esc(BASE || 'seu-dominio')}</span></span>
-        <small class="help">Letras minúsculas, números e hífen. O sistema do restaurante fica em <b id="rSite">${esc(r.slug ? siteCurto(r) : '…')}</b>, sem configurar nada no DNS.${id ? ' Trocar o subdomínio muda o endereço; as plaquinhas continuam funcionando.' : ''}</small></label>
+        <small class="help">Letras minúsculas, números e hífen. O sistema do restaurante fica em <b id="rSite">${esc(r.slug ? siteCurto({ slug: r.slug }) : '…')}</b>, sem configurar nada no DNS. Domínio próprio (ex.: cardapio.seurestaurante.com.br): o próprio restaurante adiciona em Ajustes › Endereço, no painel, e o sistema confere o DNS e ativa sozinho.${id ? ' Trocar o subdomínio muda o endereço; as plaquinhas continuam funcionando.' : ''}</small></label>
       <label class="field"><span>${id ? 'Nova senha da equipe (opcional)' : 'Senha da equipe'}</span><input class="input" id="rSenha" type="text" minlength="6" maxlength="60" autocomplete="off" ${id ? 'placeholder="Deixe em branco para manter"' : 'required'}>
         <small class="help">A equipe usa esta senha para criar a conta no painel (cada pessoa depois entra com o próprio PIN).</small></label>
       <label class="field"><span>Observação (opcional)</span><input class="input" id="rObs" maxlength="300" value="${esc(r.observacao || '')}"></label>

@@ -161,6 +161,25 @@ Reinicie o Traefik e, no domínio coringa, informe o resolvedor `hostinger`. O p
 
 Pronto: cada restaurante criado na central já responde em `https://subdominio.vortexsystems.tech`, com HTTPS, sem nenhum passo manual.
 
+**5. Domínio próprio dos restaurantes (uma vez).** O restaurante configura sozinho em *Ajustes › Endereço* do painel: digita o domínio (ex.: `cardapio.seurestaurante.com.br`), o painel mostra o registro DNS a criar (CNAME para `tap.vortexsystems.tech`, ou A com o IP da VPS no domínio raiz), confere o DNS sozinho e, quando está certo, o domínio entra no ar com HTTPS. O subdomínio continua funcionando sempre.
+
+Quem põe a rota e o certificado de cada domínio no Traefik é o **roteador de domínios** (`deploy/dominios`), um segundo app pequeno no mesmo projeto do EasyPanel:
+
+1. Publique a função que confere o DNS: `supabase functions deploy dominio --no-verify-jwt --project-ref SEU-PROJETO`.
+2. No EasyPanel, crie um app **vtx-dominios**. *Source*: este repositório, *Build path* `deploy/dominios` (Dockerfile). *Environment*:
+
+   ```
+   SUPABASE_URL=https://SEU-PROJETO.supabase.co
+   SUPABASE_SERVICE_ROLE_KEY=chave-service-role
+   APP_URL=http://PROJETO_APP:80
+   ```
+
+   `APP_URL` é o endereço interno do app principal no EasyPanel (`<projeto>_<nome do app>`, ex.: `vtx_tap`). Este é o **único** lugar onde vai a chave `service_role`: o roteador roda só no servidor.
+3. Em *Mounts*, adicione um **Bind mount**: caminho no servidor `/etc/easypanel/traefik/config`, no container `/traefik`. O roteador escreve ali o arquivo `vtx-dominios.yaml`, e o Traefik do EasyPanel lê sozinho (é a mesma pasta da configuração que o EasyPanel gera).
+4. Não precisa de domínio nem de porta para este app. No log aparece `Roteador de domínios: app http://…, arquivo /traefik/vtx-dominios.yaml, certificados letsencrypt`.
+
+A cada 30 segundos ele lê os domínios, confere o DNS de cada um, atualiza o arquivo do Traefik (rota http → https e certificado Let's Encrypt pelo resolvedor `letsencrypt` do EasyPanel) e marca **no ar** quando o site abre com HTTPS. Na primeira vez que o domínio fica no ar, ele entra no plano do restaurante (R$ 190 de configuração + R$ 19 por mês). Se o nome do resolvedor ou dos entrypoints for outro na sua instalação, ajuste `CERT_RESOLVER`, `ENTRY_HTTP` e `ENTRY_HTTPS`.
+
 ## App do painel no celular
 
 O painel (`/admin`) pode ser instalado como app (PWA), com ícone na tela inicial e abertura em tela cheia.

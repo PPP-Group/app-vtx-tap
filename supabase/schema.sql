@@ -2855,3 +2855,172 @@ begin
   execute 'grant execute on function public.push_remover(text) to service_role';
   execute 'revoke execute on function private.pedido_avisar() from public, anon, authenticated';
 end $$;
+
+-- ---------------------------------------------------------------------------
+-- Domínio próprio (ex.: cardapio.seurestaurante.com.br). O subdomínio continua sendo o endereço
+-- de sempre; o domínio próprio é um endereço a mais, configurado pelo administrador no painel:
+--   1. adiciona o domínio (dominio_definir) → o painel mostra o registro DNS a criar;
+--   2. a função "dominio" e o roteador conferem o DNS (CNAME ou A para o servidor) → 'certificado';
+--   3. o roteador de domínios põe a rota e o certificado HTTPS no Traefik e confere → 'ativo'.
+-- Ao ficar no ar pela primeira vez, entra no plano (R$ 190 uma vez + R$ 19 por mês).
+-- ---------------------------------------------------------------------------
+create table if not exists private.dominios_config (
+  id    int primary key default 1 check (id = 1),
+  alvo  text,  -- para onde o CNAME aponta (o endereço da central, ex.: tap.vortexsystems.tech)
+  base  text   -- domínio dos subdomínios (ex.: vortexsystems.tech): não pode ser usado como domínio próprio
+);
+insert into private.dominios_config (id) values (1) on conflict do nothing;
+
+create table if not exists public.dominios (
+  restaurante_id uuid primary key references public.restaurantes (id) on delete cascade,
+  dominio        text not null unique check (char_length(dominio) <= 253),
+  status         text not null default 'dns' check (status in ('dns', 'certificado', 'ativo')),
+  mensagem       text check (char_length(mensagem) <= 300),
+  por            text check (char_length(por) <= 120),
+  criado_em      timestamptz not null default now(),
+  verificado_em  timestamptz,
+  ativo_em       timestamptz,
+  checado_em     timestamptz
+);
+alter table public.dominios enable row level security;
+revoke all on public.dominios from anon, authenticated;
+grant select on public.dominios to authenticated;
+drop policy if exists "equipe e operador veem o dominio" on public.dominios;
+create policy "equipe e operador veem o dominio" on public.dominios
+  for select to authenticated using (restaurante_id = public.meu_restaurante() or public.eh_operador());
+
+-- "https://Cardapio.Bar.com.br/admin" → "cardapio.bar.com.br".
+create or replace function public.dominio_normalizar(p text) returns text
+language sql immutable set search_path = public as $$
+  select nullif(regexp_replace(regexp_replace(regexp_replace(lower(btrim(coalesce(p, ''))), '^[a-z]+://', ''), '[/?#:@\s].*$', ''), '\.+$', ''), '');
+$$;
+
+create or replace function public.meu_dominio() returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare r uuid := public.meu_restaurante(); v jsonb;
+begin
+  if r is null then raise exception 'Acesso negado.'; end if;
+  select jsonb_build_object('slug', rs.slug, 'dominio', d.dominio, 'status', d.status, 'mensagem', d.mensagem,
+      'verificado_em', d.verificado_em, 'ativo_em', d.ativo_em, 'checado_em', d.checado_em,
+      'alvo', c.alvo, 'base', c.base, 'admin', public.eu_admin(), 'plano_dominio', public.plano_de(r) ->> 'dominio')
+    into v
+    from public.restaurantes rs
+    left join public.dominios d on d.restaurante_id = rs.id
+    cross join private.dominios_config c
+   where rs.id = r and c.id = 1;
+  return v;
+end $$;
+
+-- Administrador adiciona (ou troca) o domínio próprio.
+create or replace function public.dominio_definir(p_dominio text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare r uuid := public.meu_restaurante(); v text := public.dominio_normalizar(p_dominio); c private.dominios_config;
+begin
+  if r is null then raise exception 'Acesso negado.'; end if;
+  if not public.eu_admin() then raise exception 'Só o administrador do restaurante pode mudar o domínio.'; end if;
+  select * into c from private.dominios_config where id = 1;
+  if v is null or char_length(v) > 253 or v !~ '^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]$' or v ~ '^[0-9.]+$' then
+    raise exception 'Domínio inválido. Use só o endereço, sem https:// (ex.: cardapio.seurestaurante.com.br).';
+  end if;
+  if (c.base is not null and (v = c.base or v like '%.' || c.base)) or v = c.alvo then
+    raise exception 'Esse endereço já é da VTX Tap. Use um domínio do restaurante (ex.: cardapio.seurestaurante.com.br).';
+  end if;
+  if exists (select 1 from public.dominios where dominio = v and restaurante_id <> r) then
+    raise exception 'Esse domínio já está sendo usado por outro restaurante.';
+  end if;
+  insert into public.dominios (restaurante_id, dominio, por) values (r, v, left(public.fid_quem(), 120))
+  on conflict (restaurante_id) do update set dominio = excluded.dominio, por = excluded.por, status = 'dns', mensagem = null,
+    verificado_em = null, ativo_em = null, checado_em = null, criado_em = now()
+  where public.dominios.dominio is distinct from excluded.dominio;
+  return public.meu_dominio();
+end $$;
+
+-- Administrador remove o domínio próprio: o restaurante segue no subdomínio e o plano volta ao endereço incluso.
+create or replace function public.dominio_remover() returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare r uuid := public.meu_restaurante(); p jsonb;
+begin
+  if r is null then raise exception 'Acesso negado.'; end if;
+  if not public.eu_admin() then raise exception 'Só o administrador do restaurante pode mudar o domínio.'; end if;
+  delete from public.dominios where restaurante_id = r;
+  p := public.plano_de(r);
+  if p ->> 'dominio' = 'proprio' and coalesce((p ->> 'definido')::boolean, false) then
+    perform public.plano_aplicar(r, p || '{"dominio": "sub"}'::jsonb, 'restaurante', coalesce(public.fid_quem(), 'Equipe') || ' (removeu o domínio próprio)');
+  end if;
+  return public.meu_dominio();
+end $$;
+
+-- Só a função "dominio" e o roteador (service role): lista, conferência e mudança de situação.
+create or replace function public.dominios_lista() returns jsonb
+language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('alvo', c.alvo, 'base', c.base,
+    'dominios', coalesce((select jsonb_agg(jsonb_build_object('dominio', d.dominio, 'status', d.status, 'slug', r.slug) order by d.criado_em)
+                            from public.dominios d join public.restaurantes r on r.id = d.restaurante_id where r.ativo), '[]'::jsonb))
+  from private.dominios_config c where c.id = 1;
+$$;
+
+create or replace function public.dominio_marcar(p_dominio text, p_status text, p_mensagem text default null) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare d public.dominios; p jsonb; v_mud uuid;
+begin
+  if p_status not in ('dns', 'certificado', 'ativo') then raise exception 'Situação inválida.'; end if;
+  select * into d from public.dominios where dominio = public.dominio_normalizar(p_dominio) for update;
+  if not found then return jsonb_build_object('status', 'inexistente'); end if;
+  update public.dominios set status = p_status, mensagem = left(p_mensagem, 300), checado_em = now(),
+    verificado_em = case when p_status in ('certificado', 'ativo') then coalesce(verificado_em, now()) else verificado_em end,
+    ativo_em = case when p_status = 'ativo' then coalesce(ativo_em, now()) else ativo_em end
+  where restaurante_id = d.restaurante_id;
+  -- Primeira vez no ar: entra no plano (R$ 19/mês) com a configuração (R$ 190, taxa única).
+  if p_status = 'ativo' and d.ativo_em is null then
+    p := public.plano_de(d.restaurante_id);
+    if coalesce((p ->> 'definido')::boolean, false) and p ->> 'dominio' = 'sub' then
+      perform public.plano_aplicar(d.restaurante_id, p || '{"dominio": "proprio"}'::jsonb, 'restaurante', 'Domínio próprio: ' || d.dominio);
+      select id into v_mud from public.plano_mudancas where restaurante_id = d.restaurante_id order by criado_em desc limit 1;
+      update public.plano_mudancas set taxa_unica = taxa_unica + 190 where id = v_mud;
+    end if;
+  end if;
+  return jsonb_build_object('status', 'ok');
+end $$;
+
+-- Navegador aberto pelo domínio próprio: acha o restaurante (o mesmo retorno de restaurante_publico).
+create or replace function public.restaurante_por_dominio(p_host text) returns jsonb
+language sql stable security definer set search_path = public as $$
+  select public.restaurante_publico(r.slug)
+    from public.dominios d join public.restaurantes r on r.id = d.restaurante_id
+   where d.dominio = public.dominio_normalizar(p_host) and d.status in ('certificado', 'ativo') and r.ativo;
+$$;
+
+-- Plaquinha: devolve também o domínio próprio no ar, para o redirecionador abrir por ele.
+create or replace function public.resolver_etiqueta(p_codigo text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare e public.etiquetas; r public.restaurantes;
+begin
+  select * into e from public.etiquetas where codigo = upper(btrim(p_codigo));
+  if not found then return jsonb_build_object('status', 'inexistente'); end if;
+  update public.etiquetas set leituras = leituras + 1, ultima_leitura = now() where codigo = e.codigo;
+  insert into public.leituras_dia (dia, codigo, restaurante_id, n)
+  values ((now() at time zone 'America/Sao_Paulo')::date, e.codigo, e.restaurante_id, 1)
+  on conflict (dia, codigo) do update set n = public.leituras_dia.n + 1, restaurante_id = excluded.restaurante_id;
+  if e.restaurante_id is null then return jsonb_build_object('status', 'livre'); end if;
+  select * into r from public.restaurantes where id = e.restaurante_id;
+  if not found or not r.ativo then return jsonb_build_object('status', 'inativo'); end if;
+  return jsonb_build_object('status', 'ok', 'slug', r.slug,
+    'dominio', (select d.dominio from public.dominios d where d.restaurante_id = r.id and d.status = 'ativo'));
+end $$;
+
+do $$
+begin
+  execute 'revoke execute on function public.dominio_normalizar(text) from public, anon, authenticated';
+  execute 'revoke execute on function public.meu_dominio() from public, anon';
+  execute 'grant execute on function public.meu_dominio() to authenticated';
+  execute 'revoke execute on function public.dominio_definir(text) from public, anon';
+  execute 'grant execute on function public.dominio_definir(text) to authenticated';
+  execute 'revoke execute on function public.dominio_remover() from public, anon';
+  execute 'grant execute on function public.dominio_remover() to authenticated';
+  execute 'revoke execute on function public.dominios_lista() from public, anon, authenticated';
+  execute 'grant execute on function public.dominios_lista() to service_role';
+  execute 'revoke execute on function public.dominio_marcar(text, text, text) from public, anon, authenticated';
+  execute 'grant execute on function public.dominio_marcar(text, text, text) to service_role';
+  execute 'revoke execute on function public.restaurante_por_dominio(text) from public';
+  execute 'grant execute on function public.restaurante_por_dominio(text) to anon, authenticated';
+end $$;

@@ -18,7 +18,7 @@
   const minDesde = (iso) => Math.max(0, Math.round((Date.now() - new Date(iso)) / 60000));
   const tel = (t) => { const d = String(t || '').replace(/\D/g, ''); return d.length === 11 ? `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}` : d; };
   const cfgAtual = () => ({ ...Store.delivery.PADRAO, ...(ctx.S.settings.delivery || {}) });
-  const linkPedidos = () => `${location.origin}/delivery/`;
+  const linkPedidos = () => `${window.VTX_ORIGEM || location.origin}/delivery/`;
 
   async function atualizar() {
     try {
