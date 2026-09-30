@@ -9,8 +9,8 @@
  *
  * Dois modelos:
  *   'padrao'        → logo da VTX Tap no meio do QR.
- *   'personalizado' → "personalizado básico": logo do restaurante no meio do QR e a logo
- *                     da VTX Tap pequenininha, em cima do @. Sem logo do restaurante,
+ *   'personalizado' → "personalizado básico": logo do restaurante no meio do QR.
+ *   Nos dois, a logo da VTX Tap pequenininha fica em cima do @. Sem logo do restaurante,
  *                     sai igual ao padrão.
  *
  * Qualidade de impressão: QR, ícone de NFC e textos em vetor (nítidos em qualquer tamanho),
@@ -33,7 +33,7 @@
   const JSPDF = 'https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js';
   const SVG2PDF = 'https://cdn.jsdelivr.net/npm/svg2pdf.js@2.2.4/dist/svg2pdf.umd.min.js';
   // Sora (SIL OFL, assets/fonts/OFL.txt), embutida no PDF.
-  const FONTES = { bold: '/assets/fonts/Sora-Bold.ttf', semibold: '/assets/fonts/Sora-SemiBold.ttf' };
+  const FONTES = { extrabold: '/assets/fonts/Sora-ExtraBold.ttf', semibold: '/assets/fonts/Sora-SemiBold.ttf', light: '/assets/fonts/Sora-Light.ttf' };
   const LOGO_VTX = '/admin/icons/icon-512.png';          // marca quadrada (miolo do QR)
   const LOGO_VTX_TEXTO = '/assets/img/vtx-tap-escuro.png'; // logo com texto (ao lado do @)
 
@@ -132,7 +132,7 @@
     return { x: x + ini0 * m, y: y + ini0 * m, lado: k * m };
   }
 
-  function texto(doc, t, x, y, { tamanho, cor = TINTA, espaco = 0, alinhar = 'centro', angulo = 0, peso = 'bold' } = {}) {
+  function texto(doc, t, x, y, { tamanho, cor = TINTA, espaco = 0, alinhar = 'centro', angulo = 0, peso = 'extrabold' } = {}) {
     doc.setFont('Sora', peso);
     doc.setFontSize(tamanho);
     doc.setTextColor(cor);
@@ -168,13 +168,13 @@
     const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [L, A], compress: true, putOnlyUsedFonts: true });
     doc.setProperties({ title: nomeArquivo.replace(/\.pdf$/, ''), creator: 'Central de plaquinhas', subject: `Cartão ${L} × ${A} mm, cantos com raio de ${PLACA.raio} mm` });
 
-    const [fb, fs] = await Promise.all([fonteBase64(FONTES.bold), fonteBase64(FONTES.semibold)]);
-    doc.addFileToVFS('Sora-Bold.ttf', fb);
-    doc.addFont('Sora-Bold.ttf', 'Sora', 'bold');
-    doc.addFileToVFS('Sora-SemiBold.ttf', fs);
-    doc.addFont('Sora-SemiBold.ttf', 'Sora', 'semibold');
+    for (const [peso, url] of Object.entries(FONTES)) {
+      const nome = url.split('/').pop();
+      doc.addFileToVFS(nome, await fonteBase64(url));
+      doc.addFont(nome, 'Sora', peso);
+    }
     const vtx = await logoPng(LOGO_VTX);
-    const vtxTexto = modelo === 'personalizado' ? await logoPng(LOGO_VTX_TEXTO) : null;
+    const vtxTexto = await logoPng(LOGO_VTX_TEXTO);
     const logos = {};
     if (modelo === 'personalizado') {
       for (const u of new Set(itens.map((it) => it.logo).filter(Boolean))) logos[u] = await logoPng(u);
@@ -191,7 +191,7 @@
     const nfcH = (nfcW * NFC.h) / NFC.w;
     const logoH = 3.4;                 // logo da VTX Tap em cima do @ (personalizado)
     // Bloco da direita: ícone, 2,5 de espaço, título (2 linhas), 3 de espaço, [logo + 1,2], @.
-    const blocoH = nfcH + 2.5 + 8.4 + 3 + (vtxTexto ? logoH + 1.2 : 0) + 2.2;
+    const blocoH = nfcH + 2.5 + 8.4 + 3 + (vtxTexto ? logoH + 1.2 : 0) + 1.9;
     const nfcY = (A - blocoH) / 2;
 
     for (const [i, it] of itens.entries()) {
@@ -224,14 +224,14 @@
       texto(doc, l1, dirCx, tY + 3.6, { tamanho: 11.5 });
       texto(doc, resto.join(' '), dirCx, tY + 8.4, { tamanho: 11.5 });
 
-      // @ alinhado com o título; no personalizado, a logo da VTX Tap pequena em cima dele.
-      let rodY = tY + 8.4 + 3 + 2.2;
+      // Logo da VTX Tap pequena e o @ embaixo, alinhados com o título (nos dois modelos).
+      let rodY = tY + 8.4 + 3 + 1.9;
       if (vtxTexto) {
         const w = (vtxTexto.w / vtxTexto.h) * logoH;
         doc.addImage(vtxTexto.url, 'PNG', dirCx - w / 2, tY + 8.4 + 3, w, logoH, 'logo-vtx-texto', 'FAST');
         rodY += logoH + 1.2;
       }
-      texto(doc, PLACA.rodape, dirCx, rodY, { tamanho: 6, peso: 'semibold' });
+      texto(doc, PLACA.rodape, dirCx, rodY, { tamanho: 5, peso: 'light' });
 
       // Código em pé na lateral direita, pequeno, lido de cima para baixo.
       doc.setFont('Sora', 'semibold');
