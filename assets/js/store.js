@@ -872,10 +872,16 @@
         if (!conf.plano.servicos.delivery) return erro('Este restaurante não faz delivery por aqui.');
         if (!d.ativo) return erro('O delivery está fechado agora.');
         const nome = String(p.cliente && p.cliente.nome || '').trim().slice(0, 60);
-        const tel = soDigitos(p.cliente && p.cliente.telefone);
-        const e = p.endereco || {};
+        const tel = soDigitos(p.cliente && p.cliente.telefone).replace(/^55(?=\d{10,11}$)/, '');
+        let e = p.endereco || {};
         if (nome.length < 2) return erro('Informe seu nome.');
         if (!/^[1-9]\d{9,10}$/.test(tel)) return erro('Informe um celular com DDD.');
+        // Endereço salvo: só com o mesmo celular do pedido de onde ele veio.
+        if (e.ref) {
+          const ant = (db.pedidos || []).find((x) => x.id === e.ref && soDigitos(x.cliente.telefone) === tel);
+          if (!ant) return erro('Endereço salvo não encontrado. Preencha o endereço.');
+          e = { ...ant.endereco, ...(String(e.referencia || '').trim() ? { referencia: e.referencia } : {}) };
+        }
         if (!String(e.rua || '').trim() || !String(e.numero || '').trim() || !String(e.bairro || '').trim()) return erro('Complete o endereço: rua, número e bairro.');
         if (!Array.isArray(p.itens) || !p.itens.length) return erro('O carrinho está vazio.');
         const todos = conf.cardapio.flatMap((c) => c.itens);
@@ -917,6 +923,31 @@
         const { lat, lng, ...endereco } = p.endereco;
         return { status: 'ok', pedido: { ...p, endereco, token: undefined, cliente: undefined },
           restaurante: { nome: conf.restaurante.nome, telefone: conf.restaurante.telefone, whatsapp: conf.delivery.whatsapp, pix: p.pagamento.forma === 'pix' ? conf.delivery.pix : null, tempo: conf.delivery.tempo } };
+      },
+      // Mesmas regras de public.delivery_enderecos.
+      async deliveryEnderecos(telefone) {
+        const db = read();
+        const conf = mergeSettings(db.configuracao, true);
+        let tel = soDigitos(telefone);
+        if (/^55\d{10,11}$/.test(tel)) tel = tel.slice(2);
+        if (!/^[1-9]\d{9,10}$/.test(tel)) return { status: 'erro', mensagem: 'Informe um celular com DDD.' };
+        const vistos = new Set();
+        const lista = [];
+        let nome = null;
+        for (const p of [...(db.pedidos || [])].sort((a, b) => (a.criado_em < b.criado_em ? 1 : -1))) {
+          if (soDigitos(p.cliente.telefone) !== tel) continue;
+          const e = p.endereco;
+          const k = `${String(e.rua).toLowerCase()}|${e.numero}|${String(e.complemento || '').toLowerCase()}`;
+          if (vistos.has(k)) continue;
+          vistos.add(k);
+          nome = nome || String(p.cliente.nome).split(' ')[0];
+          const km = conf.delivery.local && e.lat ? distanciaKm(conf.delivery.local, e) : null;
+          lista.push({ ref: p.id, rua: String(e.rua).slice(0, Math.max(3, Math.ceil(String(e.rua).length * 0.6))).trimEnd() + '•••',
+            numero: String(e.numero).slice(0, 1) + (String(e.numero).length > 1 ? '•••' : ''), complemento: !!e.complemento,
+            bairro: e.bairro, distancia: km, taxa: km == null ? null : taxaEntrega(conf.delivery, km) });
+          if (lista.length === 3) break;
+        }
+        return lista.length ? { status: 'ok', nome, enderecos: lista } : { status: 'nenhum' };
       },
       // Demonstração: sem servidor de push; os avisos saem da própria página enquanto ela está aberta.
       async deliveryPushChave() {
@@ -1529,6 +1560,10 @@
       },
       async deliveryAcompanhar(token) {
         return must(await sb.rpc('delivery_acompanhar', { p_token: token }));
+      },
+      // Endereços já usados, achados pelo celular (resumo mascarado + taxa; para pedir vai só a referência).
+      async deliveryEnderecos(telefone) {
+        return must(await sb.rpc('delivery_enderecos', { p_restaurante: rid, p_telefone: soDigitos(telefone) }));
       },
       // Avisos do pedido (Web Push): chave pública VAPID da função "push" e inscrição do aparelho.
       async deliveryPushChave() {

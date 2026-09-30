@@ -41,6 +41,21 @@ body.com-barra .dl-main { padding-bottom: 96px; }
 .dl-local.is-ok { background: var(--leaf-soft); }
 .dl-local.is-fora { background: var(--pepper-soft); }
 .dl-local-acts { display: flex; flex-wrap: wrap; gap: 8px; }
+/* Endereço pelo celular: passo do celular, lista "é um destes?" e o endereço escolhido */
+.dl-tel-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: end; }
+.dl-tel-row .btn { min-height: 48px; }
+.dl-ends { display: grid; gap: 8px; }
+.dl-end { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; width: 100%; padding: 14px; border-radius: 16px; background: var(--surface); box-shadow: var(--shadow-1), inset 0 0 0 1.5px var(--line); text-align: left; font: inherit; color: var(--ink); cursor: pointer; transition: box-shadow .15s; }
+.dl-end:hover:not(:disabled) { box-shadow: var(--shadow-1), inset 0 0 0 2px var(--cobalt); }
+.dl-end:disabled { opacity: .55; cursor: not-allowed; }
+.dl-end svg { width: 20px; height: 20px; color: var(--cobalt-ink); }
+.dl-end b { display: block; font-size: 15px; font-weight: 600; }
+.dl-end small { display: block; color: var(--muted); font-size: 13.5px; margin-top: 2px; }
+.dl-end-ok { padding: 7px 12px; border-radius: 999px; background: var(--cobalt); color: var(--enamel); font-size: 13.5px; font-weight: 700; white-space: nowrap; }
+.dl-end:disabled .dl-end-ok { display: none; }
+.dl-local.dl-salvo { grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; }
+.dl-salvo b { display: block; font-weight: 600; }
+.dl-salvo small { display: block; color: var(--muted); }
 .dl-formas { justify-self: start; flex-wrap: wrap; }
 .dl-totais { margin: 0; display: grid; gap: 6px; }
 .dl-totais div { display: flex; justify-content: space-between; font-variant-numeric: tabular-nums; }
