@@ -2530,7 +2530,7 @@ declare
   r public.restaurantes; c jsonb;
   v_nome text := left(btrim(regexp_replace(coalesce(p_pedido #>> '{cliente,nome}', ''), '\s+', ' ', 'g')), 60);
   v_tel text := regexp_replace(coalesce(p_pedido #>> '{cliente,telefone}', ''), '[^0-9]', '', 'g');
-  e jsonb := coalesce(p_pedido -> 'endereco', '{}'::jsonb);
+  e jsonb := coalesce(p_pedido -> 'endereco', '{}'::jsonb); e2 jsonb;
   v_lat numeric; v_lng numeric; v_dist numeric; v_taxa numeric;
   itens jsonb := '[]'::jsonb; x jsonb; it jsonb; q int; sub numeric := 0; v_total numeric;
   g jsonb; op jsonb; sel jsonb; s2 jsonb; n int; qq int; tot int; v_preco numeric; rot jsonb;
@@ -2550,6 +2550,15 @@ begin
   if v_nome !~ '^\S{2,}' then return jsonb_build_object('status', 'erro', 'mensagem', 'Informe seu nome.'); end if;
   if char_length(v_tel) in (12, 13) and v_tel like '55%' then v_tel := substr(v_tel, 3); end if;
   if v_tel !~ '^[1-9][0-9]{9,10}$' then return jsonb_build_object('status', 'erro', 'mensagem', 'Informe um celular com DDD.'); end if;
+  -- Endereço salvo (achado pelo celular em delivery_enderecos): o navegador só manda a referência;
+  -- o endereço completo sai do pedido anterior, e só vale com o mesmo celular daquele pedido.
+  if coalesce(e ->> 'ref', '') <> '' then
+    if (e ->> 'ref') !~ '^[0-9a-f-]{36}$' then return jsonb_build_object('status', 'erro', 'mensagem', 'Endereço salvo não encontrado. Preencha o endereço.'); end if;
+    select p.endereco into e2 from public.pedidos p
+     where p.id = (e ->> 'ref')::uuid and p.restaurante_id = p_restaurante and p.cliente ->> 'telefone' = v_tel;
+    if e2 is null then return jsonb_build_object('status', 'erro', 'mensagem', 'Endereço salvo não encontrado. Preencha o endereço.'); end if;
+    e := e2 || jsonb_strip_nulls(jsonb_build_object('referencia', nullif(btrim(coalesce(e ->> 'referencia', '')), '')));
+  end if;
   if btrim(coalesce(e ->> 'rua', '')) = '' or btrim(coalesce(e ->> 'numero', '')) = '' or btrim(coalesce(e ->> 'bairro', '')) = '' then
     return jsonb_build_object('status', 'erro', 'mensagem', 'Complete o endereço: rua, número e bairro.');
   end if;
@@ -2649,6 +2658,52 @@ begin
   return jsonb_build_object('status', 'ok', 'token', v_token, 'numero', v_num, 'total', v_total);
 end $$;
 
+-- Endereços já usados neste restaurante, achados pelo celular (navegador sem nada guardado).
+-- Devolve só um resumo mascarado ("Rua da Ba•••, nº 1•••", bairro) e a taxa: quem digita o celular de
+-- outra pessoa não descobre o endereço dela. Para pedir, o navegador manda só a referência (ref).
+create or replace function public.delivery_enderecos(p_restaurante uuid, p_telefone text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  r public.restaurantes; c jsonb;
+  v_tel text := regexp_replace(coalesce(p_telefone, ''), '[^0-9]', '', 'g');
+  lista jsonb := '[]'::jsonb; x record; v_dist numeric; v_taxa numeric; v_nome text;
+begin
+  select * into r from public.restaurantes where id = p_restaurante and ativo;
+  if not found or not public.plano_tem(p_restaurante, 'delivery') then return jsonb_build_object('status', 'nenhum'); end if;
+  if char_length(v_tel) in (12, 13) and v_tel like '55%' then v_tel := substr(v_tel, 3); end if;
+  if v_tel !~ '^[1-9][0-9]{9,10}$' then return jsonb_build_object('status', 'erro', 'mensagem', 'Informe um celular com DDD.'); end if;
+  if not public.equipe_pode_tentar('dl-end:' || public.ip_do_pedido(), 12, 10) then
+    return jsonb_build_object('status', 'erro', 'mensagem', 'Muitas buscas em pouco tempo. Preencha o endereço.');
+  end if;
+  c := coalesce(r.delivery, '{}'::jsonb);
+  for x in
+    select * from (
+      select distinct on (lower(p.endereco ->> 'rua'), p.endereco ->> 'numero', lower(coalesce(p.endereco ->> 'complemento', '')))
+             p.id, p.endereco, p.cliente, p.criado_em
+        from public.pedidos p
+       where p.restaurante_id = p_restaurante and p.cliente ->> 'telefone' = v_tel and p.criado_em > now() - interval '1 year'
+       order by lower(p.endereco ->> 'rua'), p.endereco ->> 'numero', lower(coalesce(p.endereco ->> 'complemento', '')), p.criado_em desc
+    ) d order by d.criado_em desc limit 3
+  loop
+    v_nome := coalesce(v_nome, split_part(x.cliente ->> 'nome', ' ', 1));
+    v_dist := null; v_taxa := null;
+    if public.num_ou(c #>> '{local,lat}', null) is not null and public.num_ou(x.endereco ->> 'lat', null) is not null then
+      v_dist := public.distancia_km(public.num_ou(c #>> '{local,lat}', null), public.num_ou(c #>> '{local,lng}', null),
+                                    public.num_ou(x.endereco ->> 'lat', null), public.num_ou(x.endereco ->> 'lng', null));
+      select public.num_ou(f ->> 'taxa', 0) into v_taxa
+        from jsonb_array_elements(case when jsonb_typeof(c -> 'faixas') = 'array' then c -> 'faixas' else '[]'::jsonb end) f
+       where public.num_ou(f ->> 'ate', 0) >= v_dist order by public.num_ou(f ->> 'ate', 0) limit 1;
+    end if;
+    lista := lista || jsonb_build_object('ref', x.id,
+      'rua', rtrim(left(x.endereco ->> 'rua', greatest(3, ceil(char_length(x.endereco ->> 'rua') * .6)::int))) || '•••',
+      'numero', left(x.endereco ->> 'numero', 1) || case when char_length(x.endereco ->> 'numero') > 1 then '•••' else '' end,
+      'complemento', coalesce(x.endereco ->> 'complemento', '') <> '',
+      'bairro', x.endereco ->> 'bairro', 'distancia', v_dist, 'taxa', v_taxa);
+  end loop;
+  if jsonb_array_length(lista) = 0 then return jsonb_build_object('status', 'nenhum'); end if;
+  return jsonb_build_object('status', 'ok', 'nome', v_nome, 'enderecos', lista);
+end $$;
+
 -- Cliente acompanha o pedido pelo link (token).
 create or replace function public.delivery_acompanhar(p_token uuid) returns jsonb
 language sql stable security definer set search_path = public as $$
@@ -2685,6 +2740,8 @@ begin
   execute 'revoke execute on function public.distancia_km(numeric, numeric, numeric, numeric) from public, anon, authenticated';
   execute 'revoke execute on function public.delivery_pedir(uuid, jsonb) from public';
   execute 'grant execute on function public.delivery_pedir(uuid, jsonb) to anon, authenticated';
+  execute 'revoke execute on function public.delivery_enderecos(uuid, text) from public';
+  execute 'grant execute on function public.delivery_enderecos(uuid, text) to anon, authenticated';
   execute 'revoke execute on function public.delivery_acompanhar(uuid) from public';
   execute 'grant execute on function public.delivery_acompanhar(uuid) to anon, authenticated';
   execute 'revoke execute on function public.delivery_mudar(uuid, text, text, text) from public, anon';

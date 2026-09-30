@@ -30,8 +30,18 @@
   const subtotal = () => [...carrinho.values()].reduce((t, x) => t + precoLinha(x) * x.qtd, 0);
   const qtdDoItem = (id) => [...carrinho.values()].filter((x) => x.id === id).reduce((t, x) => t + x.qtd, 0);
   const qtdTotal = () => [...carrinho.values()].reduce((t, x) => t + x.qtd, 0);
-  const distancia = () => (endereco.lat && D.local ? Store.delivery.distanciaKm(D.local, endereco) : null);
-  const taxa = () => { const km = distancia(); return km == null ? null : Store.delivery.taxa(D, km); };
+  // Entrega: 'tel' (sem nada guardado: pede o celular e busca os endereços), 'lista' (achou: "é um destes?"),
+  // 'salvo' (endereço escolhido da lista: vai só a referência) ou 'form' (preencher o endereço).
+  let entrega = null;
+  let busca = null; // { nome, enderecos: [{ ref, rua, numero, complemento, bairro, distancia, taxa }] }
+  let salvo = (() => { try { return JSON.parse(safeGet('dl-salvo')) || null; } catch { return null; } })();
+  const distancia = () => (entrega === 'salvo' && salvo ? salvo.distancia : endereco.lat && D.local ? Store.delivery.distanciaKm(D.local, endereco) : null);
+  const taxa = () => {
+    if (entrega === 'salvo' && salvo) return salvo.taxa;
+    const km = distancia();
+    return km == null ? null : Store.delivery.taxa(D, km);
+  };
+  const resumoEnd = (x) => `${x.rua}, nº ${x.numero}${x.complemento ? ' (com complemento)' : ''} · ${x.bairro}`;
   const guardarCarrinho = () => safeSet('dl-carrinho', JSON.stringify([...carrinho]));
 
   /* ---------------- Cabeçalho ---------------- */
@@ -178,16 +188,48 @@
     const falta = Math.max(0, (+D.minimo || 0) - sub);
     const formas = FORMAS.filter(([k]) => D.pagamentos && D.pagamentos[k]);
     const forma = cliente.forma && formas.some(([k]) => k === cliente.forma) ? cliente.forma : (formas[0] || [])[0];
-    return `<form class="stack-lg dl-form" id="dlForm" novalidate>
-      <ul class="dl-carrinho">${lista.map(([k, x]) => {
+    const itensHtml = `<ul class="dl-carrinho">${lista.map(([k, x]) => {
         const i = itemDe(x.id);
         const c = calc(x);
         return `<li><div class="dl-c-top"><span class="dl-qtd"><button type="button" class="icon-btn" data-dl-menos="${esc(k)}" aria-label="Tirar um">${icon('minus')}</button><b>${x.qtd}</b><button type="button" class="icon-btn" data-dl-mais="${esc(k)}" aria-label="Mais um">${icon('plus')}</button></span>
           <span class="dl-c-nome"><b>${esc(i.nome)}</b>${c.rotulos && c.rotulos.length ? `<small>${esc(c.rotulos.join(' · '))}</small>` : ''}</span><span class="price">${brl(c.preco * x.qtd)}</span></div>
           <input class="input dl-c-obs" data-dl-obs="${esc(k)}" maxlength="140" placeholder="Observação (ex.: sem cebola)" value="${esc(x.obs || '')}"></li>`;
-      }).join('')}</ul>
+      }).join('')}</ul>`;
+    // Passo 1 (nada guardado neste aparelho): o celular, para achar os endereços dos pedidos anteriores.
+    if (entrega === 'tel') {
+      return `<form class="stack-lg dl-form" id="dlForm" novalidate>
+        ${itensHtml}
+        <section class="stack dl-tel"><h3 class="dl-h3">Entrega</h3>
+          <p class="muted">Já pediu aqui? Digite seu celular e a gente acha o seu endereço.</p>
+          <div class="dl-tel-row">
+            <label class="field"><span>Celular (WhatsApp)</span><input class="input" name="telefone" type="tel" inputmode="tel" autocomplete="tel" maxlength="16" placeholder="(31) 99999-9999" value="${esc(cliente.telefone || '')}"></label>
+            <button type="submit" class="btn btn-cobalt" ${enviando ? 'disabled' : ''}>${icon('search')} Buscar</button>
+          </div>
+          <p class="form-error" id="dlErro" role="alert"></p>
+          <button type="button" class="link-btn" data-dl="novo-end">É meu primeiro pedido · preencher o endereço</button>
+        </section>
+      </form>`;
+    }
+    // Achou endereços pelo celular: "é um destes?" (resumo mascarado; o endereço completo fica no servidor).
+    if (entrega === 'lista' && busca) {
+      return `<form class="stack-lg dl-form" id="dlForm" novalidate>
+        ${itensHtml}
+        <section class="stack"><h3 class="dl-h3">${busca.nome ? `Olá, ${esc(busca.nome)}! ` : ''}Entregar em um destes endereços?</h3>
+          <div class="dl-ends">${busca.enderecos.map((x, n) => `<button type="button" class="dl-end" data-dl-end="${n}" ${x.taxa == null ? 'disabled' : ''}>
+            ${icon('pin')}<span><b>${esc(resumoEnd(x))}</b><small>${x.taxa == null ? 'Fora da área de entrega' : `${String(x.distancia).replace('.', ',')} km · entrega ${+x.taxa ? brl(+x.taxa) : 'grátis'}`}</small></span>
+            <span class="dl-end-ok">Sim, este</span></button>`).join('')}</div>
+          <button type="button" class="btn btn-line btn-block" data-dl="novo-end">Não, é outro endereço</button>
+        </section>
+      </form>`;
+    }
+    return `<form class="stack-lg dl-form" id="dlForm" novalidate>
+      ${itensHtml}
 
-      <section class="stack"><h3 class="dl-h3">Entrega</h3>
+      ${entrega === 'salvo' && salvo ? `<section class="stack"><h3 class="dl-h3">Entrega</h3>
+        <div class="dl-local is-ok dl-salvo">${icon('pin')}<span><b>${esc(resumoEnd(salvo))}</b><small>${String(salvo.distancia).replace('.', ',')} km · entrega ${+salvo.taxa ? brl(+salvo.taxa) : 'grátis'}</small></span>
+          <button type="button" class="btn btn-quiet btn-sm" data-dl="trocar-end">Trocar</button></div>
+        <label class="field"><span>Ponto de referência (opcional)</span><input class="input" name="referencia" maxlength="120" value="${esc(endereco.referencia || '')}"></label>
+      </section>` : `<section class="stack"><h3 class="dl-h3">Entrega</h3>
         <div class="dl-row">
           <label class="field"><span>CEP</span><input class="input mono" name="cep" inputmode="numeric" maxlength="9" placeholder="00000-000" value="${esc(endereco.cep || '')}"></label>
           <label class="field dl-num"><span>Número</span><input class="input" name="numero" maxlength="20" value="${esc(endereco.numero || '')}"></label>
@@ -206,7 +248,7 @@
           <span class="dl-local-acts"><button type="button" class="btn btn-line btn-sm" data-dl="localizar">${icon('search')} Localizar endereço</button>
           <button type="button" class="btn btn-quiet btn-sm" data-dl="gps">${icon('pin')} Usar minha localização</button></span>
         </div>
-      </section>
+      </section>`}
 
       <section class="stack"><h3 class="dl-h3">Seus dados</h3>
         <div class="dl-row">
@@ -233,6 +275,8 @@
     </form>`;
   }
   function abrirCarrinho() {
+    // Nada guardado neste aparelho (nem endereço, nem endereço salvo): começa pelo celular.
+    if (!entrega) entrega = salvo && salvo.ref ? 'salvo' : endereco.rua ? 'form' : 'tel';
     $('#dlTitle').textContent = 'Seu pedido';
     $('#dlBody').innerHTML = tCarrinho();
     openSheet('sh-dl');
@@ -241,13 +285,17 @@
   function lerForm() {
     const f = $('#dlForm');
     if (!f) return;
-    const v = (n) => (f.elements[n] ? f.elements[n].value.trim() : '');
-    const novoEnd = { ...endereco, cep: v('cep'), numero: v('numero'), rua: v('rua'), bairro: v('bairro'), cidade: v('cidade'), complemento: v('complemento'), referencia: v('referencia') };
-    // Mudou o endereço: a localização antiga não vale mais.
-    if (['cep', 'numero', 'rua', 'bairro', 'cidade'].some((k) => (novoEnd[k] || '') !== (endereco[k] || '')) && !novoEnd.gps) { delete novoEnd.lat; delete novoEnd.lng; }
-    endereco = novoEnd;
-    cliente = { ...cliente, nome: v('nome'), telefone: v('telefone'), troco: v('troco'), obs: v('obs') };
-    safeSet('dl-endereco', JSON.stringify(endereco));
+    // Só lê os campos que estão na tela (os passos do celular e do endereço salvo não têm todos).
+    const tem = (n) => !!f.elements[n];
+    const v = (n, antes = '') => (f.elements[n] ? f.elements[n].value.trim() : antes);
+    if (tem('rua')) {
+      const novoEnd = { ...endereco, cep: v('cep'), numero: v('numero'), rua: v('rua'), bairro: v('bairro'), cidade: v('cidade'), complemento: v('complemento'), referencia: v('referencia') };
+      // Mudou o endereço: a localização antiga não vale mais.
+      if (['cep', 'numero', 'rua', 'bairro', 'cidade'].some((k) => (novoEnd[k] || '') !== (endereco[k] || '')) && !novoEnd.gps) { delete novoEnd.lat; delete novoEnd.lng; }
+      endereco = novoEnd;
+    } else if (tem('referencia')) endereco = { ...endereco, referencia: v('referencia') };
+    cliente = { ...cliente, nome: v('nome', cliente.nome), telefone: v('telefone', cliente.telefone), troco: v('troco', cliente.troco), obs: v('obs', cliente.obs) };
+    if (endereco.rua) safeSet('dl-endereco', JSON.stringify(endereco));
     safeSet('dl-cliente', JSON.stringify({ nome: cliente.nome, telefone: cliente.telefone, forma: cliente.forma }));
   }
   const redesenharCarrinho = () => { lerForm(); $('#dlBody').innerHTML = tCarrinho(); };
@@ -319,13 +367,42 @@
     );
   }
 
+  // Passo do celular: busca os endereços dos pedidos anteriores neste restaurante.
+  async function buscarEnderecos() {
+    lerForm();
+    const erro = (m) => { const el = $('#dlErro'); if (el) el.textContent = m; };
+    if (!/^[1-9]\d{9,10}$/.test(soDigitos(cliente.telefone).replace(/^55(?=\d{10,11}$)/, ''))) return erro('Informe o celular com DDD.');
+    safeSet('dl-cliente', JSON.stringify({ nome: cliente.nome, telefone: cliente.telefone, forma: cliente.forma }));
+    enviando = true;
+    $('#dlBody').innerHTML = tCarrinho();
+    let r;
+    try {
+      r = await store.deliveryEnderecos(cliente.telefone);
+    } catch {
+      r = { status: 'erro', mensagem: 'Sem conexão para buscar o endereço. Preencha abaixo.' };
+    }
+    enviando = false;
+    if (r.status === 'ok') {
+      busca = r;
+      if (!cliente.nome && r.nome) cliente.nome = r.nome;
+      entrega = 'lista';
+    } else {
+      entrega = 'form';
+      if (r.status === 'nenhum') toast('Não achamos pedidos com este celular. Preencha o endereço.', { ms: 4000 });
+      else if (r.mensagem) toast(r.mensagem, { tone: 'error' });
+    }
+    $('#dlBody').innerHTML = tCarrinho();
+  }
+
   async function enviar() {
+    if (entrega === 'tel') return buscarEnderecos();
     lerForm();
     const erro = (m) => { const el = $('#dlErro'); if (el) el.textContent = m; };
     if ((cliente.nome || '').length < 2) return erro('Informe seu nome.');
     if (!/^[1-9]\d{9,10}$/.test(soDigitos(cliente.telefone).replace(/^55(?=\d{10,11}$)/, ''))) return erro('Informe um celular com DDD.');
-    if (!endereco.rua || !endereco.numero || !endereco.bairro) return erro('Complete o endereço: rua, número e bairro.');
-    if (!endereco.lat) return erro('Toque em "Localizar endereço" para calcular a entrega.');
+    const comSalvo = entrega === 'salvo' && salvo;
+    if (!comSalvo && (!endereco.rua || !endereco.numero || !endereco.bairro)) return erro('Complete o endereço: rua, número e bairro.');
+    if (!comSalvo && !endereco.lat) return erro('Toque em "Localizar endereço" para calcular a entrega.');
     const forma = ($('[data-dl-forma][aria-checked="true"]') || {}).dataset?.dlForma;
     const troco = cliente.troco ? parseFloat(String(cliente.troco).replace(/\./g, '').replace(',', '.')) : null;
     enviando = true;
@@ -335,7 +412,7 @@
     try {
       r = await store.deliveryPedir({
         cliente: { nome: cliente.nome, telefone: cliente.telefone },
-        endereco,
+        endereco: comSalvo ? { ref: salvo.ref, referencia: endereco.referencia || '' } : endereco,
         itens: [...carrinho.values()].map((x) => ({ id: x.id, qtd: x.qtd, obs: x.obs || '', opcoes: x.opcoes || [] })),
         pagamento: { forma, troco },
         obs: cliente.obs || '',
@@ -351,6 +428,9 @@
     carrinho.clear();
     guardarCarrinho();
     cliente.obs = '';
+    // Próximo pedido neste aparelho já abre com este endereço.
+    safeSet('dl-salvo', comSalvo ? JSON.stringify(salvo) : null);
+    safeSet('dl-cliente', JSON.stringify({ nome: cliente.nome, telefone: cliente.telefone, forma: cliente.forma }));
     const meus = JSON.parse(safeGet('dl-pedidos') || '[]').filter((p) => Date.now() - p.em < 2 * 864e5);
     safeSet('dl-pedidos', JSON.stringify([{ token: r.token, numero: r.numero, em: Date.now() }, ...meus].slice(0, 10)));
     closeSheet();
@@ -510,6 +590,15 @@
       if (a === 'carrinho') return abrirCarrinho();
       if (a === 'localizar') return localizar();
       if (a === 'gps') return usarGps();
+      if (a === 'novo-end') { lerForm(); entrega = 'form'; $('#dlBody').innerHTML = tCarrinho(); const c1 = $('#dlForm [name=cep]'); return c1 && c1.focus(); }
+      if (a === 'trocar-end') { lerForm(); entrega = busca ? 'lista' : 'tel'; return ($('#dlBody').innerHTML = tCarrinho()); }
+    }
+    const end = t.closest('[data-dl-end]');
+    if (end && busca) {
+      lerForm();
+      salvo = busca.enderecos[+end.dataset.dlEnd];
+      entrega = 'salvo';
+      return ($('#dlBody').innerHTML = tCarrinho());
     }
     const f = t.closest('[data-dl-forma]');
     if (f) {

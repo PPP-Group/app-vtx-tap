@@ -697,12 +697,12 @@
         ${c.nota ? `<p class="ccard-note">“${esc(c.nota)}”</p>` : ''}
         ${itens}
         ${c.status === 'a_caminho' ? `<p class="ccard-who">${icon('arrow')} ${esc(firstName(c.atendente))} a caminho · ${ago(c.visto_em || c.atualizado_em)}</p>` : ''}
-        ${done ? '' : `<div class="ccard-actions">
-          ${c.status === 'aberto' ? `<button type="button" class="btn btn-cobalt" data-act="ir" data-id="${c.id}">Estou indo</button>` : ''}
-          <button type="button" class="btn ${c.status === 'a_caminho' ? 'btn-primary' : 'btn-quiet'}" data-act="ok" data-id="${c.id}">${icon('check')} Resolvido</button>
-          ${c.tipo === 'conta' ? `<button type="button" class="btn btn-line ccard-close" data-fechar="${c.mesa}" data-id="${c.id}">${icon('lock')} Conta paga · fechar mesa</button>` : ''}
-        </div>`}
       </div>
+      ${done ? '' : `<div class="ccard-actions">
+        ${c.status === 'aberto' ? `<button type="button" class="btn btn-cobalt" data-act="ir" data-id="${c.id}">Estou indo</button>` : ''}
+        <button type="button" class="btn ${c.status === 'a_caminho' ? 'btn-primary' : 'btn-quiet'}" data-act="ok" data-id="${c.id}">${icon('check')} Resolvido</button>
+        ${c.tipo === 'conta' ? `<button type="button" class="btn btn-line ccard-close" data-fechar="${c.mesa}" data-id="${c.id}">${icon('lock')} Conta paga · fechar mesa</button>` : ''}
+      </div>`}
     </article>`;
   }
 
@@ -717,10 +717,10 @@
         <p class="scard-hint">${junto.length
           ? `Já liberados na mesa: ${junto.map((p) => esc(firstName(p.nome))).join(', ')}${codigoDa(x.mesa) ? ` · código <b class="mono">${codigoDa(x.mesa)}</b>` : ''}`
           : 'Ninguém liberado nesta mesa ainda. Confira se há alguém sentado nela.'}</p>
-        <div class="ccard-actions">
-          <button type="button" class="btn btn-cobalt" data-sess-ok="${x.id}">${icon('check')} Liberar</button>
-          <button type="button" class="btn btn-quiet" data-sess-no="${x.id}">Recusar</button>
-        </div>
+      </div>
+      <div class="ccard-actions">
+        <button type="button" class="btn btn-cobalt" data-sess-ok="${x.id}">${icon('check')} Liberar</button>
+        <button type="button" class="btn btn-quiet" data-sess-no="${x.id}">Recusar</button>
       </div>
     </article>`;
   }

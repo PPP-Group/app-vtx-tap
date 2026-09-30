@@ -1,5 +1,5 @@
 # Gerado na subida do container a partir das variáveis de ambiente (envsubst).
-# Um app só: ${CENTRAL_HOST} tem a landing page (/), a página de preços (/precos), a central da Vortex (/master)
+# Um app só: ${CENTRAL_HOST} tem a landing page (/), o orçamento (/orcamento), a central da Vortex (/master)
 # e o redirecionador das plaquinhas (/t/CODIGO); qualquer outro subdomínio é a página
 # e o painel de um restaurante.
 
@@ -9,14 +9,18 @@ server {
   server_name ${CENTRAL_HOST};
   include /etc/nginx/snippets/comum.conf;
 
-  # Landing page (apresentação completa) e página de preços com o simulador.
+  # Landing page (apresentação completa) e o orçamento (simulador de preços).
   location = / {
     try_files /lp/index.html =404;
     add_header Cache-Control "no-cache";
   }
-  location ~ ^/precos/?$ {
-    try_files /lp/precos.html =404;
+  location ~ ^/orcamento/?$ {
+    try_files /lp/orcamento.html =404;
     add_header Cache-Control "no-cache";
+  }
+  # Endereço antigo da página de preços.
+  location ~ ^/precos/?$ {
+    return 301 /orcamento;
   }
 
   # Central da Vortex (painel interno).

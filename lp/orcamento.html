@@ -1,12 +1,13 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="pt-BR" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>VTX Tap · Preços</title>
+<title>VTX Tap · Orçamento</title>
 <meta name="description" content="Uma plaquinha na mesa: chamar o garçom, cardápio digital, avaliação no Google e programa de fidelidade. Veja os preços e monte o seu plano.">
-<meta name="theme-color" content="#140B33">
-<meta property="og:title" content="VTX Tap · Preços">
+<meta name="theme-color" content="#0C0820">
+<meta name="color-scheme" content="dark">
+<meta property="og:title" content="VTX Tap · Orçamento">
 <meta property="og:description" content="Chamar o garçom, cardápio, avaliação no Google e fidelidade numa plaquinha só. Monte o seu plano.">
 <meta property="og:image" content="/assets/img/vtx-tap-escuro.png">
 <link rel="icon" href="/assets/img/icon-64.png" type="image/png">
@@ -181,7 +182,15 @@
   td.v { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; font-weight: 600; text-align: right; }
   th.v { text-align: right; }
   td small { display: block; color: var(--muted); font-size: 13px; }
-  .cards { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  /* Os quatro serviços em 2×2 (dois terços da largura) e o combo à direita, com a altura das duas linhas. */
+  .cards { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); }
+  @media (min-width: 560px) { .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } .card.destaque { grid-column: 1 / -1; } }
+  @media (min-width: 900px) { .cards { grid-template-columns: repeat(3, minmax(0, 1fr)); } .card.destaque { grid-column: 3; grid-row: 1 / span 2; align-content: center; } }
+  .card.destaque { background: var(--roxo-soft); }
+  .combo-eco { justify-self: start; padding: 5px 12px; border-radius: 10px; background: var(--ok); color: #fff; font-size: 14px; font-weight: 700; }
+  .card ul.combo-lista { list-style: none; padding: 0; gap: 8px; }
+  .combo-lista li { display: flex; gap: 8px; align-items: center; }
+  .combo-lista li::before { content: ''; flex: none; width: 18px; height: 18px; border-radius: 50%; background: var(--roxo) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E") center / 11px no-repeat; }
   .card { display: grid; gap: 10px; align-content: start; padding: 20px; border-radius: 20px; background: var(--surface); border: 1px solid var(--line); }
   .card.destaque { border: 2px solid var(--roxo); }
   .card .valor { font-family: var(--display); font-weight: 900; font-size: 40px; line-height: 1; }
@@ -366,7 +375,8 @@
         <article class="card"><h3>Delivery</h3><p class="valor num"><i data-preco-n="delivery"></i><span>por mês</span></p>
           <ul><li>Pedido com endereço e taxa por distância</li><li>Comanda na cozinha</li><li>Entregador e acompanhamento do pedido</li><li>Mesmo cardápio da página da mesa</li></ul></article>
         <article class="card destaque"><div class="card-top"><h3>Os quatro juntos</h3><span class="tipo tipo--mensal">Combo</span></div><p class="valor num"><i id="precoTodos"></i><span>por mês</span></p>
-          <ul><li>Tudo dos quatro serviços</li><li id="economiaTodos"></li></ul></article>
+          <p class="combo-eco" id="economiaTodos"></p>
+          <ul class="combo-lista"><li>Página da mesa e cardápio</li><li>Chamar o garçom</li><li>Programa de fidelidade</li><li>Delivery</li></ul></article>
       </div>
     </div>
 
@@ -432,7 +442,7 @@
 
 <script src="/assets/js/precos.js"></script>
 <script>
-  // Local (/lp/precos.html) a landing page é /lp/; publicada, é a raiz.
+  // Local (/lp/orcamento.html) a landing page é /lp/; publicada, é a raiz.
   if (location.pathname.startsWith('/lp/')) document.querySelectorAll('[data-home]').forEach((a) => (a.href = a.getAttribute('href').replace(/^\//, '/lp/')));
 </script>
 <script>
@@ -448,7 +458,7 @@
     });
     const todos = Precos.combo(Object.fromEntries(Precos.SERVICOS.map((s) => [s.id, true])));
     $('precoTodos').textContent = brl(todos.total);
-    $('economiaTodos').textContent = `${brl(todos.economia)} a menos por mês que separados`;
+    $('economiaTodos').textContent = `Economia de ${brl(todos.economia)}/mês`;
     // Plaquinha padrão: preço por unidade conforme a quantidade.
     const FAIXAS = [
       { de: 1, ate: 19, valor: 59 },
