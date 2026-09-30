@@ -1,7 +1,7 @@
 {
   "id": "/admin/",
-  "name": "Painel da equipe",
-  "short_name": "Painel",
+  "name": "VTX Tap · Painel",
+  "short_name": "VTX Painel",
   "description": "Chamados das mesas, salão, comentários e ajustes do restaurante.",
   "lang": "pt-BR",
   "start_url": "/admin/",

@@ -226,6 +226,91 @@
   if ('serviceWorker' in navigator) {
     addEventListener('load', () => navigator.serviceWorker.register('/admin/sw.js', { scope: '/admin/' }).catch(() => {}));
   }
+
+  /* App instalado com o nome e a logo do restaurante ("Ciência Food · Painel", não só "Painel").
+     O manifesto e os ícones ficam no cache 'painel-marca' e o service worker entrega no endereço de sempre.
+     Mudou o nome ou a logo: o link do manifesto muda e o Android atualiza o app instalado ao abrir.
+     No iPhone, o nome e o ícone valem na hora de adicionar à tela de início. */
+  let marcaFeita = '';
+  const nomeCurto = (nome) => {
+    if (nome.length <= 12) return nome;
+    let r = '';
+    for (const w of nome.split(/\s+/)) {
+      if ((r ? `${r} ${w}` : w).length > 12) break;
+      r = r ? `${r} ${w}` : w;
+    }
+    return r || nome.slice(0, 12);
+  };
+  // Logo centralizada num quadrado branco (folga maior no ícone "maskable", que o Android recorta).
+  const iconeDaLogo = (img, lado, folga) => new Promise((ok) => {
+    const c = document.createElement('canvas');
+    c.width = c.height = lado;
+    const g = c.getContext('2d');
+    g.fillStyle = '#fff';
+    g.fillRect(0, 0, lado, lado);
+    const area = lado * (1 - 2 * folga);
+    const k = Math.min(area / img.naturalWidth, area / img.naturalHeight);
+    const w = img.naturalWidth * k;
+    const h = img.naturalHeight * k;
+    g.drawImage(img, (lado - w) / 2, (lado - h) / 2, w, h);
+    c.toBlob(ok, 'image/png');
+  });
+  const carregarImg = (src) => new Promise((ok, erro) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => ok(img);
+    img.onerror = erro;
+    img.src = src;
+  });
+  async function marcaDoApp(nome, logo) {
+    const chave = `${nome}|${logo}`;
+    if (chave === marcaFeita) return;
+    marcaFeita = chave;
+    const curto = nomeCurto(nome);
+    const meta = (n, v) => { const m = document.querySelector(`meta[name="${n}"]`); if (m) m.content = v; };
+    meta('apple-mobile-web-app-title', curto);
+    meta('application-name', curto);
+    if (!('caches' in window) || !('serviceWorker' in navigator)) return;
+    try {
+      const v = [...chave].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7).toString(36);
+      const cache = await caches.open('painel-marca');
+      let icons = [
+        { src: '/admin/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+        { src: '/admin/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+        { src: '/admin/icons/maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+      ];
+      if (logo) {
+        try {
+          const img = await carregarImg(logo);
+          const png = (b) => new Response(b, { headers: { 'Content-Type': 'image/png' } });
+          const [p192, p512, pm, p180] = await Promise.all([iconeDaLogo(img, 192, 0.08), iconeDaLogo(img, 512, 0.08), iconeDaLogo(img, 512, 0.2), iconeDaLogo(img, 180, 0.08)]);
+          await Promise.all([
+            cache.put(`/admin/icons/marca-192-${v}.png`, png(p192)),
+            cache.put(`/admin/icons/marca-512-${v}.png`, png(p512)),
+            cache.put(`/admin/icons/marca-maskable-${v}.png`, png(pm)),
+          ]);
+          icons = [
+            { src: `/admin/icons/marca-192-${v}.png`, sizes: '192x192', type: 'image/png', purpose: 'any' },
+            { src: `/admin/icons/marca-512-${v}.png`, sizes: '512x512', type: 'image/png', purpose: 'any' },
+            { src: `/admin/icons/marca-maskable-${v}.png`, sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          ];
+          // iPhone lê o ícone direto da página.
+          const touch = document.querySelector('link[rel="apple-touch-icon"]');
+          if (touch && p180) touch.href = await new Promise((ok) => { const f = new FileReader(); f.onload = () => ok(f.result); f.readAsDataURL(p180); });
+        } catch {} // Logo sem permissão de leitura (CORS) ou quebrada: fica o ícone da VTX, com o nome do restaurante.
+      }
+      const manifesto = {
+        id: '/admin/', name: `${nome} · Painel`, short_name: curto,
+        description: `Painel da equipe do ${nome}: chamados, salão, pedidos e ajustes.`,
+        lang: 'pt-BR', start_url: '/admin/', scope: '/admin/', display: 'standalone', orientation: 'any',
+        background_color: '#F4F2F9', theme_color: '#140B33', categories: ['business', 'food'], icons,
+      };
+      await cache.put('/admin/manifest.webmanifest', new Response(JSON.stringify(manifesto), { headers: { 'Content-Type': 'application/manifest+json' } }));
+      // Link novo: o navegador lê o manifesto de novo (e o Android atualiza o app instalado).
+      const link = document.querySelector('link[rel="manifest"]');
+      if (link) link.href = `/admin/manifest.webmanifest?m=${v}`;
+    } catch {}
+  }
   addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
     APP.pedido = e;
@@ -450,6 +535,7 @@
     const mark = $('.side-mark');
     mark.classList.toggle('has-logo', !!logo);
     mark.innerHTML = logo ? `<img src="${esc(logo)}" alt="">` : esc(initials(nomeRest()));
+    marcaDoApp(nomeRest(), logo);
     const lista = views();
     $('#sideNav').innerHTML = lista.map(
       (v) => `<a class="nav-item" href="#${v.id}" ${S.view === v.id ? 'aria-current="page"' : ''}>${icon(v.icon)}<span>${v.label}</span>${badgeFor(v.id, n)}</a>`
