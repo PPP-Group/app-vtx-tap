@@ -115,7 +115,14 @@
   .op b { font-weight: 600; }
   .op small { color: var(--muted); font-size: 13.5px; overflow-wrap: anywhere; }
   .placas { display: grid; gap: 10px; grid-template-columns: minmax(0, 1fr); }
-  @media (min-width: 560px) { .placas { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  /* Padrão e personalizada básica lado a lado; sob demanda embaixo, na largura toda (foto à esquerda, texto à direita). */
+  @media (min-width: 560px) {
+    .placas { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .placa-op--larga { grid-column: 1 / -1; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 14px; align-items: center; }
+    .placa-op--larga img { grid-row: 1 / span 2; margin-bottom: 0; }
+    .placa-op--larga .op-top { align-self: end; }
+    .placa-op--larga small { align-self: start; }
+  }
   .placa-op { position: relative; display: grid; gap: 6px; align-content: start; padding: 12px; border-radius: 16px; border: 1.5px solid var(--line); cursor: pointer; min-width: 0; transition: border-color .15s, background-color .15s; }
   .placa-op:hover { border-color: var(--roxo); }
   .placa-op:has(input:checked) { border-color: var(--roxo); background: var(--roxo-soft); }
@@ -256,7 +263,7 @@
               <img src="/assets/img/placas/placa-personalizada-basica.webp" width="1200" height="757" alt="Plaquinha personalizada básica: a logo do restaurante no meio do QR e os detalhes na cor do restaurante">
               <span class="op-top"><b>Personalizada básica</b><span class="preco" id="precoBasica"></span></span>
               <small>Você envia a logo: ela vai no meio do QR, e os detalhes saem na cor do restaurante. R$ 20 a mais por plaquinha.</small></label>
-            <label class="placa-op"><input type="radio" name="placa" id="plDemanda" value="demanda">
+            <label class="placa-op placa-op--larga"><input type="radio" name="placa" id="plDemanda" value="demanda">
               <img src="/assets/img/placas/placa-sob-demanda.webp" width="1200" height="757" alt="Exemplo de plaquinha sob demanda, com arte própria do restaurante em fundo verde e dourado">
               <span class="op-top"><b>Personalizada sob demanda</b><span class="preco">Sob consulta</span></span>
               <small>Você manda a arte ou conta como quer. Nosso time avalia e faz o orçamento. Imagem ilustrativa.</small></label>
