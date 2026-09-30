@@ -13,8 +13,9 @@
  *                     da VTX Tap pequenininha, à esquerda do @. Sem logo do restaurante,
  *                     sai igual ao padrão.
  *
- * O QR sai em vetor (nítido em qualquer impressão), com correção de erro alta (H) para
- * continuar lendo com a logo no meio. Logos e ícone em PNG de alta resolução.
+ * Qualidade de impressão: QR, ícone de NFC e textos em vetor (nítidos em qualquer tamanho),
+ * textos na fonte Sora embutida no PDF, logos na resolução original. O QR tem correção de
+ * erro alta (H) para continuar lendo com a logo no meio.
  */
 (function () {
   // Textos e medidas da plaquinha. Troque aqui para mudar em todas as próximas.
@@ -28,8 +29,11 @@
   const TINTA = '#1C2733';
   const LILAS = '#C9B3FF';        // roxo bem claro: divisória e detalhes do ícone de NFC
   const LILAS_QR = '#A987FF';     // miolo dos quadrados do QR (um pouco mais forte para o leitor achar)
-  const COR_CODIGO = '#D92D20';   // código da plaquinha, em pé na lateral direita
+  const COR_CODIGO = '#B7BCC6';   // código da plaquinha, cinza clarinho, em pé na lateral direita
   const JSPDF = 'https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js';
+  const SVG2PDF = 'https://cdn.jsdelivr.net/npm/svg2pdf.js@2.2.4/dist/svg2pdf.umd.min.js';
+  // Sora (SIL OFL, assets/fonts/OFL.txt), embutida no PDF.
+  const FONTES = { bold: '/assets/fonts/Sora-Bold.ttf', semibold: '/assets/fonts/Sora-SemiBold.ttf' };
   const LOGO_VTX = '/admin/icons/icon-512.png';          // marca quadrada (miolo do QR)
   const LOGO_VTX_TEXTO = '/assets/img/vtx-tap-escuro.png'; // logo com texto (ao lado do @)
 
@@ -62,27 +66,30 @@
       img.src = src;
     });
 
-  // SVG → PNG em alta resolução (cerca de 1200 dpi no tamanho impresso).
-  const svgPng = ({ w, h, svg }, px = 900) =>
-    new Promise((ok, falha) => {
-      const img = new Image();
-      img.onload = () => {
-        const c = document.createElement('canvas');
-        c.width = px;
-        c.height = Math.round((px * h) / w);
-        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-        ok(c.toDataURL('image/png'));
-      };
-      img.onerror = () => falha(new Error('Falha ao preparar o ícone da plaquinha.'));
-      const doc = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}">${svg}</svg>`;
-      img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(doc);
-    });
+  // Fonte TTF → base64 para o jsPDF embutir.
+  async function fonteBase64(url) {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error('Não foi possível carregar a fonte da plaquinha.');
+    const b = new Uint8Array(await r.arrayBuffer());
+    let bin = '';
+    for (let i = 0; i < b.length; i += 0x8000) bin += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000));
+    return btoa(bin);
+  }
+
+  // Ícone em vetor no PDF (svg2pdf.js), na posição e no tamanho pedidos.
+  async function svgNoPdf(doc, { w, h, svg }, x, y, largura, altura) {
+    const el = new DOMParser().parseFromString(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}">${svg}</svg>`, 'image/svg+xml').documentElement;
+    const f = (window.svg2pdf && (window.svg2pdf.svg2pdf || window.svg2pdf)) || null;
+    if (typeof f !== 'function') throw new Error('Gerador de PDF incompleto. Confira a internet.');
+    await f(el, doc, { x, y, width: largura, height: altura });
+  }
 
   // Logo → PNG (com a proporção dela). Logo sem permissão de leitura (CORS) ou quebrada: null.
-  async function logoPng(src, px = 600) {
+  async function logoPng(src, px = 2400) {
     try {
       const img = await carregarImg(src);
-      const k = px / Math.max(img.naturalWidth, img.naturalHeight);
+      // Resolução original (até 2400 px no lado maior: ~5000 dpi no miolo do QR).
+      const k = Math.min(1, px / Math.max(img.naturalWidth, img.naturalHeight));
       const c = document.createElement('canvas');
       c.width = Math.max(1, Math.round(img.naturalWidth * k));
       c.height = Math.max(1, Math.round(img.naturalHeight * k));
@@ -125,8 +132,8 @@
     return { x: x + ini0 * m, y: y + ini0 * m, lado: k * m };
   }
 
-  function texto(doc, t, x, y, { tamanho, cor = TINTA, espaco = 0, alinhar = 'centro', angulo = 0 } = {}) {
-    doc.setFont('helvetica', 'bold');
+  function texto(doc, t, x, y, { tamanho, cor = TINTA, espaco = 0, alinhar = 'centro', angulo = 0, peso = 'bold' } = {}) {
+    doc.setFont('Sora', peso);
     doc.setFontSize(tamanho);
     doc.setTextColor(cor);
     doc.setCharSpace(espaco);
@@ -154,13 +161,18 @@
   async function baixarPdf(itens, nomeArquivo, { modelo = 'padrao' } = {}) {
     if (!itens.length) throw new Error('Nenhuma plaquinha para gerar.');
     if (!window.jspdf) await carregarScript(JSPDF);
+    if (!window.svg2pdf) await carregarScript(SVG2PDF);
     const { jsPDF } = window.jspdf;
     const L = PLACA.largura;
     const A = PLACA.altura;
-    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [L, A], compress: true });
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [L, A], compress: true, putOnlyUsedFonts: true });
     doc.setProperties({ title: nomeArquivo.replace(/\.pdf$/, ''), creator: 'Central de plaquinhas', subject: `Cartão ${L} × ${A} mm, cantos com raio de ${PLACA.raio} mm` });
 
-    const nfc = await svgPng(NFC);
+    const [fb, fs] = await Promise.all([fonteBase64(FONTES.bold), fonteBase64(FONTES.semibold)]);
+    doc.addFileToVFS('Sora-Bold.ttf', fb);
+    doc.addFont('Sora-Bold.ttf', 'Sora', 'bold');
+    doc.addFileToVFS('Sora-SemiBold.ttf', fs);
+    doc.addFont('Sora-SemiBold.ttf', 'Sora', 'semibold');
     const vtx = await logoPng(LOGO_VTX);
     const vtxTexto = modelo === 'personalizado' ? await logoPng(LOGO_VTX_TEXTO) : null;
     const logos = {};
@@ -180,7 +192,7 @@
     const blocoH = nfcH + 2.5 + 9;     // ícone + espaço + título em duas linhas
     const nfcY = (A - blocoH) / 2 - 1.5;
 
-    itens.forEach((it, i) => {
+    for (const [i, it] of itens.entries()) {
       if (i) doc.addPage([L, A], 'landscape');
       // Cartão branco com os cantos arredondados (a faca de corte segue o mesmo raio).
       doc.setFillColor('#FFFFFF');
@@ -203,7 +215,7 @@
       doc.line(divX, 9, divX, A - 9);
 
       // Direita: ícone de NFC grande e centralizado, com o título logo embaixo.
-      doc.addImage(nfc, 'PNG', dirCx - nfcW / 2, nfcY, nfcW, nfcH, 'ic-nfc', 'FAST');
+      await svgNoPdf(doc, NFC, dirCx - nfcW / 2, nfcY, nfcW, nfcH);
       // Título em duas linhas ("Aproxime" / "o celular") para caber grande entre a divisória e o código.
       const [l1, ...resto] = PLACA.titulo.split(' ');
       texto(doc, l1, dirCx, nfcY + nfcH + 2.5 + 3.6, { tamanho: 11.5 });
@@ -211,7 +223,7 @@
 
       // Canto inferior direito: @ (no personalizado, com a logo da VTX Tap pequena à esquerda).
       const rodY = A - 4;
-      const wAt = texto(doc, PLACA.rodape, codX - 2.2, rodY, { tamanho: 6, alinhar: 'direita' });
+      const wAt = texto(doc, PLACA.rodape, codX - 2.2, rodY, { tamanho: 6, alinhar: 'direita', peso: 'semibold' });
       if (vtxTexto) {
         const h = 3.4;
         const w = (vtxTexto.w / vtxTexto.h) * h;
@@ -219,11 +231,11 @@
       }
 
       // Código em pé na lateral direita, pequeno, lido de cima para baixo.
-      doc.setFont('helvetica', 'bold');
+      doc.setFont('Sora', 'semibold');
       doc.setFontSize(5.5);
       const wc = doc.getTextWidth(it.codigo) + 0.3 * (it.codigo.length - 1);
-      texto(doc, it.codigo, codX, (A - wc) / 2, { tamanho: 5.5, cor: COR_CODIGO, espaco: 0.3, angulo: -90 });
-    });
+      texto(doc, it.codigo, codX, (A - wc) / 2, { tamanho: 5.5, cor: COR_CODIGO, espaco: 0.3, angulo: -90, peso: 'semibold' });
+    }
 
     doc.save(nomeArquivo);
   }
