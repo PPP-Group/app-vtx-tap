@@ -453,7 +453,8 @@
       valor: true,
       pronto: async (t, x) => {
         // 1) Conferência automática na SEFAZ (valor oficial e produtos): os pontos entram na hora.
-        if (store.fidSefaz) {
+        // Só quando o restaurante ligou a conferência (cobrada por nota); desligada, nem chama.
+        if (store.fidSefaz && prog && prog.sefaz) {
           corpo().innerHTML = `<div class="fid-carregando"><span class="dot"></span><p>Conferindo sua nota na SEFAZ…</p><small class="muted">Leva alguns segundos.</small></div>`;
           const r = await store.fidSefaz({ cpf: S.cpf, qr: t });
           if (r.status === 'sem_cadastro') return ir('cadastro');

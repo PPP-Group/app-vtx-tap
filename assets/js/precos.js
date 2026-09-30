@@ -6,6 +6,7 @@
  *   Precos.servicos({ pagina, ... }) → mensalidade dos serviços (com desconto de combo)
  *   Precos.plano(plano)              → mensalidade do plano (serviços + domínio próprio)
  *   Precos.combo({ ... })            → { soma, total, economia, desconto } para mostrar o desconto
+ *   Precos.SEFAZ_NOTA                → preço de cada nota conferida na SEFAZ (opcional, cobrado à parte)
  */
 (function () {
   const SERVICOS = [
@@ -18,6 +19,8 @@
   const DESCONTO = { 2: 0.1, 3: 0.15 };
   const TODOS = 399;
   const DOMINIO_MES = 19;
+  // Conferência automática da nota na SEFAZ (fidelidade): o restaurante liga se quiser e paga por nota conferida.
+  const SEFAZ_NOTA = 0.25;
 
   function combo(sv = {}) {
     const escolhidos = SERVICOS.filter((s) => sv[s.id]);
@@ -34,5 +37,5 @@
   const servicos = (sv) => combo(sv).total;
   const plano = (p) => servicos((p && p.servicos) || {}) + (p && ['proprio', 'registro'].includes(p.dominio) ? DOMINIO_MES : 0);
 
-  window.Precos = { SERVICOS, DESCONTO, TODOS, DOMINIO_MES, combo, servicos, plano };
+  window.Precos = { SERVICOS, DESCONTO, TODOS, DOMINIO_MES, SEFAZ_NOTA, combo, servicos, plano };
 })();

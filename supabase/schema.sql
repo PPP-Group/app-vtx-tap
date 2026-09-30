@@ -310,7 +310,7 @@ create policy "equipe ve a equipe" on public.equipe_membros
 -- A equipe salva a configuração do próprio restaurante (só estas chaves).
 create or replace function public.salvar_config(p_patch jsonb) returns void
 language plpgsql security definer set search_path = public as $$
-declare r uuid := public.meu_restaurante(); f jsonb := p_patch -> 'fidelidade';
+declare r uuid := public.meu_restaurante(); f jsonb := p_patch -> 'fidelidade'; sefaz_antes boolean;
 begin
   if r is null then raise exception 'Acesso negado.'; end if;
   if p_patch ? 'fidelidade' then
@@ -320,6 +320,17 @@ begin
     if jsonb_typeof(f) <> 'object' then raise exception 'Regras do programa inválidas.'; end if;
     if coalesce(f ->> 'ativo', '') = 'true' and (jsonb_typeof(f -> 'cnpjs') <> 'array' or jsonb_array_length(f -> 'cnpjs') = 0) then
       raise exception 'Informe o CNPJ que sai nas notas fiscais antes de ativar o programa.';
+    end if;
+    -- Conferência automática na SEFAZ é cobrada por nota: só o administrador liga ou desliga.
+    sefaz_antes := coalesce((select fidelidade -> 'sefaz' ->> 'ativo' from public.restaurantes where id = r), '') = 'true';
+    if (coalesce(f -> 'sefaz' ->> 'ativo', '') = 'true') <> sefaz_antes then
+      if not public.eu_admin() then
+        raise exception 'Só o administrador do restaurante pode ligar ou desligar a conferência automática na SEFAZ.';
+      end if;
+      f := jsonb_set(f, '{sefaz}', jsonb_build_object('ativo', not sefaz_antes, 'em', now(), 'por', coalesce(public.fid_quem(), 'Equipe')));
+    else
+      f := case when (select fidelidade ? 'sefaz' from public.restaurantes where id = r)
+        then jsonb_set(f, '{sefaz}', (select fidelidade -> 'sefaz' from public.restaurantes where id = r)) else f - 'sefaz' end;
     end if;
   end if;
   if p_patch ? 'delivery' and (jsonb_typeof(p_patch -> 'delivery') <> 'object' or not public.plano_tem(r, 'delivery')) then
@@ -1484,6 +1495,7 @@ begin
     'pontosPorReal', least(greatest(public.num_ou(c ->> 'pontosPorReal', 1), 0), 1000),
     'prazoDias', public.fid_prazo(p_restaurante),
     'regulamento', left(coalesce(c ->> 'regulamento', ''), 4000),
+    'sefaz', coalesce(c -> 'sefaz' ->> 'ativo', '') = 'true',
     'indicacao', case when coalesce(c -> 'indicacao' ->> 'ativo', '') = 'true' then jsonb_build_object('ativo', true,
         'indicador', least(greatest(public.num_ou(c -> 'indicacao' ->> 'indicador', 0), 0), 100000)::int,
         'indicado', least(greatest(public.num_ou(c -> 'indicacao' ->> 'indicado', 0), 0), 100000)::int,
@@ -2038,7 +2050,7 @@ declare r uuid := public.meu_restaurante(); p jsonb;
 begin
   if r is null then raise exception 'Acesso negado.'; end if;
   p := public.plano_de(r);
-  return jsonb_build_object('plano', p, 'mensal', public.plano_preco(p),
+  return jsonb_build_object('plano', p, 'mensal', public.plano_preco(p), 'sefaz', public.sefaz_uso(r),
     'historico', coalesce((select jsonb_agg(jsonb_build_object('criado_em', criado_em, 'origem', origem, 'por', por,
         'antes', antes, 'depois', depois, 'mensal_antes', mensal_antes, 'mensal_depois', mensal_depois) order by criado_em desc)
       from (select * from public.plano_mudancas where restaurante_id = r order by criado_em desc limit 20) m), '[]'::jsonb));
@@ -2205,13 +2217,51 @@ begin
   return k;
 end $$;
 
--- Uso da consulta paga, por restaurante e mês (freio de custo).
+-- Notas conferidas na SEFAZ, por restaurante e mês: cobradas à parte na mensalidade.
 create table if not exists private.fid_sefaz_uso (
   restaurante_id uuid not null references public.restaurantes (id) on delete cascade,
   mes            date not null,
   consultas      int not null default 0,
   primary key (restaurante_id, mes)
 );
+
+-- Preço de cada nota conferida na SEFAZ (o mesmo de Precos.SEFAZ_NOTA).
+create or replace function public.sefaz_preco_nota() returns numeric language sql immutable as $$ select 0.25::numeric $$;
+
+-- Uso da conferência no mês atual e no anterior: { ativo, preco, meses: [{ mes, notas, valor }] }.
+create or replace function public.sefaz_uso(p_restaurante uuid) returns jsonb
+language sql stable security definer set search_path = public as $$
+  select jsonb_build_object(
+    'ativo', coalesce(public.fid_cfg(p_restaurante) -> 'sefaz' ->> 'ativo', '') = 'true',
+    'preco', public.sefaz_preco_nota(),
+    'meses', coalesce((select jsonb_agg(jsonb_build_object('mes', m.mes, 'notas', coalesce(u.consultas, 0),
+        'valor', round(coalesce(u.consultas, 0) * public.sefaz_preco_nota(), 2)) order by m.mes desc)
+      from (select (date_trunc('month', now()) - make_interval(months => k))::date as mes from generate_series(0, 1) k) m
+      left join private.fid_sefaz_uso u on u.restaurante_id = p_restaurante and u.mes = m.mes), '[]'::jsonb));
+$$;
+
+-- Custo estimado da API (Infosimples, faixas progressivas por volume da conta + franquia mínima de R$ 100).
+-- Fica só no banco: o restaurante vê apenas o preço por nota, nunca o custo.
+create or replace function private.sefaz_custo(p_notas int) returns numeric language sql immutable as $$
+  select greatest(100, coalesce(sum(greatest(least(p_notas, f.ate) - f.de, 0) * f.preco), 0))
+    from (values (0, 500, 0.20), (500, 2000, 0.16), (2000, 5000, 0.14), (5000, 10000, 0.13), (10000, 30000, 0.11),
+                 (30000, 50000, 0.10), (50000, 80000, 0.09), (80000, 100000, 0.07), (100000, 2147483647, 0.05)) f(de, ate, preco);
+$$;
+
+-- Central: notas conferidas por restaurante e o total do mês (cobrado dos restaurantes e custo estimado).
+create or replace function public.central_sefaz_uso(p_meses int default 3) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare desde date := (date_trunc('month', now()) - make_interval(months => greatest(least(coalesce(p_meses, 3), 24), 1) - 1))::date;
+begin
+  if not public.eh_operador() then raise exception 'Acesso negado.'; end if;
+  return jsonb_build_object(
+    'uso', coalesce((select jsonb_agg(jsonb_build_object('restaurante_id', u.restaurante_id, 'mes', u.mes, 'notas', u.consultas,
+        'valor', round(u.consultas * public.sefaz_preco_nota(), 2)) order by u.mes desc)
+      from private.fid_sefaz_uso u where u.mes >= desde), '[]'::jsonb),
+    'meses', coalesce((select jsonb_agg(jsonb_build_object('mes', t.mes, 'notas', t.n, 'cobrado', round(t.n * public.sefaz_preco_nota(), 2),
+        'custo', case when t.n > 0 then private.sefaz_custo(t.n) else 0 end) order by t.mes desc)
+      from (select u.mes, sum(u.consultas)::int n from private.fid_sefaz_uso u where u.mes >= desde group by u.mes) t), '[]'::jsonb));
+end $$;
 
 -- Antes de pagar a consulta: a nota é do restaurante, está no prazo, o cliente existe e a nota ainda não
 -- foi usada. Devolve { status: 'ok', chave, url } ou o motivo para não consultar.
@@ -2240,13 +2290,19 @@ begin
   end if;
   -- Já conferida pelo XML da equipe: não precisa pagar a consulta.
   if exists (select 1 from public.fid_xml where chave = v_chave) then return jsonb_build_object('status', 'xml', 'chave', v_chave); end if;
+  -- Conferência automática desligada pelo restaurante: segue o fluxo com a foto e a equipe (sem custo).
+  if coalesce(public.fid_cfg(p_restaurante) -> 'sefaz' ->> 'ativo', '') <> 'true' then
+    return jsonb_build_object('status', 'desligada');
+  end if;
+  -- Freio contra abuso de um mesmo CPF (não para o restaurante): passou disso, a equipe confere.
   if not public.equipe_pode_tentar('sefaz:' || p_restaurante || ':' || v_cpf, 15, 1440) then
     return jsonb_build_object('status', 'limite', 'mensagem', 'Muitas notas hoje. As próximas a equipe confere.');
   end if;
   insert into private.fid_sefaz_uso (restaurante_id, mes, consultas) values (p_restaurante, v_mes, 1)
   on conflict (restaurante_id, mes) do update set consultas = private.fid_sefaz_uso.consultas + 1
   returning consultas into usados;
-  if usados > greatest(coalesce(p_limite, 3000), 0) then
+  -- Sem teto por padrão: a conferência não para no meio do mês. p_limite > 0 só em emergência.
+  if coalesce(p_limite, 0) > 0 and usados > p_limite then
     update private.fid_sefaz_uso u set consultas = u.consultas - 1 where u.restaurante_id = p_restaurante and u.mes = v_mes;
     return jsonb_build_object('status', 'limite', 'mensagem', 'A conferência automática deste mês acabou. A equipe confere a nota.');
   end if;
@@ -2339,9 +2395,11 @@ end $$;
 do $$
 declare f text;
 begin
-  foreach f in array array['public.fid_itens_salvar(uuid, text, text, timestamptz, jsonb)'] loop
+  foreach f in array array['public.fid_itens_salvar(uuid, text, text, timestamptz, jsonb)', 'public.sefaz_uso(uuid)'] loop
     execute format('revoke execute on function %s from public, anon, authenticated', f);
   end loop;
+  execute 'revoke execute on function public.central_sefaz_uso(int) from public, anon';
+  execute 'grant execute on function public.central_sefaz_uso(int) to authenticated';
   -- Só a função "nfce" (service_role).
   foreach f in array array[
     'public.fid_sefaz_preparar(uuid, text, text, int)',

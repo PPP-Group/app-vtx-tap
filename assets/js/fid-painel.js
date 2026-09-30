@@ -445,6 +445,7 @@
             <option value="compra" ${ind.quando === 'compra' ? 'selected' : ''}>Na primeira compra do indicado (mais seguro)</option>
           </select></label>
         </section>
+        ${sefazForm(r)}
         <section class="panel stack">
           <div class="set-row fp-row"><div><h3>Lançamento manual</h3><p>Deixa a equipe lançar compras sem nota (ex.: delivery) na ficha do cliente. Fica registrado quem lançou.</p></div>
             <label class="switch"><input type="checkbox" name="manual" ${r.manual ? 'checked' : ''} aria-label="Lançamento manual"><span></span></label></div>
@@ -463,6 +464,19 @@
       <div class="fp-salvar" ${P.regrasSujas ? '' : 'hidden'}><span class="fp-salvar-txt">Mudanças não salvas</span><button type="submit" class="btn btn-cobalt">${icon('check')} Salvar regras</button>
         <button type="button" class="btn btn-quiet" data-fp-regras="desfazer">Desfazer</button></div>
     </form>`;
+  }
+  // Conferência automática na SEFAZ: opcional, cobrada por nota conferida junto com a mensalidade.
+  function sefazForm(r) {
+    const on = !!(r.sefaz && r.sefaz.ativo);
+    const adm = !!(ctx.S.user && ctx.S.user.admin);
+    const preco = window.Precos ? Precos.SEFAZ_NOTA : 0.25;
+    return `<section class="panel stack fp-sefaz">
+      <div class="set-row fp-row"><div><h3>Conferência automática na SEFAZ</h3>
+        <p>Cada nota lida é conferida na hora no site da SEFAZ: valor oficial, CPF e produtos. Os pontos entram sem a equipe aprovar e os produtos alimentam o ranking de mais pedidos.</p></div>
+        <label class="switch"><input type="checkbox" name="sefazAtivo" ${on ? 'checked' : ''} ${adm ? '' : 'disabled'} aria-label="Conferência automática na SEFAZ"><span></span></label></div>
+      <p class="note">${icon('receipt')}<span><b>${brl(preco)} por nota conferida</b>, somado à mensalidade no fim do mês. Sem limite: não para no meio do mês. O uso aparece em Ajustes → Plano.</span></p>
+      <p class="help">${on ? '' : 'Desligada: o cliente confirma o valor da nota e a equipe aprova em Fidelidade → Hoje (sem custo). '}${adm ? '' : 'Só o administrador liga ou desliga.'}${on && r.sefaz.em ? ` Ligada em ${new Date(r.sefaz.em).toLocaleDateString('pt-BR')}${r.sefaz.por ? ` por ${esc(r.sefaz.por)}` : ''}.` : ''}</p>
+    </section>`;
   }
   function niveisForm(r) {
     const n = r.niveis || { ativo: false, base: 'sempre', meses: 12, lista: [] };
@@ -543,6 +557,7 @@
     };
     r.inicio = di(v('inicio').value, 'Vale para compras desde') || null;
     r.ranking = { ativo: v('rankAtivo').checked };
+    if (v('sefazAtivo').checked !== !!(r.sefaz && r.sefaz.ativo)) r.sefaz = { ativo: v('sefazAtivo').checked, em: new Date().toISOString(), por: (ctx.S.user && ctx.S.user.nome) || '' };
     r.indicacao = { ativo: v('indAtivo').checked, indicador: Math.round(+v('indIndicador').value || 0), indicado: Math.round(+v('indIndicado').value || 0), quando: v('indQuando').value === 'compra' ? 'compra' : 'cadastro' };
     r.manual = v('manual').checked;
     r.regulamento = v('regulamento').value.trim();

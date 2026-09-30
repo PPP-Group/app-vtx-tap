@@ -91,6 +91,11 @@
   // Tabela em assets/js/precos.js (a mesma do banco): 2 serviços −10%, 3 −15%, os quatro por R$ 399.
   const SERVICOS = Precos.SERVICOS.map((s) => [s.id, s.nome, s.preco]);
   const reais = (v) => 'R$ ' + Number(v || 0).toLocaleString('pt-BR');
+  const brl = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  // Conferência na SEFAZ (cobrada por nota): uso do mês atual.
+  const mesAtual = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`; };
+  const sefazLigada = (r) => !!(r.fidelidade && r.fidelidade.sefaz && r.fidelidade.sefaz.ativo);
+  const sefazDoMes = (rid) => ((S.sefaz && S.sefaz.uso) || []).find((u) => u.restaurante_id === rid && u.mes === mesAtual()) || { notas: 0, valor: 0 };
   const planoPreco = (p) => (p ? Precos.plano(p) : 0);
   const planoServicos = (p) => SERVICOS.filter(([k]) => p && p.servicos && p.servicos[k]).map(([, n]) => n);
   const planoResumo = (p) => (p ? `${planoServicos(p).join(' · ')} · ${p.mesas} mesas · ${reais(planoPreco(p))}/mês` : 'Plano não definido');
@@ -117,6 +122,7 @@
       async entrar() {},
       async sair() {},
       async listRestaurantes() { return read().restaurantes; },
+      async sefazUso() { return { uso: [], meses: [] }; },
       async alterarPlano(rid, plano) {
         const db = read();
         const r = db.restaurantes.find((x) => x.id === rid);
@@ -257,6 +263,10 @@
       async listRestaurantes() {
         return must(await sb.from('restaurantes').select('*').order('nome'));
       },
+      // Conferência na SEFAZ: notas por restaurante e total do mês (cobrado e custo estimado).
+      async sefazUso() {
+        return must(await sb.rpc('central_sefaz_uso', { p_meses: 3 }));
+      },
       async alterarPlano(rid, plano) {
         return must(await sb.rpc('plano_alterar_central', { p_restaurante: rid, p_plano: plano }));
       },
@@ -310,8 +320,9 @@
 
   async function carregar() {
     try {
-      const [rests, tags, met, mud] = await Promise.all([api.listRestaurantes(), api.listEtiquetas(), api.metricas(S.dias), api.listMudancas().catch(() => [])]);
+      const [rests, tags, met, mud, sefaz] = await Promise.all([api.listRestaurantes(), api.listEtiquetas(), api.metricas(S.dias), api.listMudancas().catch(() => []), api.sefazUso().catch(() => null)]);
       S.rests = rests || [];
+      S.sefaz = sefaz || { uso: [], meses: [] };
       S.mudancas = mud || [];
       S.tags = tags || [];
       S.met = met;
@@ -495,6 +506,7 @@
         <div><dt>Restaurantes com leitura</dt><dd>${ativos}<small>/${rs.length}</small></dd></div>
         <div><dt>Ativadas nunca lidas</dt><dd>${nunca}<small>/${entregues.length}</small></dd></div>
         <div><dt>Receita mensal (planos)</dt><dd>${reais(S.rests.filter((r) => r.ativo !== false && r.plano).reduce((t, r) => t + planoPreco(r.plano), 0))}</dd></div>
+        ${sefazStrip()}
       </dl>
       ${mudancasHtml()}
       <section class="card-sec"><h2>Leituras por dia</h2>${grafico(m.por_dia)}
@@ -584,6 +596,13 @@
   }
 
   // Mudanças de plano (upsell e downsell), da central ou pedidas pelo restaurante no painel.
+  // Total do mês na conferência da SEFAZ: o que os restaurantes pagam e o custo estimado da API (só a central vê).
+  function sefazStrip() {
+    const m = ((S.sefaz && S.sefaz.meses) || []).find((x) => x.mes === mesAtual());
+    if (!m && !S.rests.some(sefazLigada)) return '';
+    const x = m || { notas: 0, cobrado: 0, custo: 0 };
+    return `<div><dt>SEFAZ no mês (${S.rests.filter(sefazLigada).length} ligados)</dt><dd>${brl(x.cobrado)}<small> · ${num(x.notas)} notas · custo ~${brl(x.custo)}</small></dd></div>`;
+  }
   function mudancasHtml() {
     const lista = (S.mudancas || []).slice(0, 12);
     if (!lista.length) return '';
@@ -613,7 +632,8 @@
             <p class="rcard-links"><a href="${esc(siteDe(r))}" target="_blank" rel="noopener" class="mono">${esc(siteCurto(r))}</a>
               <a href="${esc(painelDe(r))}" target="_blank" rel="noopener" class="mono">painel</a></p>
             ${r.observacao ? `<p>${esc(r.observacao)}</p>` : ''}
-            <p class="rcard-plano ${r.plano ? '' : 'is-sem'}">${esc(planoResumo(r.plano))}</p></div>
+            <p class="rcard-plano ${r.plano ? '' : 'is-sem'}">${esc(planoResumo(r.plano))}</p>
+            ${sefazLigada(r) || sefazDoMes(r.id).notas ? `<p class="rcard-plano">SEFAZ ${sefazLigada(r) ? 'ligada' : 'desligada'} · ${sefazDoMes(r.id).notas} notas este mês · ${brl(sefazDoMes(r.id).valor)}</p>` : ''}</div>
           <div class="rcard-foot"><span>${cont(r.id)} ${cont(r.id) === 1 ? 'plaquinha' : 'plaquinhas'}${r.ativo === false ? ' · <b>desativado</b>' : ''}</span>
             <span class="rcard-acts"><button type="button" class="btn btn-quiet btn-sm" data-ver-rest="${r.id}">Ver plaquinhas</button>
             <button type="button" class="btn btn-quiet btn-sm" data-acesso="${r.id}">${icon('share')} Acesso</button>

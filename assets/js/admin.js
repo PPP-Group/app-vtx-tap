@@ -1622,6 +1622,20 @@
     }
     if (S.view === 'ajustes' && S.ajTab === 'plano') renderView();
   }
+  // Conferência automática na SEFAZ: cobrada por nota, à parte da mensalidade.
+  function sefazPlano() {
+    const u = S.plano.sefaz;
+    if (!u || (!u.ativo && !u.meses.some((m) => m.notas))) return '';
+    const nomeMes = (iso) => new Date(`${iso}T12:00:00`).toLocaleDateString('pt-BR', { month: 'long' });
+    const [este, ant] = u.meses;
+    return `<section class="panel stack">
+      <h2>Conferência na SEFAZ</h2>
+      <p class="muted">${u.ativo ? 'Ligada' : 'Desligada'} · ${brl(u.preco)} por nota conferida, somado à mensalidade. Liga e desliga em Fidelidade → Regras.</p>
+      <div class="plano-resumo"><span>Em ${nomeMes(este.mes)} até agora</span><b>${brl(este.valor)}<small> · ${este.notas} ${este.notas === 1 ? 'nota' : 'notas'}</small></b>
+        <small>Mensalidade + conferência: ${brl(S.plano.mensal + este.valor)} até agora.</small></div>
+      ${ant ? `<p class="help">Em ${nomeMes(ant.mes)}: ${ant.notas} ${ant.notas === 1 ? 'nota' : 'notas'} · ${brl(ant.valor)}.</p>` : ''}
+    </section>`;
+  }
   function ajPlano() {
     if (!S.plano) {
       carregarPlano();
@@ -1647,6 +1661,7 @@
         <p class="plano-valor"><b>${reais(S.plano.mensal)}</b> por mês</p>
         <p class="help">Endereço (domínio) e tempo de contrato: fale com a VTX.</p>
       </section>
+      ${sefazPlano()}
       ${!S.user.admin ? `<section class="panel stack">
         <h2>Mudar o plano</h2>
         <p class="note">${icon('lock')}<span>Só o administrador do restaurante muda o plano.</span></p>

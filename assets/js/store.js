@@ -697,7 +697,11 @@
         const db = read();
         const p = mergeSettings(db.configuracao, true).plano;
         const plano = { ...p, dominio: 'sub', contrato: 6, definido: !!(db.planoHistorico || []).length };
-        return { plano, mensal: precoPlano(plano), historico: db.planoHistorico || [] };
+        // Demonstração: sem consulta real na SEFAZ, o uso fica zerado.
+        const r = regras(db);
+        const mes = (k) => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - k); return diaIso(d); };
+        const sefaz = { ativo: !!(r.sefaz && r.sefaz.ativo), preco: window.Precos ? Precos.SEFAZ_NOTA : 0.25, meses: [0, 1].map((k) => ({ mes: mes(k), notas: 0, valor: 0 })) };
+        return { plano, mensal: precoPlano(plano), sefaz, historico: db.planoHistorico || [] };
       },
       async alterarPlano(p) {
         const db = read();
@@ -725,6 +729,7 @@
         const hoje = diaIso(new Date());
         return {
           ativo: true, nome: r.nome || 'Clube de pontos', pontosPorReal: +r.pontosPorReal || 0, prazoDias: prazo(db), regulamento: r.regulamento || '',
+          sefaz: !!(r.sefaz && r.sefaz.ativo),
           indicacao: r.indicacao && r.indicacao.ativo ? { ativo: true, indicador: +r.indicacao.indicador || 0, indicado: +r.indicacao.indicado || 0, quando: r.indicacao.quando === 'compra' ? 'compra' : 'cadastro' } : { ativo: false },
           boosts: (r.boosts || []).filter((b) => b.ativo !== false && +b.mult > 1 && !(b.fim && b.fim < hoje))
             .map(({ nome, mult, dias, de, ate, inicio: ini, fim }) => ({ nome, mult: +mult, dias: dias || [], de: de || '', ate: ate || '', inicio: ini || '', fim: fim || '' })),

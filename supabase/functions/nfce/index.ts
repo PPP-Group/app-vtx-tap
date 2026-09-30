@@ -3,21 +3,22 @@
 // data e os produtos. Com tudo certo, os pontos entram na hora e os produtos ficam guardados
 // para os rankings de mais pedidos.
 //
-// Só consulta nota do CNPJ do restaurante, no prazo, de cliente cadastrado e ainda não usada
-// (public.fid_sefaz_preparar), com teto de consultas por mês. Sem o token configurado, responde
-// { status: 'indisponivel' } e o navegador segue o fluxo antigo (valor lido da foto + equipe confere).
+// Só consulta se o restaurante ligou a conferência (cobrada por nota na mensalidade) e a nota é do
+// CNPJ do restaurante, no prazo, de cliente cadastrado e ainda não usada (public.fid_sefaz_preparar).
+// Sem teto mensal: a conferência não para no meio do mês. Desligada ou sem o token configurado, o
+// navegador segue o fluxo antigo (valor lido da foto + equipe confere).
 //
 // Segredos (Supabase → Edge Functions → Secrets):
 //   INFOSIMPLES_TOKEN        token da conta Infosimples (obrigatório para funcionar)
 //   INFOSIMPLES_SERVICO      opcional, padrão "sefaz/mg/nfce-resumida"
-//   NFCE_LIMITE_MES          opcional, teto de consultas por restaurante por mês (padrão 3000)
+//   NFCE_LIMITE_MES          opcional, só para emergência: teto de consultas por restaurante por mês (padrão: sem teto)
 import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2';
 
 const URL_ = Deno.env.get('SUPABASE_URL')!;
 const SERVICE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const TOKEN = Deno.env.get('INFOSIMPLES_TOKEN') || '';
 const SERVICO = Deno.env.get('INFOSIMPLES_SERVICO') || 'sefaz/mg/nfce-resumida';
-const LIMITE = Number(Deno.env.get('NFCE_LIMITE_MES') || 3000);
+const LIMITE = Number(Deno.env.get('NFCE_LIMITE_MES') || 0);
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
