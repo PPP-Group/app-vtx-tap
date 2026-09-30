@@ -92,7 +92,7 @@
     const foco = corpo().querySelector('[data-foco]');
     if (foco) setTimeout(() => foco.focus(), 60);
   }
-  const ir = (tela) => { S.tela = tela; render(); corpo().scrollTop = 0; };
+  const ir = (tela) => { if (tela !== 'valor') pararOcr(); S.tela = tela; render(); corpo().scrollTop = 0; };
 
   const boosts = () => (prog.boosts || []).length
     ? `<ul class="fid-boosts">${prog.boosts.map((b) => `<li>${icon('sparkle')}<span>${b.nome ? `<b>${esc(b.nome)}</b> · ` : ''}${esc(boostTexto(b))}</span></li>`).join('')}</ul>` : '';
@@ -278,13 +278,20 @@
     </div>`;
   }
 
+  // Valor da nota: vem sozinho (QR de contingência, foto ou câmera apontada para o total); o cliente só confere.
   function tValor() {
+    const v = S.valorNota;
+    const msgOcr = v ? `Achamos <b>${esc(brl(v))}</b> na nota. Confira e toque em Confirmar.`
+      : S.ocr === 'camera' ? `Agora aponte a câmera para o <b>VALOR A PAGAR</b> da nota.`
+      : S.ocr === 'lendo' ? 'Procurando o valor na nota…'
+      : 'Não conseguimos ler o valor. Digite o total que está na nota.';
     return `<form class="stack-lg fid" id="fidValorForm" novalidate>
-      <p>Nota lida! Para agilizar, digite o <b>valor total</b> que está impresso na nota.</p>
-      <label class="field"><span>Valor total da nota</span><input class="input mono" id="fidValor" inputmode="decimal" autocomplete="off" placeholder="0,00" data-foco></label>
+      <div class="fid-ocr" ${S.ocr === 'camera' && !v ? '' : 'hidden'}><video playsinline muted id="fidOcrVideo"></video><span class="fid-ocr-mira" aria-hidden="true"></span></div>
+      <p class="fid-ocr-msg ${v ? 'is-ok' : ''}" id="fidOcrMsg" aria-live="polite">${msgOcr}</p>
+      <label class="field"><span>Valor total da nota</span><input class="input mono" id="fidValor" inputmode="decimal" autocomplete="off" placeholder="0,00" value="${v ? esc(v.toFixed(2).replace('.', ',')) : ''}"></label>
       <p class="form-error" id="fidErro" role="alert">${esc(S.aviso || '')}</p>
-      <button type="submit" class="btn btn-cobalt btn-block">${icon('check')} Enviar nota</button>
-      <button type="button" class="btn btn-quiet btn-block" data-fid-semvalor>Não sei o valor</button>
+      <button type="submit" class="btn btn-cobalt btn-block">${icon('check')} Confirmar e enviar</button>
+      <button type="button" class="btn btn-quiet btn-block" data-fid-semvalor>Enviar sem o valor</button>
     </form>`;
   }
 
@@ -391,17 +398,70 @@
         const c = F.chaveDoTexto(t);
         return c && F.chaveValida(c) ? null : 'Este QR não é de uma nota fiscal. Procure o QR Code no fim da nota (NFC-e).';
       },
-      pronto: (t) => {
-        // O QR da NFC-e emitida online não traz o valor: o cliente informa e a equipe só confere.
-        const v = F.valorDoQr ? F.valorDoQr(t) : null;
-        if (v) return enviarNota(t, v);
+      valor: true,
+      pronto: (t, x) => {
         S.qr = t;
+        S.valorNota = F.valorDoQr ? F.valorDoQr(t) : null;
+        S.ocr = S.valorNota ? 'qr' : 'lendo';
+        S.digitou = false;
         ir('valor');
+        if (!S.valorNota) buscarValor(t, x && x.quadro);
+      },
+    });
+  }
+
+  /* ---------- Valor da nota lido da imagem ---------- */
+  let pararCam = null;
+  function pararOcr() {
+    if (pararCam) pararCam();
+    pararCam = null;
+  }
+  const naTelaDoValor = (qr) => S.tela === 'valor' && S.qr === qr && $('#fidValorForm');
+  function mostrarOcr() {
+    if (!$('#fidValorForm')) return;
+    const f = document.createElement('div');
+    f.innerHTML = tValor();
+    const novo = f.firstElementChild;
+    ['.fid-ocr', '#fidOcrMsg'].forEach((sel) => {
+      const a = $(sel);
+      const b = novo.querySelector(sel);
+      a.hidden = b.hidden;
+      a.className = b.className;
+      if (sel === '#fidOcrMsg') a.innerHTML = b.innerHTML;
+    });
+    if (S.valorNota && !S.digitou) $('#fidValor').value = S.valorNota.toFixed(2).replace('.', ',');
+  }
+  async function buscarValor(qr, quadro) {
+    if (!window.OcrNota) { S.ocr = 'falhou'; return mostrarOcr(); }
+    // 1) a imagem em que o QR foi lido (na foto da nota inteira, o total costuma estar junto)
+    if (quadro) {
+      const w = quadro.naturalWidth || quadro.width;
+      const h = quadro.naturalHeight || quadro.height;
+      const v = await OcrNota.lerValor(quadro, w, h);
+      if (!naTelaDoValor(qr)) return;
+      if (v) { S.valorNota = v; S.ocr = 'achou'; return mostrarOcr(); }
+    }
+    // 2) câmera apontada para o "VALOR A PAGAR"
+    S.ocr = 'camera';
+    mostrarOcr();
+    pararOcr();
+    pararCam = OcrNota.camera($('#fidOcrVideo'), {
+      achou: (v) => {
+        if (!naTelaDoValor(qr)) return;
+        S.valorNota = v;
+        S.ocr = 'achou';
+        mostrarOcr();
+        navigator.vibrate && navigator.vibrate(40);
+      },
+      aviso: (a) => {
+        if (!naTelaDoValor(qr)) return;
+        if (a === 'sem-camera' || a === 'sem-ocr') { S.ocr = 'falhou'; mostrarOcr(); }
       },
     });
   }
 
   async function enviarNota(qr, valor) {
+    pararOcr();
     corpo().innerHTML = '<div class="fid-carregando"><span class="dot"></span><p>Registrando a nota…</p></div>';
     let r;
     try {
@@ -514,6 +574,7 @@
   function onInput(e) {
     const t = e.target;
     if (t.id === 'fidCpf') t.value = fmtCpf(t.value);
+    if (t.id === 'fidValor') S.digitou = true;
     if (t.id === 'fcTel') t.value = fmtTel(t.value);
     if (t.id === 'fcPin' || t.id === 'fidPin') t.value = t.value.replace(/\D/g, '').slice(0, 4);
   }
@@ -547,6 +608,7 @@
     sh.addEventListener('click', onClick);
     sh.addEventListener('submit', onSubmit);
     sh.addEventListener('input', onInput);
+    sh.addEventListener('sheet:close', pararOcr);
     document.addEventListener('click', (e) => e.target.closest('[data-fid-abrir]') && abrir());
     const p = new URLSearchParams(location.search);
     S.indicacao = (p.get('indicacao') || '').toUpperCase().replace(/[^A-Z0-9]/g, '');

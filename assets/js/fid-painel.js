@@ -612,18 +612,52 @@
     </form>`;
     openSheet('sh-fp');
   }
-  function depoisDoQr(cpf, qr) {
+  // Valor da nota lido da imagem: primeiro o quadro em que o QR foi achado, depois a câmera no total.
+  let pararCam = null;
+  const pararOcr = () => { if (pararCam) pararCam(); pararCam = null; };
+  function ocrMsg(html, camera) {
+    const m = $('#fpOcrMsg');
+    const box = $('#fpLancar2 .fid-ocr');
+    if (m) m.innerHTML = html;
+    if (box) box.hidden = !camera;
+  }
+  function ocrAchou(qr, v) {
+    const f = $('#fpLancar2');
+    if (!f || f.dataset.qr !== qr) return;
+    pararOcr();
+    if (!f.dataset.digitou) f.elements.valor.value = v.toFixed(2).replace('.', ',');
+    ocrMsg(`Valor lido da nota: <b>${brl(v)}</b>. Confira antes de creditar.`, false);
+  }
+  async function ocrValor(qr, quadro) {
+    if (!window.OcrNota) return ocrMsg('Digite o valor total da nota.', false);
+    if (quadro) {
+      const v = await OcrNota.lerValor(quadro, quadro.naturalWidth || quadro.width, quadro.naturalHeight || quadro.height);
+      if (v) return ocrAchou(qr, v);
+    }
+    const f = $('#fpLancar2');
+    if (!f || f.dataset.qr !== qr) return;
+    ocrMsg('Aponte a câmera para o <b>VALOR A PAGAR</b> da nota, ou digite o valor.', true);
+    pararOcr();
+    pararCam = OcrNota.camera(f.querySelector('video'), {
+      achou: (v) => ocrAchou(qr, v),
+      aviso: (a) => { if (a === 'sem-camera' || a === 'sem-ocr') ocrMsg('Digite o valor total da nota.', false); },
+    });
+  }
+  function depoisDoQr(cpf, qr, quadro) {
     const chave = F.chaveDoTexto(qr);
+    const doQr = F.valorDoQr ? F.valorDoQr(qr) : null;
     $('#fpTitle').textContent = 'Lançar nota';
     $('#fpBody').innerHTML = `<form class="stack" id="fpLancar2" novalidate data-cpf="${esc(cpf)}" data-qr="${esc(qr)}">
       <p>Nota nº <b>${num(+chave.slice(25, 34))}</b> para o CPF <b class="mono">${fmtCpf(cpf)}</b>.</p>
       ${/^https?:/i.test(qr) ? `<a class="link" href="${esc(qr)}" target="_blank" rel="noopener">${icon('external')} Conferir na SEFAZ</a>` : ''}
-      <label class="field"><span>Valor total da nota</span><input class="input mono" name="valor" inputmode="decimal" placeholder="0,00" required></label>
+      <div class="fid-ocr" hidden><video playsinline muted></video><span class="fid-ocr-mira" aria-hidden="true"></span></div>
+      <p class="fid-ocr-msg" id="fpOcrMsg" aria-live="polite">${doQr ? `Valor lido do QR: <b>${brl(doQr)}</b>. Confira antes de creditar.` : 'Procurando o valor na nota…'}</p>
+      <label class="field"><span>Valor total da nota</span><input class="input mono" name="valor" inputmode="decimal" placeholder="0,00" value="${doQr ? doQr.toFixed(2).replace('.', ',') : ''}" required></label>
       <p class="form-error" id="fpLancarErro" role="alert"></p>
       <button type="submit" class="btn btn-cobalt btn-block">${icon('check')} Creditar pontos</button>
     </form>`;
     openSheet('sh-fp');
-    setTimeout(() => $('#fpLancar2 [name=valor]').focus(), 80);
+    if (!doQr) ocrValor(qr, quadro);
   }
 
   async function onClick(e) {
@@ -832,6 +866,7 @@
   let buscaT = 0;
   function onInput(e) {
     const t = e.target;
+    if (t.name === 'valor' && t.form && t.form.id === 'fpLancar2') t.form.dataset.digitou = '1';
     if (t.dataset.fpMask && !(e.inputType || '').startsWith('delete')) mascara(t);
     if (t.closest('#fpRegras')) {
       marcarSujo();
@@ -930,11 +965,13 @@
           titulo: 'Nota do cliente',
           dica: 'Aponte a câmera para o QR Code no fim da nota.',
           aceitar: (tx) => { const k = F.chaveDoTexto(tx); return k && F.chaveValida(k) ? null : 'Este QR não é de uma nota fiscal (NFC-e).'; },
-          pronto: (tx) => depoisDoQr(cpf, tx),
+          valor: true,
+          pronto: (tx, x) => depoisDoQr(cpf, tx, x && x.quadro),
         }), 350);
         return;
       }
       if (id === 'fpLancar2') {
+        pararOcr();
         const valor = valorDe(f.elements.valor.value);
         if (!(valor > 0)) throw new Error('Informe o valor total da nota.');
         const r = await ctx.store.fidRegistrarNota({ cpf: f.dataset.cpf, qr: f.dataset.qr, valor });
@@ -985,6 +1022,8 @@
     document.addEventListener('change', (e) => { if (e.target.closest('#main[data-view="fidelidade"], #sh-fp')) onChange(e); });
     document.addEventListener('input', (e) => { if (e.target.closest('#main[data-view="fidelidade"], #sh-fp')) onInput(e); });
     document.addEventListener('submit', (e) => { if (e.target.closest('#main[data-view="fidelidade"], #sh-fp')) onSubmit(e); });
+    const sh = document.getElementById('sh-fp');
+    if (sh) sh.addEventListener('sheet:close', pararOcr);
   }
 
   window.FidPainel = { iniciar, atualizar, html, badge };

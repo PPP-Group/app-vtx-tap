@@ -771,3 +771,11 @@
 .plano-hist { list-style: none; margin: 0; padding: 0; display: grid; }
 .plano-hist li { display: grid; gap: 2px; padding: 10px 0; font-size: 14px; }
 .plano-hist li + li { border-top: 1px solid var(--line); }
+
+/* Valor da nota lido pela câmera */
+.fid-ocr { position: relative; aspect-ratio: 4 / 3; border-radius: 18px; overflow: hidden; background: #000; }
+.fid-ocr[hidden] { display: none; }
+.fid-ocr video { width: 100%; height: 100%; object-fit: cover; }
+.fid-ocr-mira { position: absolute; inset: 36% 8%; border: 3px solid rgba(255, 255, 255, .9); border-radius: 12px; box-shadow: 0 0 0 999px rgba(0, 0, 0, .35); }
+.fid-ocr-msg { color: var(--ink-2); }
+.fid-ocr-msg.is-ok { color: var(--ink); }

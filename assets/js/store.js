@@ -75,9 +75,11 @@
   }
   // Chave de acesso dentro do texto do QR (URL da SEFAZ) ou digitada com espaços.
   const chaveDoTexto = (t) => (String(t || '').replace(/[\s.-]/g, '').match(/\d{44}/) || [])[0] || null;
-  // Valor total da nota, quando o QR traz (NFC-e emitida em contingência: chave|versão|amb|dia|vNF|...).
+  // Valor total da nota, quando o QR traz (QR antigo com vNF=, ou NFC-e em contingência: chave|versão|amb|dia|vNF|...).
   // A NFC-e emitida online não traz o valor no QR.
   const valorDoQr = (t) => {
+    const v1 = String(t || '').match(/[?&]vNF=(\d+(?:\.\d{1,2})?)(?:&|$)/i);
+    if (v1 && +v1[1] > 0 && +v1[1] < 1e5) return +v1[1];
     const m = String(t || '').match(/[?&]p=([^&#]+)/);
     if (!m) return null;
     const p = decodeURIComponent(m[1]).split('|');
