@@ -21,6 +21,8 @@
   let cat = null;
   let enviando = false;
 
+  // Clube de pontos (o mesmo da página da mesa): cartão no topo do cardápio e na tela do pedido.
+  const temFid = () => !!(window.Fidelidade && Fidelidade.ativo);
   const itens = () => (live ? live.cardapio.map((c) => ({ ...c, itens: c.itens.filter((i) => i.delivery) })).filter((c) => c.itens.length) : []);
   const itemDe = (id) => live.cardapio.flatMap((c) => c.itens).find((i) => i.id === id && i.delivery);
   const OPC = Store.opcoes;
@@ -91,6 +93,7 @@
     if (!cat || !cats.some((c) => c.id === cat)) cat = cats[0].id;
     $('#dlMain').innerHTML = `
       ${!podePedir() ? `<p class="note">${icon('clock')}<span>${D.ativo ? 'O restaurante está fechado agora. Você pode ver o cardápio e pedir quando abrir.' : 'O delivery está pausado no momento.'}</span></p>` : ''}
+      ${temFid() ? `<div class="dl-fid">${Fidelidade.tile()}</div>` : ''}
       <nav class="dl-cats" aria-label="Categorias">${cats.map((c) => `<button type="button" class="chip" aria-pressed="${c.id === cat}" data-dl-cat="${esc(c.id)}">${esc(c.nome)}</button>`).join('')}</nav>
       ${cats.map((c) => `<section class="dl-sec" id="cat-${esc(c.id)}"><h2 class="dl-h2">${esc(c.nome)}</h2>
         <ul class="dl-itens">${c.itens.map((i) => {
@@ -477,6 +480,9 @@
         <p class="muted">${esc([p.endereco.rua, p.endereco.numero].filter(Boolean).join(', '))}${p.endereco.complemento ? ` · ${esc(p.endereco.complemento)}` : ''} · ${esc(p.endereco.bairro || '')}<br>
           Pagamento: ${esc({ pix: 'Pix', cartao: 'Cartão na entrega', dinheiro: 'Dinheiro' }[p.pagamento.forma] || '')}${p.pagamento.troco ? ` (troco para ${brl(p.pagamento.troco)})` : ''}</p>
       </section>
+      ${temFid() && !cancelado ? `<section class="stack dl-fid"><h3 class="dl-h3">${icon('gift')} Ganhe pontos com este pedido</h3>
+        <p class="muted">${p.status === 'entregue' ? 'Leia o QR Code da nota fiscal que veio com o pedido.' : 'Quando o pedido chegar, leia o QR Code da nota fiscal que vem junto.'} Os pontos entram na sua conta do clube.</p>
+        ${Fidelidade.tile()}</section>` : ''}
       ${wa ? `<a class="btn btn-line btn-block" href="https://wa.me/55${wa.replace(/^55/, '')}?text=${encodeURIComponent(`Olá! Sobre o pedido #${p.numero}`)}" target="_blank" rel="noopener">${icon('phone')} Falar com o restaurante</a>` : ''}
       <a class="btn btn-quiet btn-block" href="./">Fazer outro pedido</a>
     </div>`;
@@ -661,9 +667,21 @@
         });
       } catch {}
       const token = new URLSearchParams(location.search).get('pedido');
-      if (token) return acompanhar(token);
-      renderCardapio();
-      avisoPedidoAberto();
+      if (token) acompanhar(token);
+      else {
+        renderCardapio();
+        avisoPedidoAberto();
+      }
+      // Clube de pontos: carrega depois e redesenha a tela atual com o cartão.
+      if (live.modulos && live.modulos.fidelidade && window.Fidelidade) {
+        Fidelidade.iniciar({ store, slug: (window.NFC_CONFIG && NFC_CONFIG.backend && NFC_CONFIG.backend.slug) || '', nomeRestaurante: R.nome })
+          .then((p) => {
+            if (!p) return;
+            if (acompanhando) acompanhar(acompanhando);
+            else { renderCardapio(); avisoPedidoAberto(); }
+          })
+          .catch((e) => console.error(e));
+      }
     })
     .catch((e) => {
       console.error(e);

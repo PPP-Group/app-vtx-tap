@@ -124,7 +124,7 @@
     }
     const url = new URL(location.href);
     url.searchParams.set('mesa', n);
-    history.replaceState(null, '', url);
+    history.replaceState(history.state, '', url);
     mesa = n;
     boot();
   });
@@ -1042,14 +1042,20 @@
   /* ---------------- Entrada: mesa ou delivery ----------------
      Link aberto sem mesa e sem plaquinha (ex.: pelo Instagram) num restaurante com delivery:
      pergunta antes se a pessoa está no restaurante ou quer pedir para entrega. */
-  const ENTRADA = 'nfc-entrada';
-  function entrada() {
-    const el = $('#entrada');
+  // A escolha fica no histórico do navegador: "Estou no restaurante" cria um passo, então o "voltar"
+  // traz a pergunta de novo (como acontece ao voltar do delivery), e recarregar a página não pergunta de novo.
+  const podeEntrada = () => {
     const p = new URLSearchParams(location.search);
     const temDelivery = !!(live.plano && live.plano.servicos && live.plano.servicos.delivery);
-    let escolheu = null;
-    try { escolheu = sessionStorage.getItem(ENTRADA); } catch {}
-    if (mesa || tag || !temDelivery || escolheu === 'mesa' || p.has('fidelidade') || p.has('indicacao')) return;
+    return !mesa && !tag && temDelivery && !p.has('fidelidade') && !p.has('indicacao');
+  };
+  function entrada() {
+    if (!podeEntrada() || (history.state && history.state.entrada === 'mesa')) return;
+    if (!history.state || history.state.entrada !== 'escolha') history.replaceState({ ...(history.state || {}), entrada: 'escolha' }, '');
+    mostrarEntrada();
+  }
+  function mostrarEntrada() {
+    const el = $('#entrada');
     $('#entradaTitulo').textContent = R.nome || 'Bem-vindo';
     const logo = $('#heroLogo');
     $('#entradaLogo').innerHTML = logo ? logo.innerHTML : '';
@@ -1062,11 +1068,16 @@
   $('#entrada').addEventListener('click', (e) => {
     const b = e.target.closest('[data-entrada="mesa"]');
     if (!b) return;
-    try { sessionStorage.setItem(ENTRADA, 'mesa'); } catch {}
+    history.pushState({ entrada: 'mesa' }, '');
     $('#entrada').hidden = true;
     document.body.classList.remove('com-entrada');
     const campo = $('#tableInput');
     if (campo && !$('#tablePicker').hidden) campo.focus();
+  });
+  window.addEventListener('popstate', () => {
+    const st = history.state && history.state.entrada;
+    if (st === 'escolha' && podeEntrada()) mostrarEntrada();
+    else if (st === 'mesa' && !$('#entrada').hidden) { $('#entrada').hidden = true; document.body.classList.remove('com-entrada'); }
   });
 
   async function resolverTag() {
