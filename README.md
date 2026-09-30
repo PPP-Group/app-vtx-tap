@@ -82,7 +82,7 @@ A central libera por restaurante (Editar restaurante → Módulos contratados �
 index.html              página da mesa (cliente)          →  quintal.vortexsystems.tech/?tag=CODIGO
 admin/index.html        painel da equipe do restaurante   →  quintal.vortexsystems.tech/admin
 central/                central da Vortex e redirecionador →  tap.vortexsystems.tech/master  e  /t/CODIGO
-lp/                     página de preços com simulador   →  tap.vortexsystems.tech/
+lp/                     landing page (index) e preços com simulador (precos)  →  tap.vortexsystems.tech/ e /precos
 central/placa.js        layout do PDF das plaquinhas (o @ e os textos ficam no topo)
 env.js                  gerado no servidor a partir das variáveis de ambiente
 assets/js/config.js     dados iniciais do restaurante e leitura do subdomínio
@@ -101,7 +101,8 @@ python -m http.server 5500
 
 - Restaurante: `http://localhost:5500/admin` (crie a conta; a primeira senha vira a da equipe) e `http://localhost:5500/?mesa=12`.
 - Central: `http://localhost:5500/central/` (publicada em `/master`; o redirecionador fica em `/central/t.html?c=CODIGO`).
-- Página de preços: `http://localhost:5500/lp/` (publicada na raiz do `CENTRAL_HOST`).
+- Landing page: `http://localhost:5500/lp/` (publicada na raiz do `CENTRAL_HOST`).
+- Página de preços: `http://localhost:5500/lp/precos.html` (publicada em `/precos`).
 
 Sem as variáveis do Supabase, os dados ficam no navegador e sincronizam só entre abas do mesmo aparelho.
 

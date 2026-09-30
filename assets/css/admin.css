@@ -672,6 +672,16 @@
 .fp-foto > .i { padding: 30px; color: var(--muted); }
 .fp-foto.is-busy { opacity: .5; pointer-events: none; }
 .fp-row { padding: 0; box-shadow: none; background: none; }
+.fp-conf-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.fp-conf-head h3 { font-size: 15.5px; font-weight: 600; }
+.fp-conf-head p { font-size: 13.5px; margin-top: 2px; }
+.fp-conf-head .switch { flex: none; margin-top: 2px; }
+.fp-conf-opcoes { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; }
+.fp-conf-op { padding: 12px 14px; border-radius: 14px; background: var(--surface-2); border: 2px solid transparent; font-size: 13.5px; color: var(--ink-2); opacity: .6; transition: opacity .15s, border-color .15s; }
+.fp-conf[data-sefaz="on"] .fp-conf-op[data-op="on"], .fp-conf[data-sefaz="off"] .fp-conf-op[data-op="off"] { opacity: 1; border-color: var(--cobalt); }
+.fp-conf-op-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; color: var(--ink); }
+.fp-conf-tag { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--surface); white-space: nowrap; }
+.fp-conf-op ul { margin: 0; padding-left: 18px; display: grid; gap: 3px; }
 .fp-boost { display: grid; gap: 10px; margin: 0; padding: 14px; border: 0; border-radius: 14px; background: var(--surface-2); }
 .fp-mult { flex: 0 1 110px !important; }
 .fp-dias { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -776,7 +786,7 @@
 .fid-ocr { position: relative; aspect-ratio: 4 / 3; border-radius: 18px; overflow: hidden; background: #000; }
 .fid-ocr[hidden] { display: none; }
 .fid-ocr video { width: 100%; height: 100%; object-fit: cover; }
-.fid-ocr-mira { position: absolute; inset: 36% 8%; border: 3px solid rgba(255, 255, 255, .9); border-radius: 12px; box-shadow: 0 0 0 999px rgba(0, 0, 0, .35); }
+.fid-ocr-mira { position: absolute; inset: 18% 8%; border: 3px solid rgba(255, 255, 255, .9); border-radius: 12px; box-shadow: 0 0 0 999px rgba(0, 0, 0, .35); }
 .fid-ocr-msg { color: var(--ink-2); }
 .fid-ocr-msg.is-ok { color: var(--ink); }
 .fid-ocr-acoes { display: flex; flex-wrap: wrap; gap: 8px; }

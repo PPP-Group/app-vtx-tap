@@ -385,6 +385,7 @@
     const wa = soDigitos(rest.whatsapp || rest.telefone);
     $('#dlMain').innerHTML = `<div class="stack-lg dl-acomp">
       <div class="plate dl-num"><span class="rivet r1"></span><span class="rivet r2"></span><small>Pedido</small><b>#${p.numero}</b></div>
+      ${['entregue', 'cancelado'].includes(p.status) ? '' : `<div class="dl-avisos" id="dlAvisos">${avisosHtml(token)}</div>`}
       ${cancelado ? `<p class="note dl-cancelado">${icon('alert')}<span><b>Pedido cancelado.</b> ${esc(p.motivo || 'Fale com o restaurante.')}</span></p>`
         : `<ol class="dl-etapas">${ETAPAS.map(([k, t, d], n) => `<li class="${n < i ? 'is-feito' : n === i ? 'is-agora' : ''}">
             <span class="dl-bola">${n <= i ? icon('check') : ''}</span><div><b>${t}</b><small>${n === i ? (k === 'saiu' && p.entregador ? `${esc(p.entregador)} está a caminho.` : d) : quando(k)}</small></div></li>`).join('')}</ol>
@@ -399,8 +400,70 @@
       ${wa ? `<a class="btn btn-line btn-block" href="https://wa.me/55${wa.replace(/^55/, '')}?text=${encodeURIComponent(`Olá! Sobre o pedido #${p.numero}`)}" target="_blank" rel="noopener">${icon('phone')} Falar com o restaurante</a>` : ''}
       <a class="btn btn-quiet btn-block" href="./">Fazer outro pedido</a>
     </div>`;
+    avisoLocal(token, p);
     clearTimeout(timer);
     if (!['entregue', 'cancelado'].includes(p.status)) timer = setTimeout(() => acompanhando === token && acompanhar(token), 15000);
+  }
+
+  /* ---------------- Avisos do pedido ----------------
+     Web Push: chega mesmo com a página fechada. Android (Chrome) funciona direto do site; no iPhone
+     a Apple só entrega com o site adicionado à tela de início (iOS 16.4+), então ali mostramos o passo a passo. */
+  const ETAPA_AVISO = { recebido: ['recebido', 'O restaurante já viu o seu pedido.'], preparo: ['em preparo', 'A cozinha começou a preparar o seu pedido.'],
+    saiu: ['saiu para entrega', 'O entregador está a caminho.'], entregue: ['entregue', 'Bom apetite!'], cancelado: ['cancelado', 'Fale com o restaurante para saber mais.'] };
+  const ehIphone = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const instalado = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  const temPush = () => 'Notification' in window && 'serviceWorker' in navigator;
+  const avisosLigados = (token) => safeGet(`dl-push-${token}`) === '1' && temPush() && Notification.permission === 'granted';
+  function avisosHtml(token) {
+    if (avisosLigados(token)) return `<p class="dl-avisos-ok">${icon('check')}<span><b>Avisos ligados.</b> Vamos avisar no celular quando o pedido andar.</span></p>`;
+    if (!temPush()) {
+      if (ehIphone && !instalado()) return `<div class="dl-avisos-box"><b>${icon('bell')} Quer ser avisado quando o pedido andar?</b>
+        <p>No iPhone: toque em <b>Compartilhar</b> ${icon('share')} e depois em <b>Adicionar à Tela de Início</b>. Abra o pedido pelo ícone e ligue os avisos.</p></div>`;
+      return '';
+    }
+    if (Notification.permission === 'denied') return `<p class="dl-avisos-off">${icon('bell')}<span>Os avisos estão bloqueados neste navegador. Para receber, libere as notificações nas configurações do site.</span></p>`;
+    return `<div class="dl-avisos-box"><b>${icon('bell')} Avisar quando o pedido andar?</b>
+      <p>Receba no celular quando entrar em preparo, sair para entrega e chegar.</p>
+      <button type="button" class="btn btn-cobalt btn-block" data-dl-avisos>${icon('bell')} Ligar avisos do pedido</button></div>`;
+  }
+  const b64u = (s) => { const p = '='.repeat((4 - (s.length % 4)) % 4); const b = atob((s + p).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(b, (c) => c.charCodeAt(0)); };
+  async function ligarAvisos(token, btn) {
+    if (btn) { btn.disabled = true; btn.textContent = 'Ligando…'; }
+    try {
+      const reg = await navigator.serviceWorker.register('/delivery/sw.js', { scope: '/delivery/' });
+      const perm = await Notification.requestPermission();
+      if (perm === 'granted') {
+        // Sem servidor de push (demonstração ou fora do ar): ainda avisa enquanto a página estiver aberta.
+        const chave = await store.deliveryPushChave().catch(() => null);
+        if (chave && reg.pushManager) {
+          await navigator.serviceWorker.ready;
+          let sub = await reg.pushManager.getSubscription();
+          if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64u(chave) });
+          const r = await store.deliveryPushInscrever(token, sub.toJSON(), `/delivery/?pedido=${token}`);
+          if (r && r.status === 'erro') throw new Error(r.mensagem);
+        }
+        safeSet(`dl-push-${token}`, '1');
+        toast('Avisos ligados.', { tone: 'ok' });
+      }
+    } catch (e) {
+      console.error(e);
+      toast((e && e.message) || 'Não foi possível ligar os avisos neste aparelho.', { tone: 'error' });
+    }
+    const box = $('#dlAvisos');
+    if (box && acompanhando === token) box.innerHTML = avisosHtml(token);
+  }
+  // Com a página aberta em segundo plano, avisa a mudança mesmo sem o servidor (mesma etiqueta do push: não duplica).
+  const ultimaSituacao = {};
+  function avisoLocal(token, p) {
+    const antes = ultimaSituacao[token];
+    ultimaSituacao[token] = p.status;
+    if (!antes || antes === p.status || !document.hidden || !avisosLigados(token)) return;
+    const [t, d] = ETAPA_AVISO[p.status] || [];
+    if (!t) return;
+    navigator.serviceWorker.getRegistration('/delivery/').then((reg) => reg && reg.showNotification(`Pedido #${p.numero} ${t}`, {
+      body: p.status === 'saiu' && p.entregador ? `${p.entregador} está a caminho.` : p.status === 'cancelado' && p.motivo ? p.motivo : d,
+      icon: '/admin/icons/icon-192.png', tag: `pedido-${p.numero}`, data: { url: `/delivery/?pedido=${token}` },
+    })).catch(() => {});
   }
 
   // Voltou à página com um pedido recente: atalho para acompanhar.
@@ -453,6 +516,8 @@
       cliente.forma = f.dataset.dlForma;
       return redesenharCarrinho();
     }
+    const av = t.closest('[data-dl-avisos]');
+    if (av && acompanhando) return ligarAvisos(acompanhando, av);
     const cp = t.closest('[data-dl-copiar]');
     if (cp) UI.copyText(cp.dataset.dlCopiar).then((ok) => toast(ok ? 'Chave Pix copiada.' : 'Não foi possível copiar.', { tone: ok ? 'ok' : 'error' }));
   });

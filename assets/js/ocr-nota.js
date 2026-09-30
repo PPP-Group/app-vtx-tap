@@ -60,13 +60,13 @@
   /* ---------- Texto → valor ---------- */
   // Dinheiro como aparece na nota: 87,50 · 1.234,56 · 87.50 (com os erros comuns do OCR: O no lugar de 0).
   // Três casas depois da vírgula ("7,710") é sujeira do OCR: vale as duas primeiras.
-  const DINHEIRO = /(\d{1,3}(?:[.\s]\d{3})*|\d+)\s?[.,]\s?([\dOo]{2})([\dOo])?(?![\dOo])/g;
+  const DINHEIRO = /(\d{1,3}(?:[.\s]\d{3})*|\d+)\s?[.,]\s?(\d[\dOoC]|[Oo][\dOo])([\dOo])?(?![\dOoC])/g;
   function numeros(linha) {
     const out = [];
     let m;
     DINHEIRO.lastIndex = 0;
     while ((m = DINHEIRO.exec(linha))) {
-      const v = +(m[1].replace(/[.\s]/g, '') + '.' + m[2].replace(/[Oo]/g, '0'));
+      const v = +(m[1].replace(/[.\s]/g, '') + '.' + m[2].replace(/[OoC]/g, '0'));
       // suja: veio com uma casa a mais ("7,710"); conta menos na votação.
       if (v > 0 && v < 100000) out.push({ v, suja: !!m[3] });
     }
@@ -80,7 +80,7 @@
     [/VAL[OU0]R\s*PAG[O0]|(^|\s)T[O0]TAL(\s*GERAL|\s*:|\s*$|\s+\d)/, 2],
   ];
   // Forma de pagamento com o valor na mesma linha e o valor líquido: confirmam o total.
-  const PAGAMENTO = /CART[A-Z]{0,2}\s*(DE)?\s*(CRED|DEB)|CREDITO|DEBITO|DINHEIRO|(^|\s)PIX(\s|$)|VALE\s*(REF|ALIM)|VAL[OU0]R\s*L[I1T]Q/;
+  const PAGAMENTO = /CART[A-Z]{0,2}\s*(DE)?\s*(CRED|DEB)|CRED[I1]T|D[E3]B[I1]T|DINHEIRO|(^|\s)PIX(\s|$)|VALE\s*(REF|ALIM)|VAL[OU0]R\s*L[I1T]Q/;
   const IGNORAR = /ITENS|TRIBUT|DESCONTO|TROCO|IMPOSTO|APROX|LEI\s*12|ACRESC|SUBT[O0]TAL|UNIT|QTDE|FONTE/;
   function candidatos(texto) {
     const linhas = semAcento(String(texto || '')).toUpperCase().split(/\n+/).map((l) => l.trim()).filter(Boolean);
@@ -103,7 +103,28 @@
         if (n) out.push({ v: n.v, peso: 1, n: n.suja ? 0.5 : 1 });
       }
     });
+    // A conta da própria nota: subtotal + acréscimo − desconto. É um voto independente do número
+    // grande do total (é nele que o OCR costuma trocar 0 por 6 ou 8).
+    const conta = contaDaNota(linhas);
+    if (conta) out.push({ v: conta, peso: 3.5, n: 1 });
     return out;
+  }
+  function contaDaNota(linhas) {
+    const ultimo = (re) => {
+      for (let i = linhas.length - 1; i >= 0; i--) {
+        const l = linhas[i];
+        if (!re.test(l) || /ITEM/.test(l)) continue; // "acréscimo sobre item" já está no subtotal
+        const n = numeros(l).filter((x) => !x.suja).pop();
+        if (n) return n.v;
+      }
+      return null;
+    };
+    const sub = ultimo(/SUB\s*T[O0]TAL/);
+    const acr = ultimo(/ACRESC|CRESCIM|ESCIMO|TAXA\s*DE\s*SERV/);
+    const desc = ultimo(/DESC[O0]NT/);
+    if (sub == null || (acr == null && desc == null)) return null;
+    const v = Math.round((sub + (acr || 0) - (desc || 0)) * 100) / 100;
+    return v > 0 ? v : null;
   }
   // Ganha o valor que aparece em mais linhas (o OCR raramente erra igual duas vezes); no empate, o da linha
   // mais confiável ("VALOR A PAGAR" > "VALOR TOTAL" > forma de pagamento). Nota paga com dois cartões: fica o total.
@@ -116,8 +137,10 @@
       x.peso = Math.max(x.peso, c.peso);
       por.set(c.v, x);
     }
-    const [v, x] = [...por.entries()].sort((a, b) => b[1].n - a[1].n || b[1].peso - a[1].peso || b[0] - a[0])[0];
-    return { valor: v, confirmado: x.n >= 2 || x.peso >= 4 };
+    const lista = [...por.entries()].sort((a, b) => b[1].n - a[1].n || b[1].peso - a[1].peso || b[0] - a[0]);
+    const [v, x] = lista[0];
+    const rival = lista[1] ? lista[1][1].n : 0; // outro valor na mesma nota: só confirma com folga
+    return { valor: v, confirmado: (x.n >= 2 && x.n > rival) || (x.peso >= 4 && !rival), conflito: rival >= x.n };
   }
   const valorDoTexto = (texto) => {
     const m = melhor(candidatos(texto));
@@ -252,6 +275,26 @@
     return m ? m.valor : null;
   }
 
+  // Valor lido em vários quadros. Só vale o confirmado por duas linhas da nota (total + pagamento ou a conta
+  // do subtotal): o número grande do total, sozinho e borrado, vira 1,10 ou 7,76 no lugar de 7,70 — e igual
+  // em vários quadros. Aceita o confirmado em 2+ quadros (mais que qualquer outro valor), ou o confirmado
+  // em 1 que apareceu em 3+ quadros com o dobro do segundo colocado.
+  function decidir(janela, atual) {
+    const vezes = new Map();
+    const conf = new Map();
+    for (const q of janela) {
+      vezes.set(q.valor, (vezes.get(q.valor) || 0) + 1);
+      if (q.confirmado) conf.set(q.valor, (conf.get(q.valor) || 0) + 1);
+    }
+    const maxOutros = (m) => Math.max(0, ...[...m.entries()].filter(([v]) => v !== atual).map(([, n]) => n));
+    const rival = maxOutros(vezes);
+    const n = vezes.get(atual) || 0;
+    const c = conf.get(atual) || 0;
+    if (c >= 2 && c > maxOutros(conf) && n >= rival) return atual;
+    if (c >= 1 && n >= 3 && n >= 2 * rival) return atual;
+    return null;
+  }
+
   /* ---------- Câmera apontada para o total ---------- */
   // Lê quadros seguidos; aceita o valor confirmado num quadro ou igual em dois quadros.
   function camera(video, { achou, aviso } = {}) {
@@ -317,7 +360,9 @@
         return aviso && aviso('sem-ocr');
       }
       aviso && aviso('lendo');
-      let ultimo = null;
+      // Votação entre quadros: um erro do OCR pode se repetir em dois quadros seguidos (0 lido como 6),
+      // então só aceita o valor confirmado em dois quadros ou o que ganha com folga em vários.
+      const janela = [];
       while (!parado) {
         if (!pausa && video.readyState >= 2 && video.videoWidth) {
           let m = null;
@@ -325,11 +370,15 @@
             m = melhor(candidatos(await lerTexto(video, video.videoWidth, video.videoHeight, { alvo: 1200, modo: 'pb' })));
           } catch {}
           if (parado) break;
-          if (m && !pausa && (m.confirmado || m.valor === ultimo)) {
-            parar();
-            return achou && achou(m.valor);
+          if (m && !m.conflito && !pausa) {
+            janela.push(m);
+            if (janela.length > 8) janela.shift();
+            const v = decidir(janela, m.valor);
+            if (v != null) {
+              parar();
+              return achou && achou(v);
+            }
           }
-          ultimo = m ? m.valor : null;
         }
         await espera(150);
       }

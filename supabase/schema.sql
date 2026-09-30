@@ -329,6 +329,14 @@ language sql stable security definer set search_path = public as $$
 $$;
 revoke execute on function public.eu_admin() from public, anon;
 grant execute on function public.eu_admin() to authenticated;
+-- Quem está logado (o painel usa ao abrir a página para manter a sessão).
+create or replace function public.eu_membro() returns json
+language sql stable security definer set search_path = public as $$
+  select json_build_object('nome', nome, 'admin', admin, 'restaurante_id', restaurante_id)
+    from public.equipe_membros where user_id = auth.uid();
+$$;
+revoke execute on function public.eu_membro() from public, anon;
+grant execute on function public.eu_membro() to authenticated;
 drop policy if exists "equipe ve a equipe" on public.equipe_membros;
 create policy "equipe ve a equipe" on public.equipe_membros
   for select to authenticated using (restaurante_id = public.meu_restaurante());
@@ -1746,6 +1754,33 @@ begin
   return jsonb_build_object('status', 'pendente');
 end $$;
 
+-- Confere a nota logo depois da leitura do QR, antes de pedir o valor: já lida, de outro CNPJ, fora do prazo…
+-- Não registra nada ('nova' = pode seguir para o valor).
+create or replace function public.fid_nota_situacao(p_restaurante uuid, p_cpf text, p_qr text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  v_cpf   text := regexp_replace(coalesce(p_cpf, ''), '[^0-9]', '', 'g');
+  v_chave text := substring(regexp_replace(btrim(coalesce(p_qr, '')), '[\s.-]', '', 'g') from '([0-9]{44})');
+  prob    text;
+  n public.fid_notas;
+begin
+  if not public.fid_no_ar(p_restaurante) then return jsonb_build_object('status', 'inativo'); end if;
+  if v_chave is null then return jsonb_build_object('status', 'nova'); end if;
+  if not public.equipe_pode_tentar('fid-situacao:' || public.ip_do_pedido(), 120, 10) then
+    return jsonb_build_object('status', 'nova');
+  end if;
+  select * into n from public.fid_notas where chave = v_chave;
+  if found then
+    if n.cpf <> v_cpf then
+      return jsonb_build_object('status', 'erro', 'mensagem', 'Esta nota já foi registrada em outra conta.');
+    end if;
+    return jsonb_build_object('status', 'repetida', 'nota', n.status, 'pontos', n.pontos, 'motivo', n.motivo);
+  end if;
+  prob := public.fid_chave_problema(p_restaurante, v_chave);
+  if prob is not null then return jsonb_build_object('status', 'erro', 'mensagem', prob); end if;
+  return jsonb_build_object('status', 'nova');
+end $$;
+
 create or replace function public.fid_resgatar(p_token uuid, p_premio uuid) returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare
@@ -2139,6 +2174,7 @@ begin
     'public.fid_programa(uuid)', 'public.fid_consultar(uuid, text)', 'public.fid_indicador(uuid, text)',
     'public.fid_cadastrar(uuid, text, text, text, text, text, boolean, text)', 'public.fid_entrar(uuid, text, text)',
     'public.fid_conta(uuid)', 'public.fid_sair(uuid)', 'public.fid_registrar_nota(uuid, text, text, numeric)',
+    'public.fid_nota_situacao(uuid, text, text)',
     'public.fid_resgatar(uuid, uuid)'] loop
     execute format('revoke execute on function %s from public', f);
     execute format('grant execute on function %s to anon, authenticated', f);
@@ -2656,4 +2692,109 @@ begin
   if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'pedidos') then
     execute 'alter publication supabase_realtime add table public.pedidos';
   end if;
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- Avisos do pedido (Web Push). O cliente ativa na tela do pedido; a cada mudança de situação,
+-- o gatilho chama a função "push" (pg_net), que manda a notificação para o celular dele.
+-- push_config.url fica vazio fora da produção: sem url, o gatilho não chama nada.
+-- ---------------------------------------------------------------------------
+create extension if not exists pg_net with schema extensions;
+
+create table if not exists private.push_config (
+  id            int primary key default 1 check (id = 1),
+  url           text,
+  segredo       text not null default encode(extensions.gen_random_bytes(24), 'hex'),
+  vapid_publica text,
+  vapid_privada text
+);
+insert into private.push_config (id) values (1) on conflict do nothing;
+
+create table if not exists private.pedido_push (
+  pedido_id uuid not null references public.pedidos (id) on delete cascade,
+  endpoint  text not null check (char_length(endpoint) <= 600),
+  p256dh    text not null check (char_length(p256dh) <= 200),
+  auth      text not null check (char_length(auth) <= 60),
+  url       text not null check (char_length(url) <= 200),
+  criado_em timestamptz not null default now(),
+  primary key (pedido_id, endpoint)
+);
+
+-- Cliente liga os avisos do pedido (pelo link do pedido).
+create or replace function public.delivery_push(p_token uuid, p_sub jsonb, p_url text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare p public.pedidos; v_end text := p_sub ->> 'endpoint';
+begin
+  select * into p from public.pedidos where token_hash = public.hash_token(p_token) and criado_em > now() - interval '2 days';
+  if not found then return jsonb_build_object('status', 'erro', 'mensagem', 'Pedido não encontrado.'); end if;
+  if p.status in ('entregue', 'cancelado') then return jsonb_build_object('status', 'finalizado'); end if;
+  if v_end is null or v_end !~ '^https://' or coalesce(p_sub #>> '{keys,p256dh}', '') = '' or coalesce(p_sub #>> '{keys,auth}', '') = ''
+     or coalesce(p_url, '') !~ '^/delivery/\?pedido=[0-9a-f-]{36}$' then
+    return jsonb_build_object('status', 'erro', 'mensagem', 'Não foi possível ligar os avisos neste aparelho.');
+  end if;
+  if (select count(*) from private.pedido_push where pedido_id = p.id and endpoint <> v_end) >= 5 then
+    return jsonb_build_object('status', 'erro', 'mensagem', 'Muitos aparelhos neste pedido.');
+  end if;
+  insert into private.pedido_push (pedido_id, endpoint, p256dh, auth, url)
+  values (p.id, left(v_end, 600), left(p_sub #>> '{keys,p256dh}', 200), left(p_sub #>> '{keys,auth}', 60), p_url)
+  on conflict (pedido_id, endpoint) do update set p256dh = excluded.p256dh, auth = excluded.auth, url = excluded.url;
+  return jsonb_build_object('status', 'ok');
+end $$;
+
+-- Só a função "push" (service role): dados do aviso, chaves VAPID e limpeza de inscrições vencidas.
+create or replace function public.push_pedido(p_id uuid, p_segredo text) returns jsonb
+language sql stable security definer set search_path = public as $$
+  select case when c.segredo is distinct from p_segredo then jsonb_build_object('status', 'negado') else
+    jsonb_build_object('status', 'ok', 'numero', p.numero, 'situacao', p.status, 'entregador', p.entregador, 'motivo', p.motivo,
+      'restaurante', r.nome, 'vapid_publica', c.vapid_publica, 'vapid_privada', c.vapid_privada,
+      'inscricoes', coalesce((select jsonb_agg(jsonb_build_object('endpoint', s.endpoint, 'keys', jsonb_build_object('p256dh', s.p256dh, 'auth', s.auth), 'url', s.url))
+                              from private.pedido_push s where s.pedido_id = p.id), '[]'::jsonb)) end
+  from private.push_config c
+  left join public.pedidos p on p.id = p_id
+  left join public.restaurantes r on r.id = p.restaurante_id
+  where c.id = 1;
+$$;
+create or replace function public.push_chaves(p_publica text default null, p_privada text default null) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare c private.push_config;
+begin
+  select * into c from private.push_config where id = 1 for update;
+  if c.vapid_publica is null and p_publica is not null and p_privada is not null then
+    update private.push_config set vapid_publica = p_publica, vapid_privada = p_privada where id = 1 returning * into c;
+  end if;
+  return jsonb_build_object('publica', c.vapid_publica, 'privada', c.vapid_privada);
+end $$;
+create or replace function public.push_remover(p_endpoint text) returns void
+language sql security definer set search_path = public as $$
+  delete from private.pedido_push where endpoint = p_endpoint;
+$$;
+
+-- A cada mudança de situação do pedido com avisos ligados: chama a função "push".
+create or replace function private.pedido_avisar() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare c private.push_config;
+begin
+  if new.status is not distinct from old.status then return new; end if;
+  if not exists (select 1 from private.pedido_push where pedido_id = new.id) then return new; end if;
+  select * into c from private.push_config where id = 1;
+  if c.url is null then return new; end if;
+  perform net.http_post(url := c.url, body := jsonb_build_object('acao', 'enviar', 'pedido', new.id),
+    headers := jsonb_build_object('Content-Type', 'application/json', 'x-segredo', c.segredo), timeout_milliseconds := 5000);
+  return new;
+end $$;
+drop trigger if exists pedidos_avisar on public.pedidos;
+create trigger pedidos_avisar after update of status on public.pedidos
+  for each row execute function private.pedido_avisar();
+
+do $$
+begin
+  execute 'revoke execute on function public.delivery_push(uuid, jsonb, text) from public';
+  execute 'grant execute on function public.delivery_push(uuid, jsonb, text) to anon, authenticated';
+  execute 'revoke execute on function public.push_pedido(uuid, text) from public, anon, authenticated';
+  execute 'revoke execute on function public.push_chaves(text, text) from public, anon, authenticated';
+  execute 'revoke execute on function public.push_remover(text) from public, anon, authenticated';
+  execute 'grant execute on function public.push_pedido(uuid, text) to service_role';
+  execute 'grant execute on function public.push_chaves(text, text) to service_role';
+  execute 'grant execute on function public.push_remover(text) to service_role';
+  execute 'revoke execute on function private.pedido_avisar() from public, anon, authenticated';
 end $$;

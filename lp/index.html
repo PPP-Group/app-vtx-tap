@@ -3,20 +3,20 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>VTX Tap · Preços</title>
-<meta name="description" content="Uma plaquinha na mesa: chamar o garçom, cardápio digital, avaliação no Google e programa de fidelidade. Veja os preços e monte o seu plano.">
+<title>VTX Tap · Fidelidade, delivery e a mesa no celular</title>
+<meta name="description" content="Clube de pontos pela nota fiscal, delivery próprio sem comissão, cardápio e chamar o garçom numa plaquinha na mesa. Sem aplicativo para baixar. Implantação e treinamento inclusos.">
 <meta name="theme-color" content="#140B33">
-<meta property="og:title" content="VTX Tap · Preços">
-<meta property="og:description" content="Chamar o garçom, cardápio, avaliação no Google e fidelidade numa plaquinha só. Monte o seu plano.">
-<meta property="og:image" content="/assets/img/vtx-tap-escuro.png">
+<meta property="og:title" content="VTX Tap · Faça o cliente voltar e pedir direto com você">
+<meta property="og:description" content="Clube de pontos pela nota fiscal, delivery sem comissão, cardápio e chamar o garçom. Tudo no celular do cliente, sem aplicativo.">
+<meta property="og:image" content="/assets/img/lp/fid-conta.webp">
 <link rel="icon" href="/assets/img/icon-64.png" type="image/png">
-<style>[hidden] { display: none !important; } img { max-width: 100%; }</style>
+<style>[hidden] { display: none !important; } img { max-width: 100%; height: auto; }</style>
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@800;900&family=IBM+Plex+Mono:wght@500;600&family=Schibsted+Grotesk:wght@400;500;600;700&display=swap">
 <style>
-  /* Layout: hero curto → "como funciona a cobrança" (uma vez / todo mês / todo ano) → simulador (controles | resumo ao lado) → tabela por tipo de cobrança → condições. */
+  /* Mesma linguagem da página de preços (/precos): noite + roxo, títulos em Big Shoulders, cartões claros. */
   :root {
     --bg: #F4F2F9;
     --surface: #FFFFFF;
@@ -31,13 +31,10 @@
     --noite: #140B33;
     --noite-ink: #F1ECFF;
     --noite-2: #CFC6F2;
-    --unico: #B45309;
-    --unico-soft: #FDF0DD;
-    --mensal: #6A1BE0;
-    --mensal-soft: #EEE5FF;
-    --anual: #0F766E;
-    --anual-soft: #DDF3EF;
+    --lilas: #A874FF;
+    --ouro: #FFC61A;
     --ok: #1B7F52;
+    --ok-soft: #DDF3E8;
     --display: 'Big Shoulders Display', 'Oswald', 'Arial Narrow', Impact, sans-serif;
     --body: 'Schibsted Grotesk', system-ui, -apple-system, 'Segoe UI', sans-serif;
     --mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Consolas, monospace;
@@ -45,496 +42,614 @@
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       --bg: #0C0820; --surface: #161034; --surface-2: #221949; --ink: #EFECFA; --ink-2: #CFC9E6; --muted: #A298C6;
-      --line: #30275C; --roxo-ink: #BB97FF; --roxo-soft: #2C1766; --noite: #1D1245;
-      --unico: #F5B360; --unico-soft: #3A2710; --mensal: #BB97FF; --mensal-soft: #2C1766; --anual: #5FD3C3; --anual-soft: #0E3330;
-      --ok: #4FD196; color-scheme: dark;
+      --line: #30275C; --roxo-ink: #BB97FF; --roxo-soft: #2C1766; --noite: #1D1245; --ok: #4FD196; --ok-soft: #0E3322; color-scheme: dark;
     }
   }
   :root[data-theme="dark"] {
     --bg: #0C0820; --surface: #161034; --surface-2: #221949; --ink: #EFECFA; --ink-2: #CFC9E6; --muted: #A298C6;
-    --line: #30275C; --roxo-ink: #BB97FF; --roxo-soft: #2C1766; --noite: #1D1245;
-    --unico: #F5B360; --unico-soft: #3A2710; --mensal: #BB97FF; --mensal-soft: #2C1766; --anual: #5FD3C3; --anual-soft: #0E3330;
-    --ok: #4FD196; color-scheme: dark;
+    --line: #30275C; --roxo-ink: #BB97FF; --roxo-soft: #2C1766; --noite: #1D1245; --ok: #4FD196; --ok-soft: #0E3322; color-scheme: dark;
   }
   * { box-sizing: border-box; }
-  /* Seleção de texto e barra de rolagem no roxo da VTX. */
   ::selection { background: rgba(125, 39, 252, .28); color: inherit; }
-  html { scrollbar-color: rgba(125, 39, 252, .55) transparent; }
+  html { scrollbar-color: rgba(125, 39, 252, .55) transparent; scroll-behavior: smooth; scroll-padding-top: 84px; }
   ::-webkit-scrollbar { width: 10px; height: 10px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: rgba(125, 39, 252, .5); border-radius: 999px; border: 2px solid transparent; background-clip: padding-box; }
-  ::-webkit-scrollbar-thumb:hover { background-color: rgba(125, 39, 252, .75); }
-  body { margin: 0; background: var(--bg); color: var(--ink); font: 400 16px/1.55 var(--body); }
-  .wrap { max-width: 1120px; margin: 0 auto; padding-inline: 18px; padding-block: 24px 56px; display: grid; gap: 44px; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 400 16px/1.55 var(--body); overflow-x: hidden; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding-inline: 18px; padding-block: 16px 56px; display: grid; gap: 72px; }
   h1, h2 { font-family: var(--display); font-weight: 900; text-transform: uppercase; line-height: .95; margin: 0; text-wrap: balance; }
-  h2 { font-size: clamp(30px, 5vw, 42px); }
+  h2 { font-size: clamp(34px, 5.4vw, 54px); }
   h3 { margin: 0; font-size: 17px; font-weight: 600; }
   p { margin: 0; }
+  a { color: inherit; }
   .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
   .muted { color: var(--muted); }
   .kicker { font-size: 12.5px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--roxo-ink); }
-  .sec { display: grid; gap: 18px; }
-  .sec-h { display: grid; gap: 6px; }
-  .sec-h p { color: var(--muted); max-width: 62ch; }
+  .sec { display: grid; gap: 26px; }
+  .sec-h { display: grid; gap: 10px; }
+  .sec-h > p:not(.kicker) { color: var(--muted); max-width: 64ch; font-size: 17px; }
+  .centro { text-align: center; justify-items: center; }
 
-  /* Selo do tipo de cobrança */
-  .tipo { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
-  .tipo::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
-  .tipo--unico { color: var(--unico); background: var(--unico-soft); }
-  .tipo--mensal { color: var(--mensal); background: var(--mensal-soft); }
-  .tipo--anual { color: var(--anual); background: var(--anual-soft); }
+  /* Botões */
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 50px; padding: 0 22px; border-radius: 999px; font: 700 16px var(--body); text-decoration: none; border: 0; cursor: pointer; transition: transform .15s, box-shadow .15s, background-color .15s; white-space: nowrap; }
+  .btn:focus-visible { outline: 3px solid var(--lilas); outline-offset: 3px; }
+  .btn-roxo { background: var(--roxo); color: #fff; box-shadow: 0 10px 28px rgba(125, 39, 252, .38); }
+  .btn-roxo:hover { transform: translateY(-1px); box-shadow: 0 14px 34px rgba(125, 39, 252, .48); }
+  .btn-ouro { background: var(--ouro); color: #1D1400; box-shadow: 0 10px 28px rgba(255, 198, 26, .3); }
+  .btn-ouro:hover { transform: translateY(-1px); }
+  .btn-linha { background: transparent; color: inherit; box-shadow: inset 0 0 0 2px currentColor; }
+  .btn-linha:hover { background: rgba(125, 39, 252, .08); }
+  .btn svg { width: 20px; height: 20px; flex: none; }
+  .ctas { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
 
-  /* Hero */
-  .hero { display: grid; gap: 18px; padding: 30px clamp(20px, 4vw, 44px); border-radius: 28px; background: var(--noite); color: var(--noite-ink); position: relative; overflow: hidden; }
-  .hero::after { content: ''; position: absolute; right: -90px; top: -90px; width: 320px; height: 320px; border-radius: 50%; border: 18px solid rgba(125, 39, 252, .28); box-shadow: 0 0 0 40px rgba(125, 39, 252, .12), 0 0 0 90px rgba(125, 39, 252, .06); pointer-events: none; }
-  .hero > * { position: relative; z-index: 1; }
-  .hero img { width: 150px; height: auto; }
-  .hero h1 { font-size: clamp(36px, 7vw, 64px); max-width: 17ch; }
-  .hero h1 em { font-style: normal; color: #A874FF; }
-  .hero p { max-width: 58ch; color: var(--noite-2); }
-  .hero ul { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
-  .hero li { padding: 6px 12px; border-radius: 999px; background: rgba(255, 255, 255, .08); font-size: 14px; font-weight: 500; }
-  .faixa-interna { padding: 10px 14px; border-radius: 12px; background: #FDE68A; color: #3B2A00; font-weight: 600; font-size: 14px; }
-
-  /* Como funciona a cobrança */
-  .tres { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
-  .tres article { display: grid; gap: 8px; align-content: start; padding: 18px; border-radius: 20px; background: var(--surface); border: 1px solid var(--line); }
-  .tres ul { margin: 0; padding-left: 1.1em; color: var(--ink-2); font-size: 14.5px; display: grid; gap: 3px; }
-
-  /* Simulador */
-  .sim-grid { display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr); align-items: start; }
-  @media (min-width: 920px) { .sim-grid { grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); } .resumo { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 16px); } }
-  .controles { display: grid; gap: 14px; min-width: 0; }
-  .bloco { display: grid; gap: 12px; padding: 18px; border-radius: 20px; background: var(--surface); border: 1px solid var(--line); min-width: 0; }
-  .bloco-h { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; }
-  .qtd { display: flex; align-items: center; gap: 14px; }
-  .qtd input[type="range"] { flex: 1; min-width: 0; accent-color: var(--roxo); height: 28px; }
-  .qtd input[type="number"] { width: 84px; flex: none; padding: 8px 10px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface-2); color: var(--ink); font: 600 18px var(--mono); text-align: center; }
-  .dica { font-size: 13.5px; color: var(--muted); }
-  .opcoes { display: grid; gap: 10px; }
-  .op { display: flex; gap: 12px; align-items: flex-start; padding: 14px; border-radius: 16px; border: 1.5px solid var(--line); cursor: pointer; transition: border-color .15s, background-color .15s; min-width: 0; }
-  .op:hover { border-color: var(--roxo); }
-  .op:has(input:checked) { border-color: var(--roxo); background: var(--roxo-soft); }
-  .op:has(input:focus-visible) { outline: 3px solid var(--roxo); outline-offset: 2px; }
-  .op input { width: 20px; height: 20px; margin: 2px 0 0; flex: none; accent-color: var(--roxo); }
-  .op-txt { display: grid; gap: 2px; flex: 1; min-width: 0; }
-  .op-top { display: flex; justify-content: space-between; align-items: baseline; gap: 4px 12px; flex-wrap: wrap; }
-  .op b { font-weight: 600; }
-  .op small { color: var(--muted); font-size: 13.5px; overflow-wrap: anywhere; }
-  .placas { display: grid; gap: 10px; grid-template-columns: minmax(0, 1fr); }
-  /* Padrão e personalizada básica lado a lado; sob demanda embaixo, na largura toda (foto à esquerda, texto à direita). */
-  @media (min-width: 560px) {
-    .placas { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .placa-op--larga { grid-column: 1 / -1; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 14px; align-items: center; }
-    .placa-op--larga img { grid-row: 1 / span 2; margin-bottom: 0; }
-    .placa-op--larga .op-top { align-self: end; }
-    .placa-op--larga small { align-self: start; }
-  }
-  .placa-op { position: relative; display: grid; gap: 6px; align-content: start; padding: 12px; border-radius: 16px; border: 1.5px solid var(--line); cursor: pointer; min-width: 0; transition: border-color .15s, background-color .15s; }
-  .placa-op:hover { border-color: var(--roxo); }
-  .placa-op:has(input:checked) { border-color: var(--roxo); background: var(--roxo-soft); }
-  .placa-op:has(input:focus-visible) { outline: 3px solid var(--roxo); outline-offset: 2px; }
-  .placa-op input { position: absolute; top: 10px; right: 10px; width: 20px; height: 20px; margin: 0; accent-color: var(--roxo); z-index: 1; }
-  .placa-op img { width: 100%; height: auto; margin-bottom: 4px; border-radius: 5px; box-shadow: 0 6px 18px rgba(20, 11, 51, .18); }
-  .placa-op b { font-weight: 600; }
-  .placa-op small { color: var(--muted); font-size: 13px; }
-  .placa-op .preco { font-family: var(--mono); font-weight: 600; font-size: 14px; color: var(--roxo-ink); white-space: nowrap; }
-  .op .preco { font-family: var(--mono); font-weight: 600; font-size: 14px; color: var(--roxo-ink); white-space: nowrap; }
-  code { font-family: var(--mono); font-size: .92em; overflow-wrap: anywhere; }
-
-  /* Resumo */
-  .resumo { display: grid; gap: 14px; padding: 22px; border-radius: 24px; background: var(--noite); color: var(--noite-ink); min-width: 0; }
-  .resumo > h3 { font-family: var(--display); font-weight: 900; font-size: 28px; text-transform: uppercase; }
-  .grupo { display: grid; gap: 10px; padding: 16px; border-radius: 18px; background: rgba(255, 255, 255, .06); }
-  .grupo[hidden] { display: none; }
-  .grupo-h { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .grupo-h .tipo--unico { color: #F5B360; background: rgba(245, 179, 96, .14); }
-  .grupo-h .tipo--mensal { color: #C9A8FF; background: rgba(201, 168, 255, .16); }
-  .grupo-h .tipo--anual { color: #6FE0D0; background: rgba(111, 224, 208, .14); }
-  .grupo-h small { color: var(--noite-2); font-size: 13px; }
-  .linhas { display: grid; gap: 6px; margin: 0; }
-  .linha { display: flex; justify-content: space-between; gap: 12px; font-size: 14.5px; }
-  .linha dt { color: var(--noite-2); min-width: 0; }
-  .linha dd { margin: 0; font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .linha.desc dd, .linha.desc dt { color: #7CE3B1; }
-  .grupo-total { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding-top: 8px; border-top: 1px solid rgba(255, 255, 255, .14); }
-  .grupo-total span { font-size: 14px; font-weight: 600; }
-  .grupo-total b { font-family: var(--display); font-weight: 900; font-size: 34px; line-height: 1; font-variant-numeric: tabular-nums; }
-  .consulta { display: inline-block; padding: 1px 8px; border-radius: 999px; background: rgba(168, 116, 255, .22); color: #D9C6FF; font-size: 12px; font-weight: 700; font-family: var(--body); }
-  .nota { font-size: 13px; color: var(--noite-2); }
-
-  /* Interno */
-  .interno { display: grid; gap: 10px; padding: 16px; border-radius: 18px; background: #FDE68A; color: #3B2A00; }
-  .interno h4 { margin: 0; font-size: 13px; letter-spacing: .1em; text-transform: uppercase; }
-  .interno .linha dt, .interno .linha dd { color: #3B2A00; }
-  .interno .forte dd, .interno .forte dt { font-weight: 700; }
-  .custo-in { display: flex; align-items: center; gap: 8px; font-size: 14px; }
-  .custo-in input { width: 80px; padding: 5px 8px; border-radius: 8px; border: 1px solid #C9A227; background: #FFF8DB; color: #3B2A00; font: 600 15px var(--mono); }
-
-  /* Tabelas */
-  .tabela-wrap { overflow-x: auto; border-radius: 20px; border: 1px solid var(--line); background: var(--surface); }
-  table { width: 100%; border-collapse: collapse; font-size: 15px; min-width: 460px; }
-  caption { text-align: left; padding: 16px 18px 4px; }
-  th, td { padding: 12px 18px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
-  tr:last-child td { border-bottom: 0; }
-  th { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
-  td.v { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; font-weight: 600; text-align: right; }
-  th.v { text-align: right; }
-  td small { display: block; color: var(--muted); font-size: 13px; }
-  .cards { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
-  .card { display: grid; gap: 10px; align-content: start; padding: 20px; border-radius: 20px; background: var(--surface); border: 1px solid var(--line); }
-  .card.destaque { border: 2px solid var(--roxo); }
-  .card .valor { font-family: var(--display); font-weight: 900; font-size: 40px; line-height: 1; }
-  .card .valor span { font-family: var(--body); font-size: 15px; font-weight: 600; color: var(--muted); margin-left: 2px; }
-  .card ul { margin: 0; padding-left: 1.1em; color: var(--ink-2); font-size: 14.5px; display: grid; gap: 4px; }
-  .card-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .grupo-tab { display: grid; gap: 12px; }
-  .grupo-tab > header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-  .grupo-tab > header p { color: var(--muted); font-size: 14.5px; }
-  .condicoes { display: grid; gap: 12px; padding: 22px; border-radius: 20px; background: var(--roxo-soft); }
-  .condicoes ul { margin: 0; padding-left: 1.1em; display: grid; gap: 6px; }
-  .rodape { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; justify-content: space-between; color: var(--muted); font-size: 14px; }
-  .rodape a { color: var(--roxo-ink); font-weight: 600; }
+  /* Barra do topo */
+  .topo { position: sticky; top: 0; z-index: 20; background: color-mix(in srgb, var(--bg) 86%, transparent); backdrop-filter: saturate(1.4) blur(12px); -webkit-backdrop-filter: saturate(1.4) blur(12px); border-bottom: 1px solid transparent; transition: border-color .2s; }
+  .topo.rolou { border-bottom-color: var(--line); }
+  .topo-in { max-width: 1120px; margin: 0 auto; padding: 10px 18px; display: flex; align-items: center; gap: 18px; }
+  .topo nav { display: flex; gap: 4px; margin-left: auto; }
+  .topo nav a { padding: 8px 12px; border-radius: 999px; text-decoration: none; font-weight: 600; font-size: 15px; color: var(--ink-2); }
+  .topo nav a:hover { background: var(--surface-2); }
+  .topo .btn { min-height: 42px; padding: 0 18px; font-size: 15px; }
   .logo-claro { display: none; }
   :root[data-theme="dark"] .logo-escuro { display: none; }
   :root[data-theme="dark"] .logo-claro { display: inline; }
   @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .logo-escuro { display: none; } :root:not([data-theme="light"]) .logo-claro { display: inline; } }
-  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+  @media (max-width: 860px) { .topo nav { display: none; } .topo .btn { margin-left: auto; } }
+
+  /* Hero */
+  .hero { display: grid; gap: 28px; padding: clamp(28px, 5vw, 56px) clamp(20px, 4vw, 52px) 0; border-radius: 32px; background: var(--noite); color: var(--noite-ink); position: relative; overflow: hidden; }
+  .hero::before { content: ''; position: absolute; right: -120px; top: -120px; width: 420px; height: 420px; border-radius: 50%; border: 22px solid rgba(125, 39, 252, .28); box-shadow: 0 0 0 50px rgba(125, 39, 252, .12), 0 0 0 110px rgba(125, 39, 252, .06); pointer-events: none; }
+  .hero > * { position: relative; z-index: 1; }
+  @media (min-width: 920px) { .hero { grid-template-columns: minmax(0, 1.08fr) minmax(0, 1fr); align-items: end; column-gap: 20px; } .hero-txt { padding-bottom: 52px; } }
+  .hero-txt { display: grid; gap: 20px; align-content: start; }
+  .hero h1 { font-size: clamp(44px, 7.4vw, 82px); }
+  .hero h1 em { font-style: normal; color: var(--lilas); display: block; }
+  .hero-sub { font-size: 18px; color: var(--noite-2); max-width: 54ch; }
+  .hero-sub b { color: #fff; font-weight: 600; }
+  .selos { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 16px; color: var(--noite-2); font-size: 14.5px; }
+  .selos li { display: inline-flex; align-items: center; gap: 7px; }
+  .selos svg { width: 18px; height: 18px; color: #7CE3B1; flex: none; }
+  .hero .btn-linha { color: #fff; }
+  .hero-fotos { position: relative; height: clamp(400px, 58vw, 580px); max-width: 560px; width: 100%; justify-self: center; }
+  .hero-fotos .fone { position: absolute; width: min(50%, 270px); }
+  .hero-fotos .fone:nth-child(1) { left: 6%; bottom: -60px; transform: rotate(-6deg); z-index: 2; }
+  .hero-fotos .fone:nth-child(2) { right: 6%; bottom: -110px; transform: rotate(5deg); }
+  .hero-etq { position: absolute; z-index: 3; display: inline-flex; align-items: center; gap: 8px; padding: 9px 14px; border-radius: 14px; background: #fff; color: var(--noite); font-weight: 700; font-size: 14px; box-shadow: 0 12px 30px rgba(0, 0, 0, .3); }
+  .hero-etq small { display: block; font-weight: 500; color: #625A80; font-size: 12px; }
+  .hero-etq .pt { font: 900 24px var(--display); color: var(--roxo); }
+  .hero-etq--a { left: 0; top: 16%; }
+  .hero-etq--b { right: 0; top: 30%; }
+
+  /* Moldura de celular e de navegador */
+  .fone { display: block; padding: 8px; border-radius: 38px; background: #0B0720; box-shadow: 0 30px 60px rgba(20, 11, 51, .35), inset 0 0 0 1.5px rgba(255, 255, 255, .12); }
+  .fone img { display: block; width: 100%; height: auto; border-radius: 30px; }
+  .janela { display: block; border-radius: 16px; overflow: hidden; background: #0B0720; box-shadow: 0 30px 60px rgba(20, 11, 51, .28), 0 0 0 1px var(--line); }
+  .janela::before { content: ''; display: block; height: 26px; background: #1E1646 radial-gradient(circle at 16px 13px, #FF6B6B 4px, transparent 5px), radial-gradient(circle at 32px 13px, #FFC61A 4px, transparent 5px), radial-gradient(circle at 48px 13px, #4FD196 4px, transparent 5px); background-color: #1E1646; }
+  .janela img { display: block; width: 100%; height: auto; }
+  button.zoom { appearance: none; border: 0; margin: 0; font: inherit; color: inherit; text-align: inherit; cursor: zoom-in; width: 100%; transition: transform .2s; }
+  button.zoom:hover { transform: translateY(-3px); }
+  button.zoom:focus-visible { outline: 3px solid var(--lilas); outline-offset: 4px; }
+
+  /* Resultados */
+  .ganhos { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+  .ganho { display: grid; gap: 10px; align-content: start; padding: 22px; border-radius: 22px; background: var(--surface); border: 1px solid var(--line); text-decoration: none; transition: border-color .15s, transform .15s; }
+  .ganho:hover { border-color: var(--roxo); transform: translateY(-2px); }
+  .ganho .ico { width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center; background: var(--roxo-soft); color: var(--roxo-ink); }
+  .ganho .ico svg { width: 24px; height: 24px; }
+  .ganho h3 { font-size: 19px; }
+  .ganho p { color: var(--muted); font-size: 15px; }
+  .ganho .mais { color: var(--roxo-ink); font-weight: 700; font-size: 14.5px; }
+
+  /* Passos */
+  .passos { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); counter-reset: p; }
+  .passo { display: grid; gap: 10px; align-content: start; padding: 22px; border-radius: 22px; background: var(--surface); border: 1px solid var(--line); counter-increment: p; }
+  .passo::before { content: counter(p); font: 900 44px/1 var(--display); color: var(--roxo); }
+  .passo p { color: var(--muted); font-size: 15px; }
+  .passo img { border-radius: 8px; box-shadow: 0 10px 24px rgba(20, 11, 51, .16); margin-top: 4px; }
+
+  /* Blocos de destaque (fidelidade e delivery) */
+  .destaque { display: grid; gap: 34px; padding: clamp(28px, 5vw, 56px) clamp(20px, 4vw, 52px); border-radius: 32px; position: relative; overflow: hidden; }
+  .destaque--noite { background: var(--noite); color: var(--noite-ink); }
+  .destaque--noite .kicker { color: var(--lilas); }
+  .destaque--noite .sec-h > p:not(.kicker) { color: var(--noite-2); }
+  .destaque--roxo { background: linear-gradient(150deg, #7D27FC 0%, #5B14C9 55%, #3C0A8E 100%); color: #fff; }
+  .destaque--roxo .kicker { color: var(--ouro); }
+  .destaque--roxo .sec-h > p:not(.kicker) { color: #E6D9FF; }
+  .destaque::after { content: ''; position: absolute; left: -140px; bottom: -160px; width: 380px; height: 380px; border-radius: 50%; border: 20px solid rgba(255, 255, 255, .06); box-shadow: 0 0 0 60px rgba(255, 255, 255, .03); pointer-events: none; }
+  .destaque > * { position: relative; z-index: 1; }
+  .dupla { display: grid; gap: 30px; align-items: center; }
+  @media (min-width: 920px) { .dupla { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 48px; } .dupla--inv > :first-child { order: 2; } }
+  .telas { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; max-width: 540px; margin-inline: auto; width: 100%; }
+  .telas .fone:nth-child(2) { margin-top: 48px; }
+  .lista-fx { list-style: none; margin: 0; padding: 0; display: grid; gap: 16px; }
+  .lista-fx li { display: grid; grid-template-columns: 40px 1fr; gap: 14px; align-items: start; }
+  .lista-fx .ico { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: rgba(255, 255, 255, .1); color: var(--ouro); }
+  .lista-fx .ico svg { width: 21px; height: 21px; }
+  .lista-fx b { display: block; font-size: 17px; font-weight: 600; }
+  .lista-fx span { color: var(--noite-2); font-size: 15px; }
+  .destaque--roxo .lista-fx span { color: #E6D9FF; }
+  .fluxo { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+  .fluxo div { padding: 16px; border-radius: 18px; background: rgba(255, 255, 255, .07); display: grid; gap: 4px; }
+  .fluxo b { font: 900 30px/1 var(--display); color: var(--ouro); }
+  .fluxo span { font-size: 15px; color: var(--noite-2); }
+  .fluxo strong { color: #fff; font-weight: 600; font-size: 16px; }
+  .painel-fig { display: grid; gap: 12px; }
+  .painel-fig figcaption { font-size: 14.5px; color: var(--noite-2); text-align: center; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { padding: 7px 13px; border-radius: 999px; background: rgba(255, 255, 255, .1); font-size: 14px; font-weight: 500; }
+  .aviso-box { display: grid; gap: 6px; padding: 18px; border-radius: 18px; background: rgba(255, 255, 255, .08); border: 1px solid rgba(255, 255, 255, .14); }
+  .aviso-box b { font-size: 16px; }
+  .aviso-box p { color: var(--noite-2); font-size: 15px; }
+  .destaque--roxo .aviso-box p { color: #E6D9FF; }
+
+  /* Calculadora de comissão */
+  .calc { display: grid; gap: 18px; padding: 22px; border-radius: 24px; background: #fff; color: var(--noite); }
+  @media (min-width: 820px) { .calc { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px; padding: 28px; } }
+  .calc h3 { font: 900 30px/1 var(--display); text-transform: uppercase; }
+  .calc-in { display: grid; gap: 14px; align-content: start; }
+  .calc label { display: grid; gap: 6px; font-weight: 600; font-size: 14.5px; }
+  .calc .campo { display: flex; align-items: center; gap: 12px; }
+  .calc input[type="range"] { flex: 1; min-width: 0; accent-color: var(--roxo); }
+  .calc output, .calc .val { min-width: 92px; text-align: right; font: 600 16px var(--mono); color: var(--roxo); }
+  .calc small { color: #625A80; font-size: 13px; font-weight: 400; }
+  .calc-out { display: grid; gap: 12px; align-content: start; padding: 20px; border-radius: 18px; background: #F4F2F9; }
+  .calc-out .linha { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; font-size: 15px; }
+  .calc-out .linha b { font: 600 17px var(--mono); white-space: nowrap; }
+  .calc-out .ruim b { color: #C2410C; }
+  .calc-out .bom b { color: #1B7F52; }
+  .calc-eco { display: grid; gap: 2px; padding-top: 12px; border-top: 1px solid #E1DCEE; }
+  .calc-eco span { font-weight: 600; }
+  .calc-eco b { font: 900 46px/1 var(--display); color: #1B7F52; }
+  .calc-eco small { color: #625A80; }
+
+  /* Mesa (cardápio + sino) */
+  .cols3 { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  .card { display: grid; gap: 10px; align-content: start; padding: 22px; border-radius: 22px; background: var(--surface); border: 1px solid var(--line); }
+  .card ul { margin: 0; padding-left: 1.1em; color: var(--ink-2); font-size: 15px; display: grid; gap: 5px; }
+  .card .ico { width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; background: var(--roxo-soft); color: var(--roxo-ink); }
+  .card .ico svg { width: 22px; height: 22px; }
+  .mesa-grid { display: grid; gap: 30px; align-items: center; }
+  @media (min-width: 920px) { .mesa-grid { grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 44px; } }
+  .mesa-grid .telas .fone { background: #0B0720; }
+  .lista-cl { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
+  .lista-cl li { display: grid; grid-template-columns: 26px 1fr; gap: 12px; }
+  .lista-cl svg { width: 22px; height: 22px; color: var(--roxo); margin-top: 2px; }
+  .lista-cl b { font-weight: 600; }
+  .lista-cl span { color: var(--muted); display: block; font-size: 15px; }
+
+  /* Plaquinhas */
+  .placas { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  .placa { display: grid; gap: 10px; align-content: start; padding: 16px; border-radius: 22px; background: var(--surface); border: 1px solid var(--line); }
+  .placa img { border-radius: 6px; box-shadow: 0 10px 24px rgba(20, 11, 51, .18); }
+  .placa p { color: var(--muted); font-size: 14.5px; }
+
+  /* Preços */
+  .precos { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(186px, 1fr)); }
+  .preco-card { display: grid; gap: 8px; align-content: start; padding: 20px; border-radius: 22px; background: var(--surface); border: 1px solid var(--line); }
+  .preco-card.combo { border: 2px solid var(--roxo); background: var(--roxo-soft); }
+  .preco-card .valor { font: 900 42px/1 var(--display); }
+  .preco-card .valor span { font: 600 15px var(--body); color: var(--muted); margin-left: 2px; }
+  .preco-card p { color: var(--muted); font-size: 14.5px; }
+  .preco-card .tag { justify-self: start; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; background: var(--roxo); color: #fff; }
+  .inclui { display: grid; gap: 12px; padding: 22px; border-radius: 22px; background: var(--surface); border: 1px solid var(--line); }
+  @media (min-width: 820px) { .inclui { grid-template-columns: auto 1fr; align-items: center; gap: 22px; } }
+  .inclui ul { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 8px 18px; color: var(--ink-2); }
+  .inclui li { display: inline-flex; align-items: center; gap: 7px; font-size: 15px; }
+  .inclui svg { width: 18px; height: 18px; color: var(--ok); }
+
+  /* FAQ */
+  .faq { display: grid; gap: 10px; max-width: 860px; }
+  .faq details { border-radius: 18px; background: var(--surface); border: 1px solid var(--line); }
+  .faq summary { list-style: none; cursor: pointer; padding: 18px 52px 18px 20px; font-weight: 600; font-size: 17px; position: relative; }
+  .faq summary::-webkit-details-marker { display: none; }
+  .faq summary::after { content: '+'; position: absolute; right: 20px; top: 50%; transform: translateY(-50%); font: 700 24px var(--mono); color: var(--roxo-ink); }
+  .faq details[open] summary::after { content: '−'; }
+  .faq summary:focus-visible { outline: 3px solid var(--roxo); outline-offset: 2px; border-radius: 18px; }
+  .faq details > div { padding: 0 20px 18px; color: var(--ink-2); display: grid; gap: 8px; }
+
+  /* Chamada final */
+  .final { display: grid; gap: 20px; justify-items: center; text-align: center; padding: clamp(36px, 6vw, 64px) 22px; border-radius: 32px; background: var(--noite); color: var(--noite-ink); position: relative; overflow: hidden; }
+  .final::before { content: ''; position: absolute; left: 50%; top: -260px; width: 520px; height: 520px; margin-left: -260px; border-radius: 50%; border: 24px solid rgba(125, 39, 252, .28); box-shadow: 0 0 0 60px rgba(125, 39, 252, .1); pointer-events: none; }
+  .final > * { position: relative; }
+  .final h2 { font-size: clamp(38px, 6vw, 66px); max-width: 16ch; }
+  .final h2 em { font-style: normal; color: var(--lilas); }
+  .final p { color: var(--noite-2); max-width: 56ch; font-size: 17px; }
+  .final .btn-linha { color: #fff; }
+
+  .rodape { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; justify-content: space-between; color: var(--muted); font-size: 14px; }
+  .rodape a { color: var(--roxo-ink); font-weight: 600; }
+  .rodape nav { display: flex; gap: 16px; flex-wrap: wrap; }
+
+  /* CTA fixo no celular */
+  .cta-fixo { position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); z-index: 30; display: none; gap: 8px; padding: 8px; border-radius: 999px; background: var(--noite); box-shadow: 0 14px 34px rgba(20, 11, 51, .4); transform: translateY(140%); opacity: 0; visibility: hidden; pointer-events: none; transition: transform .25s, opacity .25s, visibility .25s; }
+  .cta-fixo.on { transform: none; opacity: 1; visibility: visible; pointer-events: auto; }
+  .cta-fixo .btn { flex: 1; min-height: 46px; padding: 0 14px; font-size: 15px; }
+  .cta-fixo .btn-linha { color: #fff; flex: 0 0 auto; }
+  @media (max-width: 720px) { .cta-fixo { display: flex; } body { padding-bottom: 84px; } }
+
+  /* Ampliar imagem */
+  dialog.zoom-dlg { border: 0; padding: 0; background: transparent; max-width: min(1400px, 96vw); max-height: 94vh; }
+  dialog.zoom-dlg::backdrop { background: rgba(8, 5, 22, .82); }
+  dialog.zoom-dlg img { display: block; max-width: 100%; max-height: 90vh; border-radius: 14px; }
+  dialog.zoom-dlg button { position: absolute; top: 10px; right: 10px; width: 42px; height: 42px; border-radius: 50%; border: 0; background: #fff; color: #140B33; font: 700 22px var(--body); cursor: pointer; }
+
+  /* Entrada suave ao rolar */
+  .rev { opacity: 0; transform: translateY(18px); transition: opacity .6s ease, transform .6s ease; }
+  .rev.vis { opacity: 1; transform: none; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } .rev { opacity: 1; transform: none; } * { transition: none !important; } }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header class="hero">
-    <img src="/assets/img/vtx-tap.png" alt="VTX Tap" width="150" height="69">
-    
-    <h1>Uma plaquinha na mesa. <em>O restaurante inteiro no celular do cliente.</em></h1>
-    <p>O cliente encosta o celular (NFC) ou lê o QR Code da mesa. Na mesma página ele chama o garçom, vê o cardápio, avalia no Google e junta pontos. Sem baixar aplicativo.</p>
-    <ul><li>Chamar o garçom</li><li>Cardápio digital</li><li>Avaliação no Google</li><li>Programa de fidelidade</li><li>Painel da equipe</li></ul>
-  </header>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-msg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+  <symbol id="i-gift" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12v10H4V12M2 7h20v5H2zM12 22V7M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7zM12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></symbol>
+  <symbol id="i-moto" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6h3l2 5M5.5 17.5 9 10h6l3.5 7.5M9 10 7.5 6H5"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18h16M6 18a6 6 0 0 1 12 0M12 8V6M10 6h4"/></symbol>
+  <symbol id="i-star" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></symbol>
+  <symbol id="i-receipt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1zM16 8H8M16 12H8M13 16H8"/></symbol>
+  <symbol id="i-trophy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0V4Z"/><path d="M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 10 5-10 5L2 7z"/><path d="m2 17 10 5 10-5M2 12l10 5 10-5"/></symbol>
+  <symbol id="i-zap" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9z"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></symbol>
+  <symbol id="i-map" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></symbol>
+  <symbol id="i-printer" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v8H6z"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2zM22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18M7 14l4-4 4 4 5-6"/></symbol>
+</svg>
 
-  <section class="sec" aria-labelledby="cobTitulo">
-    <div class="sec-h">
-      <p class="kicker">Como funciona a cobrança</p>
-      <h2 id="cobTitulo">Três tipos de valor, sem surpresa</h2>
-      <p>Todo preço desta página vem marcado com o tipo de cobrança. Assim você sabe o que paga uma vez só e o que se repete.</p>
-    </div>
-    <div class="tres">
-      <article><span class="tipo tipo--unico">Pagamento único</span><h3>Você paga uma vez, na contratação</h3>
-        <ul><li>Implantação no restaurante</li><li>Plaquinhas das mesas</li><li>Configuração do domínio próprio, se quiser um</li></ul></article>
-      <article><span class="tipo tipo--mensal">Todo mês</span><h3>A mensalidade dos serviços que você usar</h3>
-        <ul><li>Página da mesa e cardápio</li><li>Chamar o garçom</li><li>Programa de fidelidade</li><li>Domínio próprio, se tiver</li></ul></article>
-      <article><span class="tipo tipo--anual">Todo ano</span><h3>Só se registrarmos um domínio para você</h3>
-        <ul><li>Renovação do domínio .com.br</li><li>Com o endereço incluso (subdomínio), não existe cobrança anual</li></ul></article>
-    </div>
-  </section>
+<header class="topo" id="topo">
+  <div class="topo-in">
+    <a href="#inicio" aria-label="VTX Tap, início"><img class="logo-escuro" src="/assets/img/vtx-tap-escuro.png" alt="VTX Tap" width="104" height="48"><img class="logo-claro" src="/assets/img/vtx-tap.png" alt="VTX Tap" width="104" height="48"></a>
+    <nav aria-label="Seções">
+      <a href="#fidelidade">Fidelidade</a>
+      <a href="#delivery">Delivery</a>
+      <a href="#mesa">Na mesa</a>
+      <a href="#precos">Preços</a>
+      <a href="#duvidas">Dúvidas</a>
+    </nav>
+    <a class="btn btn-roxo" data-contato href="#contato">Quero conhecer</a>
+  </div>
+</header>
 
-  <section class="sec" aria-labelledby="simTitulo">
-    <div class="sec-h">
-      <p class="kicker">Simulador</p>
-      <h2 id="simTitulo">Monte o seu</h2>
-      <p>Mexa nas opções e veja, separado, o que é pagamento único, o que é mensal e o que é anual.</p>
-    </div>
-    <div class="sim-grid">
-      <form class="controles" id="sim" novalidate>
-        <div class="bloco">
-          <div class="bloco-h"><h3><label for="mesasNum">Quantas mesas?</label></h3><span class="dica" id="porte"></span></div>
-          <div class="qtd">
-            <input type="range" id="mesasRange" min="1" max="120" value="30" aria-label="Mesas">
-            <input type="number" id="mesasNum" min="1" max="500" value="30" inputmode="numeric">
-          </div>
-        </div>
-
-        <div class="bloco">
-          <h3>Serviços <span class="tipo tipo--mensal">Todo mês</span></h3>
-          <div class="opcoes">
-            <label class="op"><input type="checkbox" id="svPagina" checked><span class="op-txt"><span class="op-top"><b>Página da mesa e cardápio</b><span class="preco" data-preco="pagina"></span></span>
-              <small>Cardápio com fotos e filtros, Wi-Fi, avaliação no Google, comentário anônimo e Instagram.</small></span></label>
-            <label class="op"><input type="checkbox" id="svGarcom" checked><span class="op-txt"><span class="op-top"><b>Chamar o garçom</b><span class="preco" data-preco="garcom"></span></span>
-              <small>O cliente chama pelo celular e a equipe recebe na hora no painel, com som e mapa do salão.</small></span></label>
-            <label class="op"><input type="checkbox" id="svFid" checked><span class="op-txt"><span class="op-top"><b>Programa de fidelidade</b><span class="preco" data-preco="fidelidade"></span></span>
-              <small>Pontos pela nota fiscal, prêmios, níveis do clube, ranking, indicação de amigos e dias com pontos em dobro.</small></span></label>
-            <label class="op"><input type="checkbox" id="svDel"><span class="op-txt"><span class="op-top"><b>Delivery</b><span class="preco" data-preco="delivery"></span></span>
-              <small>Pedido para entrega com endereço, taxa por distância, comanda na cozinha e acompanhamento do pedido.</small></span></label>
-          </div>
-          <p class="dica" id="comboDica"></p>
-        </div>
-
-        <div class="bloco">
-          <div class="bloco-h"><h3>Plaquinhas <span class="tipo tipo--unico">Pagamento único</span></h3></div>
-          <div class="placas" role="radiogroup" aria-label="Modelo da plaquinha">
-            <label class="placa-op"><input type="radio" name="placa" id="plPadrao" value="padrao" checked>
-              <img src="/assets/img/placas/placa-padrao.webp" width="1200" height="757" alt="Plaquinha padrão: QR Code com a logo da VTX Tap à esquerda e, à direita, o ícone de NFC com Aproxime o celular">
-              <span class="op-top"><b>Padrão</b><span class="preco" id="precoPadrao"></span></span>
-              <small>Tamanho de cartão de crédito, com NFC e QR Code. Logo da VTX Tap no meio do QR.</small></label>
-            <label class="placa-op"><input type="radio" name="placa" id="plBasica" value="basica">
-              <img src="/assets/img/placas/placa-personalizada-basica.webp" width="1200" height="757" alt="Plaquinha personalizada básica: a logo do restaurante no meio do QR e os detalhes na cor do restaurante">
-              <span class="op-top"><b>Personalizada básica</b><span class="preco" id="precoBasica"></span></span>
-              <small>Você envia a logo: ela vai no meio do QR, e os detalhes saem na cor do restaurante. R$ 20 a mais por plaquinha.</small></label>
-            <label class="placa-op placa-op--larga"><input type="radio" name="placa" id="plDemanda" value="demanda">
-              <img src="/assets/img/placas/placa-sob-demanda.webp" width="1200" height="757" alt="Exemplo de plaquinha sob demanda, com arte própria do restaurante em fundo verde e dourado">
-              <span class="op-top"><b>Personalizada sob demanda</b><span class="preco">Sob consulta</span></span>
-              <small>Você manda a arte ou conta como quer. Nosso time avalia e faz o orçamento. Imagem ilustrativa.</small></label>
-          </div>
-          <div class="bloco-h"><label for="placasNum" class="dica">Quantidade de plaquinhas (uma por mesa, ou mais se quiser duas em mesas grandes)</label></div>
-          <div class="qtd">
-            <input type="range" id="placasRange" min="1" max="150" value="30" aria-label="Plaquinhas">
-            <input type="number" id="placasNum" min="1" max="1000" value="30" inputmode="numeric">
-          </div>
-        </div>
-
-        <div class="bloco">
-          <h3>Endereço do site</h3>
-          <div class="opcoes" role="radiogroup" aria-label="Endereço do site">
-            <label class="op"><input type="radio" name="dom" id="domSub" value="sub" checked><span class="op-txt"><span class="op-top"><b>Endereço incluso</b><span class="preco">Grátis</span></span>
-              <small>Ex.: <code>seurestaurante.vortexsystems.tech</code></small></span></label>
-            <label class="op"><input type="radio" name="dom" id="domProprio" value="proprio"><span class="op-txt"><span class="op-top"><b>Domínio que você já tem</b><span class="preco">R$ 190 + R$ 19/mês</span></span>
-              <small>Ex.: <code>cardapio.seurestaurante.com.br</code>. R$ 190 uma vez para configurar e R$ 19 por mês.</small></span></label>
-            <label class="op"><input type="radio" name="dom" id="domRegistro" value="registro"><span class="op-txt"><span class="op-top"><b>Registramos o domínio para você</b><span class="preco">+ R$ 90/ano</span></span>
-              <small>O mesmo do item acima, mais R$ 90 por ano para registrar e renovar o domínio em seu nome.</small></span></label>
-          </div>
-        </div>
-
-        <div class="bloco">
-          <h3>Tempo de contrato</h3>
-          <div class="opcoes" role="radiogroup" aria-label="Contrato">
-            <label class="op"><input type="radio" name="contrato" id="ct6" value="6" checked><span class="op-txt"><span class="op-top"><b>6 meses</b><span class="preco">Implantação cheia</span></span>
-              <small>Contrato mínimo.</small></span></label>
-            <label class="op"><input type="radio" name="contrato" id="ct12" value="12"><span class="op-txt"><span class="op-top"><b>12 meses</b><span class="preco">50% off na implantação</span></span>
-              <small>A mensalidade é a mesma; o desconto vale para a implantação.</small></span></label>
-          </div>
-        </div>
-      </form>
-
-      <aside class="resumo" aria-live="polite">
-        <h3>Seu orçamento</h3>
-        <div class="grupo">
-          <div class="grupo-h"><span class="tipo tipo--unico">Pagamento único</span><small>paga uma vez, na contratação</small></div>
-          <dl class="linhas" id="lnUnico"></dl>
-          <div class="grupo-total"><span>Total único</span><b id="totUnico">R$ 0</b></div>
-        </div>
-        <div class="grupo">
-          <div class="grupo-h"><span class="tipo tipo--mensal">Todo mês</span><small>a partir do primeiro mês</small></div>
-          <dl class="linhas" id="lnMensal"></dl>
-          <div class="grupo-total"><span>Total por mês</span><b id="totMensal">R$ 0</b></div>
-        </div>
-        <div class="grupo" id="grupoAnual" hidden>
-          <div class="grupo-h"><span class="tipo tipo--anual">Todo ano</span><small>renovação do domínio</small></div>
-          <dl class="linhas" id="lnAnual"></dl>
-          <div class="grupo-total"><span>Total por ano</span><b id="totAnual">R$ 0</b></div>
-        </div>
-        
-        <p class="nota">Mensalidades reajustadas uma vez por ano pelo IPCA.</p>
-      </aside>
-    </div>
-  </section>
-
-  <section class="sec" aria-labelledby="tabTitulo">
-    <div class="sec-h">
-      <p class="kicker">Tabela de preços</p>
-      <h2 id="tabTitulo">Pague só pelo que usar</h2>
-    </div>
-
-    <div class="grupo-tab">
-      <header><span class="tipo tipo--mensal">Todo mês</span><p>Mensalidade de cada serviço. Dois juntos: 10% de desconto. Três: 15%. Os quatro: preço fechado.</p></header>
-      <div class="cards">
-        <article class="card"><h3>Página da mesa e cardápio</h3><p class="valor num"><i data-preco-n="pagina"></i><span>por mês</span></p>
-          <ul><li>Cardápio digital com fotos e filtros</li><li>Wi-Fi, Instagram e endereço</li><li>Avaliação no Google em um toque</li><li>Comentário anônimo para a gerência</li></ul></article>
-        <article class="card"><h3>Chamar o garçom</h3><p class="valor num"><i data-preco-n="garcom"></i><span>por mês</span></p>
-          <ul><li>Chamado pelo celular, sem botão na mesa</li><li>Painel da equipe com som e alerta de atraso</li><li>Mapa do salão e fechamento da mesa</li><li>Proteção contra trote</li></ul></article>
-        <article class="card"><h3>Programa de fidelidade</h3><p class="valor num"><i data-preco-n="fidelidade"></i><span>por mês</span></p>
-          <ul><li>Pontos pela nota fiscal (QR da NFC-e)</li><li>Prêmios com foto e código para o garçom</li><li>Níveis do clube, ranking e pontos em dobro</li><li>Indicação de amigos</li></ul></article>
-        <article class="card"><h3>Delivery</h3><p class="valor num"><i data-preco-n="delivery"></i><span>por mês</span></p>
-          <ul><li>Pedido com endereço e taxa por distância</li><li>Comanda na cozinha</li><li>Entregador e acompanhamento do pedido</li><li>Mesmo cardápio da página da mesa</li></ul></article>
-        <article class="card destaque"><div class="card-top"><h3>Os quatro juntos</h3><span class="tipo tipo--mensal">Combo</span></div><p class="valor num"><i id="precoTodos"></i><span>por mês</span></p>
-          <ul><li>Tudo dos quatro serviços</li><li id="economiaTodos"></li></ul></article>
+<main class="wrap" id="inicio">
+  <section class="hero" aria-labelledby="heroTitulo">
+    <div class="hero-txt">
+      <p class="kicker" style="color: var(--lilas)">Para bares e restaurantes</p>
+      <h1 id="heroTitulo">Faça o cliente voltar. <em>E pedir direto com você.</em></h1>
+      <p class="hero-sub">Um <b>clube de pontos pela nota fiscal</b>, um <b>delivery próprio sem comissão</b> e a mesa inteira no celular do cliente: cardápio, chamar o garçom e avaliação no Google. Tudo por uma plaquinha na mesa, <b>sem aplicativo para baixar</b>.</p>
+      <div class="ctas">
+        <a class="btn btn-ouro" data-contato href="#contato"><svg><use href="#i-msg"/></svg>Quero ver funcionando</a>
+        <a class="btn btn-linha" data-precos href="/precos">Ver preços</a>
       </div>
-    </div>
-
-    <div class="grupo-tab">
-      <header><span class="tipo tipo--unico">Pagamento único</span><p>Pago uma vez, na contratação.</p></header>
-      <div class="tabela-wrap">
-        <table>
-          <thead><tr><th>Implantação no restaurante</th><th class="v">Valor único</th></tr></thead>
-          <tbody>
-            <tr><td>Até 20 mesas</td><td class="v">R$ 590</td></tr>
-            <tr><td>21 a 50 mesas</td><td class="v">R$ 890</td></tr>
-            <tr><td>51 mesas ou mais, ou várias áreas</td><td class="v">R$ 1.190</td></tr>
-            <tr><td>Implantação da fidelidade<small>Regras, prêmios, níveis e regulamento prontos.</small></td><td class="v">+ R$ 490</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <div class="tabela-wrap">
-        <table>
-          <thead><tr><th>Plaquinhas (valor único, por unidade)</th><th class="v">Padrão</th><th class="v">Personalizada básica</th></tr></thead>
-          <tbody id="tabPlacas"></tbody>
-        </table>
-      </div>
-      <p class="muted">A implantação inclui o cadastro do restaurante, o cardápio montado, as mesas e áreas, a instalação das plaquinhas no local e 1 hora de treinamento da equipe. A personalizada básica usa a logo e a cor do restaurante; a sob demanda segue a arte que você mandar.</p>
-    </div>
-
-    <div class="grupo-tab">
-      <header><h3>Endereço do site</h3><p>Opcional. O endereço incluso não tem custo.</p></header>
-      <div class="tabela-wrap">
-        <table>
-          <thead><tr><th>Opção</th><th class="v">Valor</th></tr></thead>
-          <tbody>
-            <tr><td>Endereço incluso<small><code>seurestaurante.vortexsystems.tech</code></small></td><td class="v">Grátis</td></tr>
-            <tr><td>Domínio que você já tem: configuração</td><td class="v">R$ 190 único</td></tr>
-            <tr><td>Domínio que você já tem: manutenção</td><td class="v">R$ 19 por mês</td></tr>
-            <tr><td>Registro e renovação do domínio por nós</td><td class="v">R$ 90 por ano</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="condicoes">
-      <h3>Condições</h3>
-      <ul>
-        <li>Contrato mínimo de 6 meses.</li>
-        <li>No contrato de 12 meses, a implantação sai com 50% de desconto.</li>
-        <li>Mensalidades reajustadas uma vez por ano pelo IPCA.</li>
-        <li>Plaquinha perdida ou quebrada: reposição pelo mesmo valor da unidade.</li>
-        <li>Aumentou as mesas e passou para uma faixa maior de implantação? Paga uma vez só a diferença entre as faixas.</li>
+      <ul class="selos">
+        <li><svg><use href="#i-check"/></svg>Sem comissão por pedido</li>
+        <li><svg><use href="#i-check"/></svg>Funciona com qualquer caixa (PDV)</li>
+        <li><svg><use href="#i-check"/></svg>Implantação e treinamento inclusos</li>
       </ul>
+    </div>
+    <div class="hero-fotos" aria-hidden="true">
+      <span class="fone"><img src="/assets/img/lp/fid-conta.webp" width="600" height="1299" alt="" fetchpriority="high"></span>
+      <span class="fone"><img src="/assets/img/lp/dl-menu.webp" width="600" height="1299" alt=""></span>
+      <span class="hero-etq hero-etq--a"><span class="pt">+13</span><span>pontos<small>nota fiscal lida</small></span></span>
+      <span class="hero-etq hero-etq--b"><svg width="20" height="20" style="color:#1B7F52"><use href="#i-moto"/></svg><span>Pedido #4<small>R$ 0 de comissão</small></span></span>
+    </div>
+  </section>
+
+  <section class="sec rev" aria-labelledby="ganhosTitulo">
+    <div class="sec-h">
+      <p class="kicker">O que muda no seu restaurante</p>
+      <h2 id="ganhosTitulo">Quatro resultados, um sistema só</h2>
+      <p>Você escolhe o que usar e paga só por isso. Os quatro juntos saem mais baratos.</p>
+    </div>
+    <div class="ganhos">
+      <a class="ganho" href="#fidelidade"><span class="ico"><svg><use href="#i-gift"/></svg></span><h3>O cliente volta mais</h3><p>Cada compra vira pontos, e os pontos viram prêmios. Quem está perto do próximo prêmio volta para buscar.</p><span class="mais">Ver a fidelidade →</span></a>
+      <a class="ganho" href="#delivery"><span class="ico"><svg><use href="#i-moto"/></svg></span><h3>Delivery sem comissão</h3><p>Seu link de pedidos no Instagram e no WhatsApp. Mensalidade fixa: pode vender R$ 5 mil ou R$ 50 mil.</p><span class="mais">Ver o delivery →</span></a>
+      <a class="ganho" href="#mesa"><span class="ico"><svg><use href="#i-bell"/></svg></span><h3>Atendimento na hora certa</h3><p>O cliente chama pelo celular e diz o motivo. A equipe vê qual mesa, o que ela quer e há quanto tempo espera.</p><span class="mais">Ver a mesa →</span></a>
+      <a class="ganho" href="#mesa"><span class="ico"><svg><use href="#i-star"/></svg></span><h3>Mais avaliações no Google</h3><p>A página da mesa leva o cliente satisfeito direto para avaliar. A reclamação vai para a gerência, anônima.</p><span class="mais">Ver a página →</span></a>
+    </div>
+  </section>
+
+  <section class="sec rev" aria-labelledby="comoTitulo">
+    <div class="sec-h">
+      <p class="kicker">Como funciona</p>
+      <h2 id="comoTitulo">Encostou, abriu. Sem aplicativo.</h2>
+    </div>
+    <div class="passos">
+      <article class="passo"><h3>O cliente encosta o celular na plaquinha</h3><p>Ou lê o QR Code. A plaquinha tem NFC e QR, do tamanho de um cartão de crédito, uma por mesa.</p></article>
+      <article class="passo"><h3>Abre a página do seu restaurante</h3><p>Com o número da mesa. Ali ele vê o cardápio, chama o garçom, entra no clube de pontos, pega o Wi-Fi e avalia no Google.</p></article>
+      <article class="passo"><h3>Sua equipe recebe no painel</h3><p>No celular, tablet ou computador do salão, com som. Chamados, notas da fidelidade e pedidos do delivery num lugar só.</p></article>
+    </div>
+  </section>
+
+  <!-- FIDELIDADE -->
+  <section class="destaque destaque--noite rev" id="fidelidade" aria-labelledby="fidTitulo">
+    <div class="sec-h">
+      <p class="kicker">Programa de fidelidade</p>
+      <h2 id="fidTitulo">Um clube de pontos que funciona com a nota fiscal</h2>
+      <p>O cliente lê o QR Code da nota fiscal (NFC-e) com o celular e os pontos entram na conta dele. Não precisa de cartão fidelidade, carimbo, aplicativo nem integração com o seu caixa.</p>
+    </div>
+
+    <div class="fluxo">
+      <div><b>1</b><strong>Pagou a conta</strong><span>A nota fiscal sai do seu caixa como sempre.</span></div>
+      <div><b>2</b><strong>Leu o QR da nota</strong><span>Na página da mesa, com a câmera do celular.</span></div>
+      <div><b>3</b><strong>Ganhou pontos</strong><span>Na hora (conferência na SEFAZ) ou quando a equipe aprovar.</span></div>
+      <div><b>4</b><strong>Voltou para trocar</strong><span>Mostra o código do prêmio para o garçom.</span></div>
+    </div>
+
+    <div class="dupla">
+      <div class="telas">
+        <button type="button" class="zoom fone" data-zoom="/assets/img/lp/fid-conta.webp" aria-label="Ampliar: conta do cliente no clube de pontos"><img src="/assets/img/lp/fid-conta.webp" width="600" height="1299" alt="Tela do cliente: 280 pontos, nível Bronze faltando 20 pontos para Prata, botões Ler nota fiscal e Indicar amigos e o ranking do clube" loading="lazy"></button>
+        <button type="button" class="zoom fone" data-zoom="/assets/img/lp/fid-ranking.webp" aria-label="Ampliar: ranking do clube"><img src="/assets/img/lp/fid-ranking.webp" width="600" height="1299" alt="Ranking do clube com pódio dos três primeiros e a lista até o nono lugar" loading="lazy"></button>
+      </div>
+      <ul class="lista-fx">
+        <li><span class="ico"><svg><use href="#i-receipt"/></svg></span><div><b>Pontos pela nota fiscal</b><span>Você define quantos pontos vale cada real. Cada nota vale uma vez só; nota repetida é barrada na hora.</span></div></li>
+        <li><span class="ico"><svg><use href="#i-gift"/></svg></span><div><b>Prêmios com foto</b><span>Uma caipirinha, uma sobremesa, um rodízio. O cliente vê quanto falta para cada um, e isso faz ele voltar.</span></div></li>
+        <li><span class="ico"><svg><use href="#i-layers"/></svg></span><div><b>Níveis do clube</b><span>Bronze, Prata, Ouro: quem compra mais sobe de nível e ganha mais pontos por real.</span></div></li>
+        <li><span class="ico"><svg><use href="#i-trophy"/></svg></span><div><b>Ranking com pódio</b><span>Os 10 clientes que mais pontuaram, com o pódio na página. Competição saudável entre os frequentes.</span></div></li>
+        <li><span class="ico"><svg><use href="#i-users"/></svg></span><div><b>Indique um amigo</b><span>Link de indicação: quem indica e quem chega ganham pontos. Você escolhe se vale no cadastro ou na primeira compra.</span></div></li>
+        <li><span class="ico"><svg><use href="#i-zap"/></svg></span><div><b>Dias com pontos em dobro</b><span>Encha a terça-feira: escolha os dias em que cada compra vale mais.</span></div></li>
+      </ul>
+    </div>
+
+    <figure class="painel-fig" style="margin:0">
+      <button type="button" class="zoom janela" data-zoom="/assets/img/lp/painel-fid-hoje.webp" aria-label="Ampliar: painel da fidelidade"><img src="/assets/img/lp/painel-fid-hoje.webp" width="1600" height="1012" alt="Painel da equipe na aba Clube de pontos: clientes, compras dos últimos 30 dias, pontos em aberto, notas para conferir com botão Aprovar e envio do arquivo XML do caixa" loading="lazy"></button>
+      <figcaption>O painel da equipe: notas para conferir, prêmios para entregar, clientes e o arquivo de notas do caixa.</figcaption>
+    </figure>
+
+    <div class="dupla">
+      <div class="aviso-box">
+        <b>Conferência das notas: você escolhe</b>
+        <p><b style="color:#fff">Automática na SEFAZ:</b> o valor oficial, o CPF e os produtos são conferidos na hora e os pontos entram sozinhos. R$ 0,25 por nota conferida.</p>
+        <p><b style="color:#fff">Pela equipe, sem custo:</b> o cliente confirma o valor (o sistema lê da foto da nota) e a equipe aprova no painel. Ou envie o XML das notas do caixa e tudo é conferido de uma vez.</p>
+      </div>
+      <div class="aviso-box">
+        <b>Você passa a conhecer quem compra</b>
+        <p>Nome, telefone e e-mail de cada cliente do clube, com o consentimento dele (LGPD), quanto ele gasta e com que frequência vem. Exporte a lista quando quiser e fale com eles.</p>
+        <p>E veja os produtos mais pedidos, direto das notas conferidas.</p>
+      </div>
+    </div>
+
+    <div class="ctas">
+      <a class="btn btn-ouro" data-contato href="#contato"><svg><use href="#i-msg"/></svg>Quero o clube de pontos</a>
+      <span style="color: var(--noite-2); font-size: 15px">A partir de <b class="num" style="color:#fff" data-preco-mes="fidelidade">R$ 199</b> por mês, sem limite de clientes.</span>
+    </div>
+  </section>
+
+  <!-- DELIVERY -->
+  <section class="destaque destaque--roxo rev" id="delivery" aria-labelledby="dlTitulo">
+    <div class="sec-h">
+      <p class="kicker">Delivery próprio</p>
+      <h2 id="dlTitulo">Seu delivery, seu cliente, sem comissão</h2>
+      <p>Uma página de pedidos com o seu nome, o seu cardápio e as suas regras. Coloque o link no Instagram, no WhatsApp e na embalagem. O cliente pede direto com você e o dinheiro fica com você.</p>
+    </div>
+
+    <div class="dupla dupla--inv">
+      <div class="telas">
+        <button type="button" class="zoom fone" data-zoom="/assets/img/lp/dl-menu.webp" aria-label="Ampliar: cardápio do delivery"><img src="/assets/img/lp/dl-menu.webp" width="600" height="1299" alt="Página de pedidos do delivery: categorias, itens com botão de adicionar e a barra Ver carrinho com 3 itens" loading="lazy"></button>
+        <button type="button" class="zoom fone" data-zoom="/assets/img/lp/dl-acomp.webp" aria-label="Ampliar: acompanhamento do pedido"><img src="/assets/img/lp/dl-acomp.webp" width="600" height="1299" alt="Acompanhamento do pedido número 1: recebido, em preparo, saiu para entrega e entregue, com a chave Pix para pagar" loading="lazy"></button>
+      </div>
+      <ul class="lista-fx">
+        <li><span class="ico"><svg><use href="#i-link"/></svg></span><div><b>Link próprio de pedidos</b><span>No seu endereço, com a sua marca. Nada de lojas concorrentes do lado.</span></div></li>
+        <li><span class="ico"><svg><use href="#i-map"/></svg></span><div><b>Taxa por distância e área de entrega</b><span>O CEP preenche o endereço, o sistema calcula a distância e cobra a taxa certa. Fora da área, não aceita.</span></div></li>
+        <li><span class="ico"><svg><use href="#i-book"/></svg></span><div><b>O mesmo cardápio da mesa</b><span>Um cardápio só: marque o que também vai para o delivery. Adicionais, tamanhos e observações.</span></div></li>
+        <li><span class="ico"><svg><use href="#i-printer"/></svg></span><div><b>Comanda na cozinha</b><span>O pedido chega no painel com som. Um toque imprime a comanda.</span></div></li>
+        <li><span class="ico"><svg><use href="#i-clock"/></svg></span><div><b>O cliente acompanha o pedido</b><span>Recebido, em preparo, saiu para entrega com o nome do entregador, entregue. Menos gente ligando para perguntar.</span></div></li>
+        <li><span class="ico"><svg><use href="#i-check"/></svg></span><div><b>Pix, cartão ou dinheiro na entrega</b><span>Com a sua chave Pix na tela e o troco calculado.</span></div></li>
+      </ul>
+    </div>
+
+    <figure class="painel-fig" style="margin:0">
+      <button type="button" class="zoom janela" data-zoom="/assets/img/lp/painel-delivery.webp" aria-label="Ampliar: painel do delivery"><img src="/assets/img/lp/painel-delivery.webp" width="1600" height="1012" alt="Painel do delivery com os pedidos em colunas: novos, em preparo e saiu para entrega, com valores, itens, endereço e botões para avançar" loading="lazy"></button>
+      <figcaption style="color:#E6D9FF">O painel do delivery: pedidos em colunas, do recebido ao entregue, com o total vendido no dia.</figcaption>
+    </figure>
+
+    <div class="calc" id="calc">
+      <div class="calc-in">
+        <h3>Quanto a comissão te custa?</h3>
+        <label>Pedidos de delivery por mês
+          <span class="campo"><input type="range" id="cPed" min="50" max="3000" step="10" value="400"><output class="val num" id="oPed" for="cPed">400</output></span></label>
+        <label>Ticket médio
+          <span class="campo"><input type="range" id="cTic" min="20" max="250" step="1" value="70"><output class="val num" id="oTic" for="cTic">R$ 70</output></span></label>
+        <label>Comissão que você paga hoje
+          <span class="campo"><input type="range" id="cCom" min="5" max="35" step="0.5" value="23"><output class="val num" id="oCom" for="cCom">23%</output></span>
+          <small>Coloque a porcentagem do seu contrato com o aplicativo de entrega.</small></label>
+      </div>
+      <div class="calc-out" aria-live="polite">
+        <div class="linha ruim"><span>Comissão por mês hoje</span><b id="rCom">R$ 0</b></div>
+        <div class="linha bom"><span>Delivery VTX Tap por mês</span><b id="rVtx">R$ 149</b></div>
+        <div class="calc-eco"><span>Fica com você, por mês</span><b id="rEco">R$ 0</b><small id="rAno"></small></div>
+        <small>Conta só para comparar comissões. Taxas da maquininha e do Pix não entram.</small>
+      </div>
+    </div>
+
+    <div class="aviso-box">
+      <b>Não precisa sair do aplicativo de entrega</b>
+      <p>Continue lá para ser encontrado por clientes novos. Quem já conhece você, e volta, pode pedir pelo seu link, sem comissão. Mande o link junto com cada pedido e no seu Instagram.</p>
+    </div>
+
+    <div class="ctas">
+      <a class="btn btn-ouro" data-contato href="#contato"><svg><use href="#i-msg"/></svg>Quero o meu delivery</a>
+      <span style="color:#E6D9FF; font-size: 15px"><b class="num" style="color:#fff" data-preco-mes="delivery">R$ 149</b> por mês, fixo, com pedidos ilimitados.</span>
+    </div>
+  </section>
+
+  <!-- MESA -->
+  <section class="sec rev" id="mesa" aria-labelledby="mesaTitulo">
+    <div class="sec-h">
+      <p class="kicker">Na mesa</p>
+      <h2 id="mesaTitulo">Cardápio, garçom e Google na palma da mão</h2>
+      <p>A página que abre na plaquinha. Bonita no celular, no seu nome, com o número da mesa.</p>
+    </div>
+    <div class="mesa-grid">
+      <div class="telas">
+        <button type="button" class="zoom fone" data-zoom="/assets/img/lp/sino.webp" aria-label="Ampliar: chamar o garçom"><img src="/assets/img/lp/sino.webp" width="600" height="1299" alt="Tela Precisa de algo: motivos Atendimento, Fazer pedido, Fechar a conta, Água ou gelo e o sino dourado Chamar garçom" loading="lazy"></button>
+        <button type="button" class="zoom fone" data-zoom="/assets/img/lp/cardapio.webp" aria-label="Ampliar: cardápio digital"><img src="/assets/img/lp/cardapio.webp" width="600" height="1299" alt="Cardápio digital com busca, categorias, preços e selos como vegetariano, sem glúten e picante" loading="lazy"></button>
+      </div>
+      <ul class="lista-cl">
+        <li><svg><use href="#i-bell"/></svg><div><b>Chamar o garçom pelo celular</b><span>O cliente escolhe o motivo (atendimento, pedido, conta, água) e segura o sino. A equipe vê a mesa, o nome e o tempo de espera.</span></div></li>
+        <li><svg><use href="#i-shield"/></svg><div><b>Sem trote</b><span>O sino só toca para quem está no restaurante: a equipe libera o celular uma vez, e a mesa ganha um código para os amigos.</span></div></li>
+        <li><svg><use href="#i-book"/></svg><div><b>Cardápio digital com busca</b><span>Fotos, categorias, selos (vegetariano, sem glúten, picante) e a lista para o cliente montar o pedido. Importe da sua planilha.</span></div></li>
+        <li><svg><use href="#i-star"/></svg><div><b>Avaliação no Google em um toque</b><span>E um canal de comentário anônimo direto para a gerência, antes de virar nota baixa.</span></div></li>
+        <li><svg><use href="#i-check"/></svg><div><b>Wi-Fi, Instagram, endereço e horários</b><span>Tudo que o garçom responde dez vezes por noite.</span></div></li>
+      </ul>
+    </div>
+    <figure class="painel-fig" style="margin:0">
+      <button type="button" class="zoom janela" data-zoom="/assets/img/lp/painel-chamados.webp" aria-label="Ampliar: painel de chamados"><img src="/assets/img/lp/painel-chamados.webp" width="1600" height="1012" alt="Painel de chamados: quatro mesas chamando com o motivo e o tempo, botões Estou indo e Resolvido e o mapa das mesas" loading="lazy"></button>
+      <figcaption class="muted">Os chamados no painel: motivo, mesa, nome do cliente e o mapa do salão.</figcaption>
+    </figure>
+  </section>
+
+  <section class="sec rev" aria-labelledby="placasTitulo">
+    <div class="sec-h">
+      <p class="kicker">As plaquinhas</p>
+      <h2 id="placasTitulo">Pequenas, bonitas, com NFC e QR</h2>
+      <p>Instaladas pela nossa equipe. Três modelos, do padrão à arte do seu restaurante.</p>
+    </div>
+    <div class="placas">
+      <article class="placa"><img src="/assets/img/placas/placa-padrao.webp" width="1200" height="757" alt="Plaquinha padrão" loading="lazy"><h3>Padrão</h3><p>Tamanho de cartão, NFC e QR Code, logo da VTX Tap no QR.</p></article>
+      <article class="placa"><img src="/assets/img/placas/placa-personalizada-basica.webp" width="1200" height="757" alt="Plaquinha personalizada básica" loading="lazy"><h3>Personalizada básica</h3><p>A sua logo no meio do QR e os detalhes na cor do restaurante.</p></article>
+      <article class="placa"><img src="/assets/img/placas/placa-sob-demanda.webp" width="1200" height="757" alt="Plaquinha sob demanda com arte própria" loading="lazy"><h3>Sob demanda</h3><p>Você manda a arte ou conta como quer, e a gente faz. Imagem ilustrativa.</p></article>
+    </div>
+  </section>
+
+  <section class="sec rev" id="precos" aria-labelledby="precosTitulo">
+    <div class="sec-h">
+      <p class="kicker">Preços</p>
+      <h2 id="precosTitulo">Pague só pelo que usar</h2>
+      <p>Mensalidade por serviço, sem comissão e sem cobrança por cliente ou por pedido. Dois serviços juntos têm 10% de desconto; três, 15%.</p>
+    </div>
+    <div class="precos" id="precosCards"></div>
+    <div class="inclui">
+      <b>A implantação inclui</b>
+      <ul>
+        <li><svg><use href="#i-check"/></svg>Cadastro do restaurante</li>
+        <li><svg><use href="#i-check"/></svg>Cardápio montado</li>
+        <li><svg><use href="#i-check"/></svg>Mesas e áreas</li>
+        <li><svg><use href="#i-check"/></svg>Plaquinhas instaladas</li>
+        <li><svg><use href="#i-check"/></svg>1 hora de treinamento da equipe</li>
+      </ul>
+    </div>
+    <div class="ctas">
+      <a class="btn btn-roxo" data-precos href="/precos">Montar meu orçamento<svg><use href="#i-arrow"/></svg></a>
+      <span class="muted">Simulador com implantação, plaquinhas e mensalidade separadas.</span>
+    </div>
+  </section>
+
+  <section class="sec rev" id="duvidas" aria-labelledby="faqTitulo">
+    <div class="sec-h">
+      <p class="kicker">Dúvidas</p>
+      <h2 id="faqTitulo">Perguntas frequentes</h2>
+    </div>
+    <div class="faq">
+      <details><summary>O cliente precisa baixar algum aplicativo?</summary><div><p>Não. Tudo abre no navegador do celular, ao encostar na plaquinha (NFC) ou ler o QR Code. O cadastro no clube de pontos pede só CPF, nome, contato e um PIN de 4 números.</p></div></details>
+      <details><summary>Funciona com o meu sistema de caixa (PDV)?</summary><div><p>Sim. A fidelidade usa a nota fiscal de consumidor (NFC-e) que o seu caixa já emite: não precisa de integração. Se o seu sistema exporta o XML das notas, você pode enviar o arquivo no painel e todas são conferidas de uma vez.</p></div></details>
+      <details><summary>E se o cliente tentar usar a mesma nota duas vezes, ou a nota de outro restaurante?</summary><div><p>Não passa. Cada nota vale uma vez só, e a nota de outra conta é recusada na hora. Só valem notas do CNPJ do seu restaurante e dentro do prazo que você definir.</p></div></details>
+      <details><summary>Preciso de alguém da equipe para conferir as notas?</summary><div><p>Você escolhe. Com a conferência automática na SEFAZ (R$ 0,25 por nota), os pontos entram sozinhos. Sem ela, a equipe aprova no painel com um toque, ou envia o XML do caixa.</p></div></details>
+      <details><summary>Posso contratar só o delivery ou só a fidelidade?</summary><div><p>Pode. Cada serviço tem a sua mensalidade e você liga só o que quiser. Dá para começar com um e somar outro depois, com desconto.</p></div></details>
+      <details><summary>O delivery cobra alguma porcentagem das vendas?</summary><div><p>Não. É uma mensalidade fixa, com pedidos ilimitados. As taxas da sua maquininha e do seu banco continuam as mesmas de hoje.</p></div></details>
+      <details><summary>Os dados dos clientes são meus?</summary><div><p>Sim. A lista do clube de pontos (com o consentimento de cada cliente, conforme a LGPD) fica no seu painel e pode ser exportada em planilha.</p></div></details>
+      <details><summary>Quanto tempo leva para começar e qual é o contrato?</summary><div><p>A nossa equipe monta o cardápio, cadastra as mesas, instala as plaquinhas e treina a equipe. O contrato mínimo é de 6 meses; no de 12 meses, a implantação sai pela metade.</p></div></details>
+      <details><summary>Preciso de um tablet ou computador novo?</summary><div><p>Não. O painel da equipe funciona em qualquer celular, tablet ou computador com internet. Cada pessoa da equipe entra com o próprio PIN.</p></div></details>
+    </div>
+  </section>
+
+  <section class="final rev" id="contato" aria-labelledby="finalTitulo">
+    <p class="kicker" style="color: var(--lilas)">Vamos conversar</p>
+    <h2 id="finalTitulo">Veja o VTX Tap <em>funcionando no seu restaurante</em></h2>
+    <p>Mande uma mensagem: mostramos o sistema, montamos o orçamento para o seu número de mesas e tiramos as dúvidas. Sem compromisso.</p>
+    <div class="ctas" style="justify-content:center">
+      <a class="btn btn-ouro" data-contato href="https://ig.me/m/vortexsoftwareco" target="_blank" rel="noopener"><svg><use href="#i-msg"/></svg>Falar com a gente</a>
+      <a class="btn btn-linha" data-precos href="/precos">Montar meu orçamento</a>
     </div>
   </section>
 
   <footer class="rodape">
-    <span><img class="logo-escuro" src="/assets/img/vtx-tap-escuro.png" alt="VTX Tap" width="110" height="51"><img class="logo-claro" src="/assets/img/vtx-tap.png" alt="" width="110" height="51"></span>
-    <span>Fale com a gente: <a href="https://instagram.com/vortexsoftwareco" target="_blank" rel="noopener">@vortexsoftwareco</a></span>
+    <span><img class="logo-escuro" src="/assets/img/vtx-tap-escuro.png" alt="VTX Tap" width="104" height="48"><img class="logo-claro" src="/assets/img/vtx-tap.png" alt="" width="104" height="48"></span>
+    <nav aria-label="Rodapé"><a data-precos href="/precos">Preços</a><a href="#duvidas">Dúvidas</a><a href="https://instagram.com/vortexsoftwareco" target="_blank" rel="noopener">@vortexsoftwareco</a></nav>
   </footer>
+</main>
+
+<div class="cta-fixo" id="ctaFixo">
+  <a class="btn btn-ouro" data-contato href="#contato">Quero conhecer</a>
+  <a class="btn btn-linha" data-precos href="/precos">Preços</a>
 </div>
+
+<dialog class="zoom-dlg" id="zoomDlg" aria-label="Imagem ampliada"><img alt="" id="zoomImg"><button type="button" aria-label="Fechar" id="zoomFechar">×</button></dialog>
 
 <script src="/assets/js/precos.js"></script>
 <script>
   (function () {
-    const INTERNO = false;
+    // Contato: troque aqui (ex.: 'https://wa.me/5531999999999?text=...') e todos os botões seguem.
+    const CONTATO = 'https://ig.me/m/vortexsoftwareco';
     const $ = (s) => document.getElementById(s);
     const brl = (v) => 'R$ ' + Math.round(v).toLocaleString('pt-BR');
-    // Mensalidades vêm de /assets/js/precos.js (a mesma tabela do painel e do banco).
-    const PRECO = { fidSetup: 490, domSetup: 190, domMes: Precos.DOMINIO_MES, domAno: 90 };
-    Precos.SERVICOS.forEach((s) => {
-      document.querySelectorAll(`[data-preco="${s.id}"]`).forEach((el) => (el.textContent = `${brl(s.preco)} por mês`));
-      document.querySelectorAll(`[data-preco-n="${s.id}"]`).forEach((el) => (el.textContent = brl(s.preco)));
+    document.querySelectorAll('[data-contato]').forEach((a) => { a.href = CONTATO; a.target = '_blank'; a.rel = 'noopener'; });
+    // Local (/lp/) a página de preços é precos.html; publicada, é /precos.
+    if (location.pathname.startsWith('/lp/')) document.querySelectorAll('[data-precos]').forEach((a) => (a.href = '/lp/precos.html'));
+
+    // Preços vêm de /assets/js/precos.js (a mesma tabela do painel e da página de preços).
+    const P = window.Precos;
+    if (P) {
+      const s = Object.fromEntries(P.SERVICOS.map((x) => [x.id, x]));
+      document.querySelectorAll('[data-preco-mes]').forEach((el) => { const x = s[el.dataset.precoMes]; if (x) el.textContent = brl(x.preco); });
+      const todos = P.combo(Object.fromEntries(P.SERVICOS.map((x) => [x.id, true])));
+      const txt = { pagina: 'Cardápio, Wi-Fi, Google e comentários.', garcom: 'O sino na mesa e o painel de chamados.', fidelidade: 'Pontos pela nota, prêmios, níveis e ranking.', delivery: 'Pedidos ilimitados, sem comissão.' };
+      const ordem = ['fidelidade', 'delivery', 'garcom', 'pagina'];
+      $('precosCards').innerHTML = ordem.map((id) => `<article class="preco-card"><h3>${s[id].nome}</h3><p class="valor num">${brl(s[id].preco)}<span>/mês</span></p><p>${txt[id]}</p></article>`).join('')
+        + `<article class="preco-card combo"><span class="tag">Os quatro</span><h3>Tudo junto</h3><p class="valor num">${brl(todos.total)}<span>/mês</span></p><p>${brl(todos.economia)} a menos por mês que separados.</p></article>`;
+      $('rVtx').textContent = brl(s.delivery.preco);
+    }
+
+    // Calculadora de comissão do delivery.
+    function calc() {
+      const ped = +$('cPed').value, tic = +$('cTic').value, com = +$('cCom').value;
+      $('oPed').textContent = ped.toLocaleString('pt-BR');
+      $('oTic').textContent = brl(tic);
+      $('oCom').textContent = String(com).replace('.', ',') + '%';
+      const comissao = ped * tic * com / 100;
+      const vtx = P ? P.SERVICOS.find((x) => x.id === 'delivery').preco : 149;
+      const eco = Math.max(0, comissao - vtx);
+      $('rCom').textContent = brl(comissao);
+      $('rEco').textContent = brl(eco);
+      $('rAno').textContent = eco ? `${brl(eco * 12)} em um ano, se esses pedidos viessem pelo seu link.` : 'Com esse volume, a comissão ainda é menor que a mensalidade.';
+    }
+    ['cPed', 'cTic', 'cCom'].forEach((id) => $(id).addEventListener('input', calc));
+    calc();
+
+    // Barra do topo e CTA fixo no celular.
+    const topo = $('topo'), fixo = $('ctaFixo'), hero = document.querySelector('.hero'), fim = $('contato');
+    const onScroll = () => {
+      topo.classList.toggle('rolou', scrollY > 8);
+      const passouHero = hero.getBoundingClientRect().bottom < 0;
+      const noFim = fim.getBoundingClientRect().top < innerHeight;
+      fixo.classList.toggle('on', passouHero && !noFim);
+    };
+    addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+
+    // Entrada suave ao rolar.
+    if ('IntersectionObserver' in window) {
+      const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add('vis'); io.unobserve(e.target); } }), { rootMargin: '0px 0px -8% 0px' });
+      document.querySelectorAll('.rev').forEach((el) => io.observe(el));
+    } else document.querySelectorAll('.rev').forEach((el) => el.classList.add('vis'));
+
+    // Ampliar as telas.
+    const dlg = $('zoomDlg'), img = $('zoomImg');
+    document.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-zoom]');
+      if (!b || !dlg.showModal) return;
+      img.src = b.dataset.zoom;
+      img.alt = b.querySelector('img') ? b.querySelector('img').alt : '';
+      dlg.showModal();
     });
-    const todos = Precos.combo(Object.fromEntries(Precos.SERVICOS.map((s) => [s.id, true])));
-    $('precoTodos').textContent = brl(todos.total);
-    $('economiaTodos').textContent = `${brl(todos.economia)} a menos por mês que separados`;
-    // Plaquinha padrão: preço por unidade conforme a quantidade.
-    const FAIXAS = [
-      { de: 1, ate: 19, valor: 59 },
-      { de: 20, ate: 49, valor: 52 },
-      { de: 50, ate: 99, valor: 45 },
-      { de: 100, ate: Infinity, valor: 42 },
-    ];
-    const precoPlaca = (q) => FAIXAS.find((f) => q >= f.de && q <= f.ate).valor;
-    // Personalizada básica: o preço da padrão + R$ 20 por plaquinha. Sob demanda: orçamento.
-    const PLACA_BASICA = 20;
-    function implantacao(m) {
-      if (m <= 20) return { valor: 590, porte: 'até 20 mesas' };
-      if (m <= 50) return { valor: 890, porte: '21 a 50 mesas' };
-      return { valor: 1190, porte: '51 mesas ou mais' };
-    }
-    const linha = (dt, dd, cls = '') => `<div class="linha ${cls}"><dt>${dt}</dt><dd>${dd}</dd></div>`;
-    const faixaTxt = (f) => (f.ate === Infinity ? `${f.de} ou mais` : `${f.de} a ${f.ate}`);
-
-    $('tabPlacas').innerHTML = FAIXAS.map((f) => `<tr><td>${faixaTxt(f)} plaquinhas</td><td class="v">${brl(f.valor)}</td><td class="v">${brl(f.valor + PLACA_BASICA)}</td></tr>`).join('')
-      + '<tr><td>Personalizada sob demanda<small>Arte do restaurante, avaliada pelo nosso time.</small></td><td class="v" colspan="2">Sob consulta</td></tr>';
-
-    let placasManual = false;
-    function calcular() {
-      const m = Math.min(Math.max(Math.round(+$('mesasNum').value || 1), 1), 500);
-      const q = Math.min(Math.max(Math.round(+$('placasNum').value || 1), 1), 1000);
-      const sv = { pagina: $('svPagina').checked, garcom: $('svGarcom').checked, fidelidade: $('svFid').checked, delivery: $('svDel').checked };
-      const qtd = Object.values(sv).filter(Boolean).length;
-      const dom = document.querySelector('input[name="dom"]:checked').value;
-      const meses = +document.querySelector('input[name="contrato"]:checked').value;
-      const placa = document.querySelector('input[name="placa"]:checked').value;
-      const imp = implantacao(m);
-      const pu = precoPlaca(q);
-      $('porte').textContent = `Implantação: ${imp.porte}`;
-      $('precoPadrao').textContent = `${brl(pu)} cada`;
-      $('precoBasica').textContent = `${brl(pu + PLACA_BASICA)} cada`;
-      const puPlaca = placa === 'basica' ? pu + PLACA_BASICA : pu;
-
-      // Pagamento único
-      const u = [];
-      let totU = 0;
-      let impTotal = 0;
-      if (qtd) {
-        u.push(linha(`Implantação (${imp.porte})`, brl(imp.valor)));
-        impTotal += imp.valor;
-        if (sv.fidelidade) { u.push(linha('Implantação da fidelidade', brl(PRECO.fidSetup))); impTotal += PRECO.fidSetup; }
-        if (meses === 12) { u.push(linha('Desconto do contrato de 12 meses', '− ' + brl(impTotal / 2), 'desc')); impTotal /= 2; }
-        totU += impTotal;
-      }
-      let totPlacas = 0;
-      if (placa !== 'demanda') {
-        totPlacas = q * puPlaca;
-        u.push(linha(`${q} plaquinhas ${placa === 'basica' ? 'personalizadas básicas' : 'padrão'} × ${brl(puPlaca)}`, brl(totPlacas)));
-        totU += totPlacas;
-      } else {
-        u.push(linha(`${q} plaquinhas sob demanda`, '<span class="consulta">sob consulta</span>'));
-      }
-      if (dom !== 'sub') { u.push(linha('Configuração do domínio próprio', brl(PRECO.domSetup))); totU += PRECO.domSetup; }
-      $('lnUnico').innerHTML = u.join('');
-      $('totUnico').textContent = brl(totU) + (placa !== 'demanda' ? '' : ' + plaquinhas');
-
-      // Todo mês
-      const mm = [];
-      let totM = 0;
-      const cb = Precos.combo(sv);
-      Precos.SERVICOS.forEach((s) => { if (sv[s.id]) mm.push(linha(s.nome, brl(s.preco))); });
-      if (cb.economia) mm.push(linha(cb.qtd === Precos.SERVICOS.length ? 'Desconto do combo (os quatro)' : `Desconto de ${Math.round(cb.desconto * 100)}% (${cb.qtd} serviços)`, '− ' + brl(cb.economia), 'desc'));
-      totM += cb.total;
-      if (dom !== 'sub') { mm.push(linha('Domínio próprio', brl(PRECO.domMes))); totM += PRECO.domMes; }
-      if (!mm.length) mm.push(linha('Escolha pelo menos um serviço', '—'));
-      $('lnMensal').innerHTML = mm.join('');
-      $('totMensal').textContent = brl(totM);
-
-      // Todo ano
-      $('grupoAnual').hidden = dom !== 'registro';
-      $('lnAnual').innerHTML = linha('Registro e renovação do domínio', brl(PRECO.domAno));
-      $('totAnual').textContent = brl(PRECO.domAno);
-
-      $('comboDica').textContent = !qtd ? 'Escolha pelo menos um serviço.'
-        : cb.economia ? `Desconto aplicado: ${brl(cb.economia)} a menos por mês.`
-        : 'Dois serviços juntos têm 10% de desconto; três, 15%; os quatro saem por ' + brl(Precos.TODOS) + '.';
-
-      if (INTERNO) interno({ q, pu: puPlaca, placa, totPlacas, impTotal, totM, dom, meses });
-    }
-
-    // Visão interna: custo e lucro.
-    function interno({ q, pu, placa, totPlacas, impTotal, totM, dom, meses }) {
-      const custo = Math.max(+$('custoPlaca').value || 0, 0);
-      const infra = Math.max(+$('custoInfra').value || 0, 0);
-      const custoPlacas = placa !== 'demanda' ? q * custo : 0;
-      const lucroPlacas = totPlacas - custoPlacas;
-      const regDom = dom === 'registro' ? 40 : 0;
-      const lucroMes = totM - infra;
-      const lucroEntrada = lucroPlacas + impTotal + (dom !== 'sub' ? PRECO.domSetup : 0);
-      $('lnInterno').innerHTML = [
-        placa !== 'demanda' ? linha(`Plaquinhas: custo ${q} × ${brl(custo)}`, brl(custoPlacas)) : linha('Plaquinhas sob demanda', 'orçar: custo × 2,5'),
-        placa !== 'demanda' ? linha(`Margem da plaquinha (${brl(pu)} ÷ ${brl(custo)})`, custo ? (pu / custo).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + 'x' : '—') : '',
-        placa !== 'demanda' ? linha('Lucro nas plaquinhas', brl(lucroPlacas)) : '',
-        linha('Implantação (tempo, sem custo direto)', brl(impTotal)),
-        linha('Lucro no pagamento único', brl(lucroEntrada), 'forte'),
-        linha(`Lucro por mês (mensalidade − ${brl(infra)} de servidor)`, brl(lucroMes), 'forte'),
-        linha(`Lucro nos primeiros ${meses} meses`, brl(lucroEntrada + lucroMes * meses + (dom === 'registro' ? PRECO.domAno - regDom : 0)), 'forte'),
-      ].join('');
-    }
-
-    const sincronizar = (de, para, max) => { $(para).value = Math.min(+$(de).value || 1, max); };
-    $('mesasRange').addEventListener('input', () => { sincronizar('mesasRange', 'mesasNum', 500); if (!placasManual) { $('placasNum').value = $('mesasNum').value; sincronizar('placasNum', 'placasRange', 150); } calcular(); });
-    $('mesasNum').addEventListener('input', () => { sincronizar('mesasNum', 'mesasRange', 120); if (!placasManual) { $('placasNum').value = $('mesasNum').value; sincronizar('placasNum', 'placasRange', 150); } calcular(); });
-    $('placasRange').addEventListener('input', () => { placasManual = true; sincronizar('placasRange', 'placasNum', 1000); calcular(); });
-    $('placasNum').addEventListener('input', () => { placasManual = true; sincronizar('placasNum', 'placasRange', 150); calcular(); });
-    $('sim').addEventListener('change', calcular);
-    $('sim').addEventListener('submit', (e) => e.preventDefault());
-    document.addEventListener('input', (e) => { if (e.target.closest('.interno')) calcular(); });
-    calcular();
+    $('zoomFechar').addEventListener('click', () => dlg.close());
+    dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });
   })();
 </script>
-
 </body>
 </html>

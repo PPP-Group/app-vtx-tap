@@ -30,7 +30,7 @@
  *   Programa de fidelidade (módulo liberado pela Vortex; regras em settings.fidelidade):
  *   cliente: fidPrograma() / fidConsultar(cpf) / fidIndicador(codigo) / fidCadastrar(dados) /
  *            fidEntrar(cpf, pin) / fidConta(token) / fidSair(token) /
- *            fidRegistrarNota({ cpf, qr, valor }) / fidSefaz({ cpf, qr }) / fidRanking(token) / fidResgatar(token, premioId)
+ *            fidNotaSituacao({ cpf, qr }) / fidRegistrarNota({ cpf, qr, valor }) / fidSefaz({ cpf, qr }) / fidRanking(token) / fidResgatar(token, premioId)
  *            → sempre { status, ... } (status 'erro' traz a mensagem)
  *   equipe:  fidResumo() / fidPendencias() / fidClientes(busca) / fidCliente(cpf) / fidRecentes() /
  *            fidAprovarNota(chave, valor, emitidaIso) / fidRecusarNota(chave, motivo) /
@@ -834,6 +834,16 @@
         delete F(db).sessoes[token];
         write(db);
       },
+      async fidNotaSituacao({ cpf, qr }) {
+        const db = read();
+        if (!noAr(db)) return { status: 'inativo' };
+        const chave = chaveDoTexto(qr);
+        if (!chave) return { status: 'nova' };
+        const n = F(db).notas.find((x) => x.chave === chave);
+        if (n) return n.cpf !== soDigitos(cpf) ? { status: 'erro', mensagem: 'Esta nota já foi registrada em outra conta.' } : { status: 'repetida', nota: n.status, pontos: n.pontos, motivo: n.motivo };
+        const prob = chaveProblema(db, chave);
+        return prob ? { status: 'erro', mensagem: prob } : { status: 'nova' };
+      },
       async fidRegistrarNota({ cpf, qr, valor }) {
         const db = read();
         if (!noAr(db)) return { status: 'inativo' };
@@ -907,6 +917,13 @@
         const { lat, lng, ...endereco } = p.endereco;
         return { status: 'ok', pedido: { ...p, endereco, token: undefined, cliente: undefined },
           restaurante: { nome: conf.restaurante.nome, telefone: conf.restaurante.telefone, whatsapp: conf.delivery.whatsapp, pix: p.pagamento.forma === 'pix' ? conf.delivery.pix : null, tempo: conf.delivery.tempo } };
+      },
+      // Demonstração: sem servidor de push; os avisos saem da própria página enquanto ela está aberta.
+      async deliveryPushChave() {
+        return null;
+      },
+      async deliveryPushInscrever() {
+        return { status: 'ok' };
       },
       async deliveryPedidos({ desde } = {}) {
         const d = desde ? new Date(desde) : new Date(Date.now() - 24 * 3600e3);
@@ -1473,6 +1490,13 @@
       async fidSair(token) {
         must(await sb.rpc('fid_sair', { p_token: token }));
       },
+      async fidNotaSituacao({ cpf, qr }) {
+        try {
+          return must(await sb.rpc('fid_nota_situacao', { p_restaurante: rid, p_cpf: soDigitos(cpf), p_qr: qr }));
+        } catch {
+          return { status: 'nova' }; // na dúvida segue; o registro confere de novo
+        }
+      },
       async fidRegistrarNota({ cpf, qr, valor }) {
         return must(await sb.rpc('fid_registrar_nota', { p_restaurante: rid, p_cpf: soDigitos(cpf), p_qr: qr, p_valor: valor || null }));
       },
@@ -1505,6 +1529,20 @@
       },
       async deliveryAcompanhar(token) {
         return must(await sb.rpc('delivery_acompanhar', { p_token: token }));
+      },
+      // Avisos do pedido (Web Push): chave pública VAPID da função "push" e inscrição do aparelho.
+      async deliveryPushChave() {
+        const r = await fetch(`${supabaseUrl}/functions/v1/push`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', apikey: supabaseAnonKey, Authorization: `Bearer ${supabaseAnonKey}` },
+          body: JSON.stringify({ acao: 'chave' }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || !j.chave) throw new Error('Os avisos não estão disponíveis agora.');
+        return j.chave;
+      },
+      async deliveryPushInscrever(token, inscricao, url) {
+        return must(await sb.rpc('delivery_push', { p_token: token, p_sub: inscricao, p_url: url }));
       },
       async deliveryPedidos({ desde } = {}) {
         const d = desde ? new Date(desde) : new Date(Date.now() - 24 * 3600e3);
@@ -1650,12 +1688,14 @@
           if (!data.session) return null;
           // Confere no servidor: quem foi removido da equipe perde o acesso.
           const { data: u, error } = await sb.auth.getUser();
+          if (error && !(error.status >= 400 && error.status < 500)) throw error; // sem internet: mantém a sessão
           if (error || !u.user) {
             await sb.auth.signOut();
             return null;
           }
-          const { data: m } = await sb.from('equipe_membros').select('nome, admin').eq('user_id', u.user.id).maybeSingle();
-          if (!m) {
+          const { data: m, error: e2 } = await sb.rpc('eu_membro');
+          if (e2) throw e2; // falha de rede/servidor: não derruba a sessão
+          if (!m || (rid && m.restaurante_id !== rid)) {
             await sb.auth.signOut();
             return null;
           }

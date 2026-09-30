@@ -470,12 +470,23 @@
     const on = !!(r.sefaz && r.sefaz.ativo);
     const adm = !!(ctx.S.user && ctx.S.user.admin);
     const preco = window.Precos ? Precos.SEFAZ_NOTA : 0.25;
-    return `<section class="panel stack fp-sefaz">
-      <div class="set-row fp-row"><div><h3>Conferência automática na SEFAZ</h3>
-        <p>Cada nota lida é conferida na hora no site da SEFAZ: valor oficial, CPF e produtos. Os pontos entram sem a equipe aprovar e os produtos alimentam o ranking de mais pedidos.</p></div>
-        <label class="switch"><input type="checkbox" name="sefazAtivo" ${on ? 'checked' : ''} ${adm ? '' : 'disabled'} aria-label="Conferência automática na SEFAZ"><span></span></label></div>
-      <p class="note">${icon('receipt')}<span><b>${brl(preco)} por nota conferida</b>, somado à mensalidade no fim do mês. Sem limite: não para no meio do mês. O uso aparece em Ajustes → Plano.</span></p>
-      <p class="help">${on ? '' : 'Desligada: o cliente confirma o valor da nota e a equipe aprova em Fidelidade → Hoje (sem custo). '}${adm ? '' : 'Só o administrador liga ou desliga.'}${on && r.sefaz.em ? ` Ligada em ${new Date(r.sefaz.em).toLocaleDateString('pt-BR')}${r.sefaz.por ? ` por ${esc(r.sefaz.por)}` : ''}.` : ''}</p>
+    const quem = on && r.sefaz.em ? `Ligada em ${new Date(r.sefaz.em).toLocaleDateString('pt-BR')}${r.sefaz.por ? ` por ${esc(r.sefaz.por)}` : ''}. ` : '';
+    return `<section class="panel stack fp-conf" data-sefaz="${on ? 'on' : 'off'}">
+      <div class="fp-conf-head">
+        <div><h3>Conferência automática na SEFAZ</h3><p class="muted">Escolha como o valor das notas é conferido.</p></div>
+        <label class="switch"><input type="checkbox" name="sefazAtivo" ${on ? 'checked' : ''} ${adm ? '' : 'disabled'} aria-label="Conferência automática na SEFAZ"><span></span></label>
+      </div>
+      <div class="fp-conf-opcoes">
+        <div class="fp-conf-op" data-op="off">
+          <div class="fp-conf-op-top"><b>Desligada</b><span class="fp-conf-tag">Grátis</span></div>
+          <ul><li>O cliente confirma o valor (foto ou digitando).</li><li>A equipe aprova as notas em <b>Fidelidade → Hoje</b>.</li></ul>
+        </div>
+        <div class="fp-conf-op" data-op="on">
+          <div class="fp-conf-op-top"><b>Ligada</b><span class="fp-conf-tag">${brl(preco)} por nota</span></div>
+          <ul><li>Valor, CPF e produtos conferidos na hora no site da SEFAZ.</li><li>Os pontos entram sozinhos, sem a equipe aprovar.</li><li>Os produtos entram no ranking de mais pedidos.</li><li>Cobrado junto com a mensalidade. O uso aparece em <b>Ajustes → Plano</b>.</li></ul>
+        </div>
+      </div>
+      ${quem || !adm ? `<p class="help">${quem}${adm ? '' : 'Só o administrador liga ou desliga.'}</p>` : ''}
     </section>`;
   }
   function niveisForm(r) {
@@ -720,7 +731,7 @@
     }
     ocrCamera(qr);
   }
-  const DICA_CAM = 'Aponte a câmera para o <b>VALOR A PAGAR</b>, bem de perto. Se demorar, toque em <b>Ler agora</b>, tire uma foto ou digite o valor.';
+  const DICA_CAM = 'Enquadre o fim da nota, do <b>SUBTOTAL</b> até a <b>forma de pagamento</b>. Se demorar, toque em <b>Ler agora</b>, tire uma foto ou digite o valor.';
   function ocrCamera(qr) {
     const f = formDoQr(qr);
     if (!f) return;
@@ -748,7 +759,7 @@
     const v = await cam.capturar().catch(() => null);
     if (!formDoQr(qr) || O.estado !== 'camera') return;
     if (v) return ocrAchou(qr, v);
-    ocrMsg('Ainda não deu. Chegue mais perto do <b>VALOR A PAGAR</b>, deixe a nota reta e acenda a luz — ou tire uma foto.', 'camera');
+    ocrMsg('Ainda não deu. Deixe a nota reta e parada, com o total e a forma de pagamento na moldura, e acenda a luz — ou tire uma foto.', 'camera');
   }
   async function ocrLanterna() {
     if (!pararCam) return;
@@ -973,6 +984,7 @@
     if (t.closest('#fpRegras')) {
       marcarSujo();
       if (t.name === 'nvBase') $('.fp-meses').hidden = t.value !== 'meses';
+      if (t.name === 'sefazAtivo') $('.fp-conf').dataset.sefaz = t.checked ? 'on' : 'off';
     }
     if (t.matches('[data-fp-xml]')) {
       const files = [...(t.files || [])];
@@ -1125,9 +1137,19 @@
                 return recarregar();
               }
               if (['repetida', 'recusada', 'erro', 'sem_cadastro', 'inativo'].includes(r.status)) {
-                const msg = r.status === 'repetida' ? `Esta nota já foi registrada (${STATUS[r.nota] || r.nota}).`
+                const msg = r.status === 'repetida' ? `Esta nota já foi lida: cada nota vale uma vez (${STATUS[r.nota] || r.nota}).`
                   : r.status === 'sem_cadastro' ? 'Este CPF não tem cadastro no programa.'
                   : r.status === 'inativo' ? 'O programa está pausado.' : r.motivo || r.mensagem || 'Esta nota não vale pontos.';
+                $('#fpBody').innerHTML = `<div class="stack"><p class="form-error">${esc(msg)}</p><button type="button" class="btn btn-quiet btn-block" data-close>Fechar</button></div>`;
+                return;
+              }
+            }
+            // Sem a SEFAZ: antes de pedir o valor, confere se a nota já foi lida.
+            if (ctx.store.fidNotaSituacao) {
+              const r = await ctx.store.fidNotaSituacao({ cpf, qr: tx });
+              if (r.status !== 'nova') {
+                const msg = r.status === 'repetida' ? `Esta nota já foi lida: cada nota vale uma vez (${STATUS[r.nota] || r.nota}).`
+                  : r.status === 'inativo' ? 'O programa está pausado.' : r.mensagem || 'Esta nota não vale pontos.';
                 $('#fpBody').innerHTML = `<div class="stack"><p class="form-error">${esc(msg)}</p><button type="button" class="btn btn-quiet btn-block" data-close>Fechar</button></div>`;
                 return;
               }
