@@ -52,14 +52,16 @@
   const LOGO_VTX = '/admin/icons/icon-512.png';          // marca quadrada (miolo do QR)
   const LOGO_VTX_TEXTO = '/assets/img/vtx-tap-escuro.png'; // logo com texto (ao lado do @)
 
-  /* Ícone de NFC: círculo com as ondas e o celular chegando perto. */
+  /* Ícone de NFC: círculo com as ondas e o celular chegando perto, com o símbolo de NFC na tela. */
+  // Símbolo de NFC (ícone "nfc" do Material Icons, licença Apache 2.0), 24 × 24.
+  const NFC_SIMBOLO = 'M20 2H4c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 18H4V4h16v16zM18 6h-5c-1.1 0-2 .9-2 2v2.28c-.6.35-1 .98-1 1.72 0 1.1.9 2 2 2s2-.9 2-2c0-.74-.4-1.38-1-1.72V8h3v8H8V8h2V6H6v12h12V6z';
   const NFC = (pal) => ({
     w: 64, h: 48,
     svg: `<g fill="none" stroke="${TINTA}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
       <circle cx="17" cy="19" r="13" stroke="${pal.claro}" fill="${pal.fundo}"/>
       <path d="M13 13.5a8 8 0 0 1 0 11" stroke="${pal.forte}"/><path d="M17.5 10.5a12.5 12.5 0 0 1 0 17" stroke="${pal.forte}"/><path d="M9 16a4 4 0 0 1 0 6" stroke="${pal.forte}"/>
-      <g transform="rotate(14 42 22)"><rect x="32" y="3" width="19" height="36" rx="3.5" fill="#fff"/><path d="M39 6.5h5"/><circle cx="41.5" cy="34.5" r="1.2" fill="${TINTA}" stroke="none"/></g>
-      <path d="M43 47c0-4-2-7-4.5-10.5-1.2-1.8.8-3.8 2.6-2.5L46 38V26.5c0-1.6 2.2-2 2.8-.5l6 13c1 2.4 1 5-.2 8" fill="#fff"/>
+      <g transform="rotate(14 42 24)"><rect x="32" y="5" width="19" height="36" rx="3.5" fill="#fff"/><path d="M39 8.5h5"/><circle cx="41.5" cy="36.5" r="1.2" fill="${TINTA}" stroke="none"/>
+        <g transform="translate(34.9 15.9) scale(0.55)" fill="${pal.forte}" stroke="none"><path d="${NFC_SIMBOLO}"/></g></g>
     </g>`,
   });
   const NFC_W = 64;
