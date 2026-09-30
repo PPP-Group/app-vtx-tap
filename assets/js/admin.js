@@ -1378,8 +1378,8 @@
         </div>
         ${c.itens.length ? `<ul class="mc-items">${c.itens.map((it, ii) => `<li class="mc-item" data-ii="${ii}">
             <button type="button" class="mc-open" data-item-edit aria-label="Editar ${esc(it.nome)}">
-              <span class="mc-body"><b>${esc(it.nome)}</b>${it.desc ? `<small>${esc(it.desc)}</small>` : ''}<span class="tags">${selos(it)}${it.delivery ? '<span class="tag tag--delivery">Delivery</span>' : ''}</span></span>
-              <span class="price">${brl(it.preco)}</span>
+              <span class="mc-body"><b>${esc(it.nome)}</b>${it.desc ? `<small>${esc(it.desc)}</small>` : ''}<span class="tags">${selos(it)}${it.delivery ? `<span class="tag tag--delivery">${it.salao === false ? 'Só delivery' : 'Delivery'}</span>` : ''}${(it.grupos || []).length ? `<span class="tag">${it.grupos.length} ${it.grupos.length === 1 ? 'grupo' : 'grupos'} de opções</span>` : ''}</span></span>
+              <span class="price">${Store.opcoes.temVariacao(it) ? '<small>a partir de</small> ' : ''}${brl(Store.opcoes.aPartir(it))}</span>
               <span class="mc-edit">${icon('edit')}</span>
             </button>
             <span class="wrow-order">
@@ -1492,14 +1492,97 @@
     }
   });
 
+  /* Opções do item: grupos "escolha uma" (tamanho, carne…) e "adicionais" (com quantidade). */
+  const fmtPreco = (v) => (+v ? String(Number(v).toFixed(2)).replace('.', ',') : '');
+  function gruposHtml() {
+    return S.itemGrupos.map((g, i) => `<fieldset class="it-grupo" data-gi="${i}">
+      <div class="it-grupo-top">
+        <input class="input" data-gk="nome" maxlength="40" value="${esc(g.nome || '')}" placeholder="Ex.: Tamanho" aria-label="Nome do grupo">
+        <select class="input" data-gk="tipo" aria-label="Tipo do grupo"><option value="escolha" ${g.tipo !== 'extras' ? 'selected' : ''}>Escolha uma</option><option value="extras" ${g.tipo === 'extras' ? 'selected' : ''}>Adicionais</option></select>
+        <button type="button" class="icon-btn" data-g-del="${i}" aria-label="Tirar o grupo">${icon('trash')}</button>
+      </div>
+      ${g.tipo === 'extras'
+        ? `<div class="it-grupo-lim"><label class="field"><span>Mínimo</span><input class="input mono" data-gk="min" type="number" min="0" max="20" value="${+g.min || 0}"></label>
+            <label class="field"><span>Máximo (0 = sem limite)</span><input class="input mono" data-gk="max" type="number" min="0" max="50" value="${+g.max || 0}"></label></div>`
+        : `<label class="check"><input type="checkbox" data-gk="obrig" ${+g.min >= 1 ? 'checked' : ''}> <span>Obrigatório escolher</span></label>`}
+      <textarea class="textarea mono" data-gk="opcoes" rows="${Math.min(8, Math.max(3, (g.opcoes || []).length + 1))}" placeholder="${g.tipo === 'extras' ? 'Ovo frito = 3,00&#10;Bacon = 5,00' : 'Pequeno&#10;Grande = 3,00'}">${esc((g.opcoes || []).map((o) => `${o.nome}${+o.preco ? ` = ${fmtPreco(o.preco)}` : ''}`).join('\n'))}</textarea>
+      <small class="help">Uma opção por linha. Depois do "=", quanto soma ao preço do item (sem "=" não muda o preço).</small>
+    </fieldset>`).join('') || '<p class="muted" style="font-size:13.5px">Sem opções: o cliente pede o item como está.</p>';
+  }
+  // Lê os grupos da tela, mantendo os códigos das opções que já existiam (o carrinho dos clientes usa esses códigos).
+  function lerGrupos() {
+    const box = $('#itGrupos');
+    if (!box) return S.itemGrupos;
+    return [...box.querySelectorAll('.it-grupo')].map((fs) => {
+      const antigo = S.itemGrupos[+fs.dataset.gi] || {};
+      const v = (k) => fs.querySelector(`[data-gk="${k}"]`);
+      const tipo = v('tipo').value === 'extras' ? 'extras' : 'escolha';
+      const opcoes = v('opcoes').value.split('\n').map((l) => l.trim()).filter(Boolean).slice(0, 40).map((l) => {
+        const [nome, preco] = l.split('=');
+        const n = nome.trim().slice(0, 60);
+        const velho = (antigo.opcoes || []).find((o) => o.nome === n);
+        return { id: velho ? velho.id : uid(), nome: n, preco: Math.max(0, parsePreco(preco || '0') || 0) };
+      }).filter((o) => o.nome);
+      // Ao trocar o tipo, os campos do outro tipo ainda não existem na tela: usa o valor antigo.
+      const num = (k, pad) => (v(k) ? Math.max(0, +v(k).value || 0) : +antigo[k] || pad);
+      return { id: antigo.id || uid(), nome: v('nome').value.trim().slice(0, 40), tipo,
+        min: tipo === 'extras' ? (v('min') ? num('min', 0) : 0) : v('obrig') ? (v('obrig').checked ? 1 : 0) : 1,
+        max: tipo === 'extras' ? (v('max') ? num('max', 0) : 0) : 1, opcoes };
+    });
+  }
+  const redesenharGrupos = () => { S.itemGrupos = lerGrupos(); $('#itGrupos').innerHTML = gruposHtml(); };
+  function fotoItemHtml() {
+    return `${S.itemFoto ? `<img src="${esc(S.itemFoto)}" alt="">` : ''}
+      <label class="btn btn-line btn-sm">${icon('upload')} ${S.itemFoto ? 'Trocar foto' : 'Enviar foto'}<input type="file" accept="image/*" class="sr-only" data-item-foto></label>
+      ${S.itemFoto ? `<button type="button" class="btn btn-quiet btn-sm" data-item-foto-del>Tirar foto</button>` : ''}`;
+  }
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#itemForm')) return;
+    if (e.target.closest('[data-g-add]')) {
+      S.itemGrupos = lerGrupos();
+      S.itemGrupos.push({ id: uid(), nome: '', tipo: 'escolha', min: 1, max: 1, opcoes: [] });
+      $('#itGrupos').innerHTML = gruposHtml();
+      const n = $$('#itGrupos [data-gk="nome"]').pop();
+      return n && n.focus();
+    }
+    const del = e.target.closest('[data-g-del]');
+    if (del) {
+      S.itemGrupos = lerGrupos();
+      S.itemGrupos.splice(+del.dataset.gDel, 1);
+      return ($('#itGrupos').innerHTML = gruposHtml());
+    }
+    if (e.target.closest('[data-item-foto-del]')) {
+      S.itemFoto = '';
+      $('#itFotoBox').innerHTML = fotoItemHtml();
+    }
+  });
+  document.addEventListener('change', async (e) => {
+    if (e.target.matches('#itemForm [data-gk="tipo"]')) return redesenharGrupos();
+    if (!e.target.matches('[data-item-foto]')) return;
+    const f = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!f) return;
+    const box = $('#itFotoBox');
+    box.classList.add('is-busy');
+    try {
+      S.itemFoto = await store.uploadImage(await prepararImagem(f, 'premio'), 'item');
+    } catch (ex) {
+      toast(ex.message && !/fetch|network/i.test(ex.message) ? ex.message : 'Não foi possível enviar a foto.', { tone: 'error' });
+    }
+    box.classList.remove('is-busy');
+    box.innerHTML = fotoItemHtml();
+  });
+
   function openItem(ci, ii) {
     S.itemEdit = { ci, ii };
     const editing = ii != null;
     const it = editing ? S.settings.cardapio[ci].itens[ii] : { nome: '', desc: '', preco: '', tags: [], destaque: false };
+    S.itemGrupos = JSON.parse(JSON.stringify(it.grupos || []));
+    S.itemFoto = it.foto || '';
     $('#itemTitle').textContent = editing ? 'Editar prato' : 'Novo prato';
     $('#itemBody').innerHTML = `<form class="stack" id="itemForm" novalidate>
       <label class="field"><span>Nome</span><input class="input" id="itNome" required maxlength="60" value="${esc(it.nome)}" placeholder="Ex.: Mandioca na brasa"></label>
-      <label class="field"><span>Descrição (opcional)</span><textarea class="textarea" id="itDesc" maxlength="160" rows="3" placeholder="Ingredientes, porção, acompanhamentos">${esc(it.desc || '')}</textarea></label>
+      <label class="field"><span>Descrição (opcional)</span><textarea class="textarea" id="itDesc" maxlength="320" rows="3" placeholder="Ingredientes, porção, acompanhamentos">${esc(it.desc || '')}</textarea></label>
       <div class="item-row">
         <label class="field"><span>Preço</span><div class="money"><span>R$</span><input class="input mono" id="itPreco" inputmode="decimal" required value="${it.preco === '' ? '' : String(Number(it.preco).toFixed(2)).replace('.', ',')}" placeholder="0,00"></div></label>
         <label class="field"><span>Categoria</span><select class="input" id="itCat">${S.settings.cardapio.map((c, i) => `<option value="${i}" ${i === ci ? 'selected' : ''}>${esc(c.nome)}</option>`).join('')}</select></label>
@@ -1507,6 +1590,12 @@
       <div class="field"><span>Selos</span><div class="chips-wrap">${Object.entries(cfg.tags).map(([k, l]) => `<button type="button" class="chip" data-selo="${k}" aria-pressed="${(it.tags || []).includes(k)}">${esc(l)}</button>`).join('')}</div></div>
       <label class="set-inline"><span>Destaque da casa<small>Mostra o selo “Da casa” no prato.</small></span><span class="switch"><input type="checkbox" id="itDestaque" ${it.destaque ? 'checked' : ''}><span></span></span></label>
       <label class="set-inline"><span>Disponível no delivery<small>O item também aparece no cardápio de entrega.</small></span><span class="switch"><input type="checkbox" id="itDelivery" ${it.delivery ? 'checked' : ''}><span></span></span></label>
+      <label class="set-inline"><span>Só no delivery<small>Não aparece no cardápio da mesa (ex.: bebidas com preço de entrega).</small></span><span class="switch"><input type="checkbox" id="itSoDelivery" ${it.salao === false ? 'checked' : ''}><span></span></span></label>
+      <div class="field"><span>Foto (opcional)</span><div class="it-foto" id="itFotoBox">${fotoItemHtml()}</div></div>
+      <div class="field"><span>Opções do item</span>
+        <p class="help">Tamanhos, sabores, ponto da carne, adicionais… O cliente escolhe na hora de pedir.</p>
+        <div id="itGrupos" class="stack">${gruposHtml()}</div>
+        <button type="button" class="btn btn-quiet btn-sm" data-g-add>${icon('plus')} Adicionar grupo de opções</button></div>
       <p class="form-error" id="itErr" role="alert"></p>
       <div class="vhead-actions">
         <button type="submit" class="btn btn-cobalt">${editing ? 'Salvar prato' : 'Adicionar prato'}</button>
@@ -1873,7 +1962,17 @@
       tags: $$('[data-selo]').filter((b) => b.getAttribute('aria-pressed') === 'true').map((b) => b.dataset.selo),
       destaque: $('#itDestaque').checked,
       delivery: $('#itDelivery').checked,
+      salao: !$('#itSoDelivery').checked,
+      foto: S.itemFoto || '',
+      grupos: lerGrupos().filter((g) => g.nome && g.opcoes.length),
     };
+    if (item.salao) delete item.salao;
+    if (!item.foto) delete item.foto;
+    if (!item.grupos.length) delete item.grupos;
+    if (item.salao === false && !item.delivery) {
+      err.textContent = 'Um item "só no delivery" precisa estar disponível no delivery.';
+      return;
+    }
     if (antigo && destino === ci) cats[ci].itens[ii] = item;
     else {
       if (antigo) cats[ci].itens.splice(ii, 1);

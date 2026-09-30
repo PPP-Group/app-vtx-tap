@@ -895,3 +895,15 @@
 .dp-qr svg { width: 160px; height: 160px; }
 .dl2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 #dpAjustes .fp-salvar { grid-column: 1 / -1; }
+.dp-itens small.dp-op { color: var(--ink-2); }
+
+/* Editor do prato: foto e grupos de opções */
+.it-foto { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.it-foto img { width: 84px; height: 84px; border-radius: 14px; object-fit: cover; background: var(--surface-2); }
+.it-foto.is-busy { opacity: .5; pointer-events: none; }
+.it-grupo { display: grid; gap: 8px; margin: 0; padding: 12px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface-2); }
+.it-grupo-top { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; }
+.it-grupo-top select { width: auto; }
+.it-grupo-lim { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.it-grupo textarea { font-size: 14px; }
+@media (max-width: 420px) { .it-grupo-top { grid-template-columns: 1fr auto; } .it-grupo-top select { grid-column: 1 / -1; grid-row: 2; width: 100%; } }

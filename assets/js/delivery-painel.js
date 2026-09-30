@@ -59,7 +59,7 @@
     return `<article class="dp-card dp-card--${p.status} ${atraso ? 'is-atrasado' : ''}" data-dp-id="${esc(p.id)}">
       <header><b class="dp-num">#${p.numero}</b><span class="muted">${hora(p.criado_em)} · há ${minDesde(p.criado_em)} min</span><b class="dp-total">${brl(p.total)}</b></header>
       <div class="dp-cli"><b>${esc(p.cliente.nome)}</b> <a href="https://wa.me/55${esc(String(p.cliente.telefone).replace(/\D/g, ''))}" target="_blank" rel="noopener">${esc(tel(p.cliente.telefone))}</a></div>
-      <ul class="dp-itens">${p.itens.map((x) => `<li><b>${x.qtd}×</b> ${esc(x.nome)}${x.obs ? `<small>${esc(x.obs)}</small>` : ''}</li>`).join('')}</ul>
+      <ul class="dp-itens">${p.itens.map((x) => `<li><b>${x.qtd}×</b> ${esc(x.nome)}${x.opcoes && x.opcoes.length ? `<small class="dp-op">${esc(x.opcoes.join(' · '))}</small>` : ''}${x.obs ? `<small>${esc(x.obs)}</small>` : ''}</li>`).join('')}</ul>
       ${p.obs ? `<p class="dp-obs">${icon('msg')} ${esc(p.obs)}</p>` : ''}
       <p class="dp-end"><a href="${esc(maps)}" target="_blank" rel="noopener">${icon('pin')} ${esc([e.rua, e.numero].filter(Boolean).join(', '))}${e.complemento ? ` · ${esc(e.complemento)}` : ''} · ${esc(e.bairro || '')}</a>
         ${e.referencia ? `<small>Ref.: ${esc(e.referencia)}</small>` : ''}<small>${p.distancia_km != null ? `${String(p.distancia_km).replace('.', ',')} km · ` : ''}entrega ${+p.taxa ? brl(p.taxa) : 'grátis'}</small></p>
@@ -179,7 +179,7 @@
       .g { font-size: 16px; font-weight: bold; }
     </style></head><body>
       <div class="c">${esc(nome)}<br>DELIVERY</div><h1>#${p.numero}</h1><div class="c">${new Date(p.criado_em).toLocaleString('pt-BR')}</div><hr>
-      ${p.itens.map((x) => `<div class="l g"><span>${x.qtd}x ${esc(x.nome)}</span></div>${x.obs ? `<div class="o">» ${esc(x.obs)}</div>` : ''}`).join('')}
+      ${p.itens.map((x) => `<div class="l g"><span>${x.qtd}x ${esc(x.nome)}</span></div>${(x.opcoes || []).map((o) => `<div class="o">+ ${esc(o)}</div>`).join('')}${x.obs ? `<div class="o">» ${esc(x.obs)}</div>` : ''}`).join('')}
       ${p.obs ? `<hr><div><b>Obs.:</b> ${esc(p.obs)}</div>` : ''}<hr>
       <h2>${esc(p.cliente.nome)} · ${esc(tel(p.cliente.telefone))}</h2>
       <div>${esc([e.rua, e.numero].filter(Boolean).join(', '))}${e.complemento ? ` - ${esc(e.complemento)}` : ''}<br>${esc(e.bairro || '')}${e.cidade ? ` - ${esc(e.cidade)}` : ''}${e.referencia ? `<br>Ref.: ${esc(e.referencia)}` : ''}</div><hr>

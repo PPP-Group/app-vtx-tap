@@ -175,6 +175,50 @@
 
   // Mensalidade do plano (assets/js/precos.js, a mesma tabela de public.plano_preco).
   const precoPlano = (p) => window.Precos.plano(p);
+  /* Opções dos itens do cardápio (as mesmas regras de public.delivery_pedir):
+     item.grupos = [{ id, nome, tipo: 'escolha' | 'extras', min, max, opcoes: [{ id, nome, preco }] }]
+     'escolha': a pessoa escolhe uma (tamanho, carne…); o preço da opção soma ao preço do item.
+     'extras': adicionais com quantidade; min/max contam o total do grupo (max 0 = sem limite).
+     sel = [{ g: grupoId, o: opcaoId, q: quantidade }] */
+  const gruposDe = (it) => (it && Array.isArray(it.grupos) ? it.grupos : []).filter((g) => g && Array.isArray(g.opcoes) && g.opcoes.length);
+  const opcoes = {
+    grupos: gruposDe,
+    // Menor preço possível (para mostrar "a partir de").
+    aPartir(it) {
+      return (+it.preco || 0) + gruposDe(it).filter((g) => g.tipo === 'escolha' && +g.min >= 1)
+        .reduce((t, g) => t + Math.min(...g.opcoes.map((o) => +o.preco || 0)), 0);
+    },
+    temVariacao: (it) => gruposDe(it).some((g) => g.opcoes.some((o) => +o.preco > 0)) ,
+    calcular(it, sel = []) {
+      let preco = +it.preco || 0;
+      const rotulos = [];
+      for (const g of gruposDe(it)) {
+        const meus = sel.filter((x) => x.g === g.id);
+        if (g.tipo === 'escolha') {
+          if (meus.length > 1) return { erro: `Escolha só uma opção em "${g.nome}".` };
+          if (!meus.length) { if (+g.min >= 1) return { erro: `Escolha: ${g.nome}.` }; continue; }
+          const o = g.opcoes.find((x) => x.id === meus[0].o);
+          if (!o) return { erro: 'Opção indisponível. Atualize a página.' };
+          preco += +o.preco || 0;
+          rotulos.push(o.nome);
+        } else {
+          let total = 0;
+          for (const m of meus) {
+            const o = g.opcoes.find((x) => x.id === m.o);
+            const q = Math.min(Math.max(Math.round(+m.q || 0), 0), 20);
+            if (!o) return { erro: 'Opção indisponível. Atualize a página.' };
+            if (!q) continue;
+            total += q;
+            preco += (+o.preco || 0) * q;
+            rotulos.push(q > 1 ? `${q}× ${o.nome}` : o.nome);
+          }
+          if (+g.max > 0 && total > +g.max) return { erro: `Em "${g.nome}", escolha até ${g.max}.` };
+          if (total < (+g.min || 0)) return { erro: `Em "${g.nome}", escolha pelo menos ${g.min}.` };
+        }
+      }
+      return { preco: Math.round(preco * 100) / 100, rotulos };
+    },
+  };
   // Distância em linha reta (km), a mesma conta de public.distancia_km.
   const distanciaKm = (a, b) => {
     const r = (x) => (x * Math.PI) / 180;
@@ -819,7 +863,9 @@
         for (const x of p.itens) {
           const it = todos.find((i) => i.id === x.id && i.delivery);
           if (!it) return erro('Um item do carrinho não está mais disponível. Atualize a página.');
-          itens.push({ id: it.id, nome: it.nome, preco: +it.preco, qtd: Math.min(Math.max(Math.round(+x.qtd || 1), 1), 50), obs: String(x.obs || '').trim().slice(0, 140) || null });
+          const c = opcoes.calcular(it, Array.isArray(x.opcoes) ? x.opcoes : []);
+          if (c.erro) return erro(`${it.nome}: ${c.erro}`);
+          itens.push({ id: it.id, nome: it.nome, preco: c.preco, qtd: Math.min(Math.max(Math.round(+x.qtd || 1), 1), 50), obs: String(x.obs || '').trim().slice(0, 140) || null, opcoes: c.rotulos });
         }
         const subtotal = Math.round(itens.reduce((t, i) => t + i.preco * i.qtd, 0) * 100) / 100;
         if (subtotal < (+d.minimo || 0)) return erro(`O pedido mínimo é ${brlTxt(+d.minimo)}.`);
@@ -1636,6 +1682,7 @@
     precoPlano,
     // Regras do programa de fidelidade usadas também pelas telas (validação e simulação).
     delivery: { PADRAO: DELIVERY_PADRAO, distanciaKm, taxa: taxaEntrega },
+    opcoes,
     fid: { PADRAO: FID_PADRAO, cpfValido, chaveValida, chaveDoTexto, valorDoQr, boost: fidBoost, calcular: fidCalcular, niveis: fidNiveis, nivelDe: fidNivelDe, soDigitos },
     create() {
       const b = cfg.backend || {};

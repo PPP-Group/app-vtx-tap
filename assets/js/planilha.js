@@ -12,7 +12,7 @@
     ['Coluna', 'O que colocar', 'Exemplo'],
     ['Categoria', 'Grupo do cardápio. Itens com a mesma categoria ficam juntos.', 'Entradas'],
     ['Nome', 'Nome do prato ou bebida (obrigatório, até 60 letras).', 'Mandioca na brasa'],
-    ['Descrição', 'Opcional. Ingredientes, porção, acompanhamentos (até 160 letras).', 'Aioli de alho assado e salsinha'],
+    ['Descrição', 'Opcional. Ingredientes, porção, acompanhamentos (até 320 letras).', 'Aioli de alho assado e salsinha'],
     ['Preço', 'Em reais (obrigatório). Pode usar vírgula.', '34,90'],
     ['Delivery', '"sim" se o item também vende no delivery. Vazio = não.', 'sim'],
     ['Destaque', '"sim" para mostrar o selo "Da casa". Vazio = não.', 'não'],
@@ -114,7 +114,7 @@
       const selos = String(pega('selos') || '').split(/[,;/]/).map((t) => selosPorNome[semAcento(t)]).filter(Boolean);
       const item = {
         nome,
-        desc: String(pega('desc') || '').trim().slice(0, 160),
+        desc: String(pega('desc') || '').trim().slice(0, 320),
         preco: p,
         tags: [...new Set(selos)],
         destaque: sim(pega('destaque')),

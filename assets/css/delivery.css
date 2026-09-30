@@ -74,3 +74,20 @@ body.com-barra .dl-main { padding-bottom: 96px; }
 .dl-resumo small { display: block; color: var(--ink-2); font-size: 12.5px; }
 .dl-cancelado { background: var(--pepper-soft); }
 .dl-aviso { color: inherit; text-decoration: none; }
+
+/* Fotos e opções dos itens */
+.dl-foto { width: 72px; height: 72px; flex: none; border-radius: 14px; object-fit: cover; background: var(--surface-2); }
+.dl-foto-g { width: 100%; max-height: 220px; border-radius: 18px; object-fit: cover; }
+.dl-no-carrinho { color: var(--cobalt-ink) !important; font-weight: 600; }
+.dl-c-nome { display: grid; gap: 2px; }
+.dl-c-nome small { color: var(--ink-2); font-size: 13px; }
+.dl-grupo { display: grid; gap: 8px; }
+.dl-grupo h3 small { font-weight: 500; font-size: 12.5px; }
+.dl-grupo ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.dl-op { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 14px; background: var(--surface-2); cursor: pointer; }
+.dl-op > span:first-of-type { flex: 1; }
+.dl-op small { color: var(--ink-2); }
+.dl-op input[type=radio] { width: 20px; height: 20px; accent-color: var(--cobalt); }
+label.dl-op:has(input:checked) { outline: 2px solid var(--cobalt); }
+.dl-op-rodape { position: sticky; bottom: 0; display: flex; align-items: center; gap: 12px; padding: 12px 0 4px; background: var(--surface); }
+.dl-op-rodape .btn { flex: 1; }

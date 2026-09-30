@@ -14,7 +14,8 @@
   let live = null;
   let R = null;
   let D = null; // configuração do delivery
-  const carrinho = new Map(); // id → { qtd, obs }
+  // Linhas do carrinho: chave (item + opções escolhidas) → { id, qtd, obs, opcoes: [{ g, o, q }] }.
+  const carrinho = new Map();
   let endereco = (() => { try { return JSON.parse(safeGet('dl-endereco')) || {}; } catch { return {}; } })();
   let cliente = (() => { try { return JSON.parse(safeGet('dl-cliente')) || {}; } catch { return {}; } })();
   let cat = null;
@@ -22,7 +23,12 @@
 
   const itens = () => (live ? live.cardapio.map((c) => ({ ...c, itens: c.itens.filter((i) => i.delivery) })).filter((c) => c.itens.length) : []);
   const itemDe = (id) => live.cardapio.flatMap((c) => c.itens).find((i) => i.id === id && i.delivery);
-  const subtotal = () => [...carrinho].reduce((t, [id, x]) => t + ((itemDe(id) || {}).preco || 0) * x.qtd, 0);
+  const OPC = Store.opcoes;
+  const chaveLinha = (id, opcoes = []) => (opcoes.length ? `${id}|${JSON.stringify([...opcoes].sort((a, b) => (a.g + a.o).localeCompare(b.g + b.o)))}` : id);
+  const calc = (x) => { const it = itemDe(x.id); return it ? OPC.calcular(it, x.opcoes || []) : { erro: 'indisponível' }; };
+  const precoLinha = (x) => calc(x).preco || 0;
+  const subtotal = () => [...carrinho.values()].reduce((t, x) => t + precoLinha(x) * x.qtd, 0);
+  const qtdDoItem = (id) => [...carrinho.values()].filter((x) => x.id === id).reduce((t, x) => t + x.qtd, 0);
   const qtdTotal = () => [...carrinho.values()].reduce((t, x) => t + x.qtd, 0);
   const distancia = () => (endereco.lat && D.local ? Store.delivery.distanciaKm(D.local, endereco) : null);
   const taxa = () => { const km = distancia(); return km == null ? null : Store.delivery.taxa(D, km); };
@@ -78,10 +84,14 @@
       <nav class="dl-cats" aria-label="Categorias">${cats.map((c) => `<button type="button" class="chip" aria-pressed="${c.id === cat}" data-dl-cat="${esc(c.id)}">${esc(c.nome)}</button>`).join('')}</nav>
       ${cats.map((c) => `<section class="dl-sec" id="cat-${esc(c.id)}"><h2 class="dl-h2">${esc(c.nome)}</h2>
         <ul class="dl-itens">${c.itens.map((i) => {
-          const q = (carrinho.get(i.id) || {}).qtd || 0;
+          const com = OPC.grupos(i).length > 0;
+          const q = com ? qtdDoItem(i.id) : (carrinho.get(i.id) || {}).qtd || 0;
+          const preco = com && OPC.temVariacao(i) ? `A partir de ${brl(OPC.aPartir(i))}` : brl(OPC.aPartir(i));
           return `<li class="dl-item ${q ? 'is-no-carrinho' : ''}">
-            <div class="dl-item-txt"><b>${esc(i.nome)}</b>${i.desc ? `<small>${esc(i.desc)}</small>` : ''}<span class="price">${brl(i.preco)}</span></div>
-            ${q ? `<span class="dl-qtd"><button type="button" class="icon-btn" data-dl-menos="${esc(i.id)}" aria-label="Tirar um ${esc(i.nome)}">${icon('minus')}</button><b>${q}</b><button type="button" class="icon-btn" data-dl-mais="${esc(i.id)}" aria-label="Mais um ${esc(i.nome)}">${icon('plus')}</button></span>`
+            ${i.foto ? `<img class="dl-foto" src="${esc(i.foto)}" alt="" loading="lazy">` : ''}
+            <div class="dl-item-txt"><b>${esc(i.nome)}</b>${i.desc ? `<small>${esc(i.desc)}</small>` : ''}<span class="price">${preco}</span>${com && q ? `<small class="dl-no-carrinho">${q} no carrinho</small>` : ''}</div>
+            ${com ? `<button type="button" class="btn btn-line btn-sm" data-dl-escolher="${esc(i.id)}" ${podePedir() ? '' : 'disabled'}>${icon('plus')} Escolher</button>`
+              : q ? `<span class="dl-qtd"><button type="button" class="icon-btn" data-dl-menos="${esc(i.id)}" aria-label="Tirar um ${esc(i.nome)}">${icon('minus')}</button><b>${q}</b><button type="button" class="icon-btn" data-dl-mais="${esc(i.id)}" aria-label="Mais um ${esc(i.nome)}">${icon('plus')}</button></span>`
               : `<button type="button" class="btn btn-line btn-sm" data-dl-mais="${esc(i.id)}" ${podePedir() ? '' : 'disabled'}>${icon('plus')} Adicionar</button>`}
           </li>`;
         }).join('')}</ul></section>`).join('')}`;
@@ -94,18 +104,73 @@
     $('#dlBarraQtd').textContent = `Ver carrinho · ${n} ${n === 1 ? 'item' : 'itens'}`;
     $('#dlBarraTotal').textContent = brl(subtotal());
   }
-  function mudarQtd(id, d) {
-    const x = carrinho.get(id) || { qtd: 0, obs: '' };
+  function mudarQtd(chave, d) {
+    const x = carrinho.get(chave) || { id: chave, qtd: 0, obs: '', opcoes: [] };
     x.qtd = Math.max(0, Math.min(50, x.qtd + d));
-    if (x.qtd) carrinho.set(id, x);
-    else carrinho.delete(id);
+    if (x.qtd) carrinho.set(chave, x);
+    else carrinho.delete(chave);
     guardarCarrinho();
+  }
+
+  /* ---------------- Opções do item (tamanho, carne, adicionais) ---------------- */
+  let OP = null; // { id, esc: { grupo: opcao }, ext: { grupo: { opcao: q } }, qtd, obs }
+  const selDe = (op) => [
+    ...Object.entries(op.esc).filter(([, o]) => o).map(([g, o]) => ({ g, o, q: 1 })),
+    ...Object.entries(op.ext).flatMap(([g, m]) => Object.entries(m).filter(([, q]) => q > 0).map(([o, q]) => ({ g, o, q }))),
+  ];
+  function abrirOpcoes(id) {
+    const it = itemDe(id);
+    if (!it) return;
+    OP = { id, esc: {}, ext: {}, qtd: 1, obs: '' };
+    // Já vem marcada a primeira opção dos grupos obrigatórios (ex.: tamanho pequeno).
+    OPC.grupos(it).forEach((g) => { if (g.tipo === 'escolha' && +g.min >= 1) OP.esc[g.id] = g.opcoes[0].id; });
+    $('#dlTitle').textContent = it.nome;
+    $('#dlBody').innerHTML = tOpcoes();
+    openSheet('sh-dl');
+  }
+  function tOpcoes() {
+    const it = itemDe(OP.id);
+    const c = OPC.calcular(it, selDe(OP));
+    return `<div class="stack-lg dl-opcoes">
+      ${it.foto ? `<img class="dl-foto-g" src="${esc(it.foto)}" alt="">` : ''}
+      ${it.desc ? `<p class="muted">${esc(it.desc)}</p>` : ''}
+      ${OPC.grupos(it).map((g) => {
+        const tot = Object.values(OP.ext[g.id] || {}).reduce((t, q) => t + q, 0);
+        return `<section class="dl-grupo"><h3 class="dl-h3">${esc(g.nome)} <small class="muted">${g.tipo === 'escolha' ? (+g.min >= 1 ? 'Escolha 1 · obrigatório' : 'Escolha 1 · opcional') : `${+g.max ? `Até ${g.max}` : 'Opcional'}${+g.min ? ` · mínimo ${g.min}` : ''}`}</small></h3>
+          <ul>${g.opcoes.map((o) => g.tipo === 'escolha'
+            ? `<li><label class="dl-op"><input type="radio" name="g-${esc(g.id)}" data-op-esc="${esc(g.id)}" value="${esc(o.id)}" ${OP.esc[g.id] === o.id ? 'checked' : ''}><span>${esc(o.nome)}</span>${+o.preco ? `<small>+ ${brl(+o.preco)}</small>` : ''}</label></li>`
+            : `<li class="dl-op"><span>${esc(o.nome)}${+o.preco ? ` <small>+ ${brl(+o.preco)}</small>` : ''}</span>
+                <span class="dl-qtd"><button type="button" class="icon-btn" data-op-ext="${esc(g.id)}|${esc(o.id)}|-1" aria-label="Menos ${esc(o.nome)}" ${(OP.ext[g.id] || {})[o.id] ? '' : 'disabled'}>${icon('minus')}</button><b>${(OP.ext[g.id] || {})[o.id] || 0}</b>
+                <button type="button" class="icon-btn" data-op-ext="${esc(g.id)}|${esc(o.id)}|1" aria-label="Mais ${esc(o.nome)}" ${+g.max && tot >= +g.max ? 'disabled' : ''}>${icon('plus')}</button></span></li>`).join('')}</ul></section>`;
+      }).join('')}
+      <label class="field"><span>Observação (opcional)</span><input class="input" id="opObs" maxlength="140" placeholder="Ex.: sem cebola" value="${esc(OP.obs)}"></label>
+      <div class="dl-op-rodape">
+        <span class="dl-qtd"><button type="button" class="icon-btn" data-op-qtd="-1" aria-label="Menos" ${OP.qtd > 1 ? '' : 'disabled'}>${icon('minus')}</button><b>${OP.qtd}</b><button type="button" class="icon-btn" data-op-qtd="1" aria-label="Mais">${icon('plus')}</button></span>
+        <button type="button" class="btn btn-cobalt" data-op-ok ${c.erro ? 'disabled' : ''}>${c.erro ? esc(c.erro) : `Adicionar · ${brl(c.preco * OP.qtd)}`}</button>
+      </div>
+    </div>`;
+  }
+  const redesenharOpcoes = () => { OP.obs = ($('#opObs') || {}).value || OP.obs; $('#dlBody').innerHTML = tOpcoes(); };
+  function confirmarOpcoes() {
+    OP.obs = ($('#opObs') || {}).value || '';
+    const opcoes = selDe(OP);
+    const c = OPC.calcular(itemDe(OP.id), opcoes);
+    if (c.erro) return toast(c.erro, { tone: 'error' });
+    const chave = chaveLinha(OP.id, opcoes) + (OP.obs ? `#${OP.obs}` : '');
+    const x = carrinho.get(chave) || { id: OP.id, qtd: 0, obs: OP.obs, opcoes };
+    x.qtd = Math.min(50, x.qtd + OP.qtd);
+    carrinho.set(chave, x);
+    guardarCarrinho();
+    OP = null;
+    closeSheet();
+    toast('Adicionado ao carrinho.', { tone: 'ok' });
+    renderCardapio();
   }
 
   /* ---------------- Carrinho e finalizar ---------------- */
   const FORMAS = [['pix', 'Pix'], ['cartao', 'Cartão na entrega'], ['dinheiro', 'Dinheiro']];
   function tCarrinho() {
-    const lista = [...carrinho].filter(([id]) => itemDe(id));
+    const lista = [...carrinho].filter(([, x]) => itemDe(x.id) && !calc(x).erro);
     if (!lista.length) return `<div class="empty"><h2>Carrinho vazio</h2><p>Escolha os itens no cardápio.</p></div>`;
     const sub = subtotal();
     const tx = taxa();
@@ -114,11 +179,12 @@
     const formas = FORMAS.filter(([k]) => D.pagamentos && D.pagamentos[k]);
     const forma = cliente.forma && formas.some(([k]) => k === cliente.forma) ? cliente.forma : (formas[0] || [])[0];
     return `<form class="stack-lg dl-form" id="dlForm" novalidate>
-      <ul class="dl-carrinho">${lista.map(([id, x]) => {
-        const i = itemDe(id);
-        return `<li><div class="dl-c-top"><span class="dl-qtd"><button type="button" class="icon-btn" data-dl-menos="${esc(id)}" aria-label="Tirar um">${icon('minus')}</button><b>${x.qtd}</b><button type="button" class="icon-btn" data-dl-mais="${esc(id)}" aria-label="Mais um">${icon('plus')}</button></span>
-          <b class="dl-c-nome">${esc(i.nome)}</b><span class="price">${brl(i.preco * x.qtd)}</span></div>
-          <input class="input dl-c-obs" data-dl-obs="${esc(id)}" maxlength="140" placeholder="Observação (ex.: sem cebola)" value="${esc(x.obs || '')}"></li>`;
+      <ul class="dl-carrinho">${lista.map(([k, x]) => {
+        const i = itemDe(x.id);
+        const c = calc(x);
+        return `<li><div class="dl-c-top"><span class="dl-qtd"><button type="button" class="icon-btn" data-dl-menos="${esc(k)}" aria-label="Tirar um">${icon('minus')}</button><b>${x.qtd}</b><button type="button" class="icon-btn" data-dl-mais="${esc(k)}" aria-label="Mais um">${icon('plus')}</button></span>
+          <span class="dl-c-nome"><b>${esc(i.nome)}</b>${c.rotulos && c.rotulos.length ? `<small>${esc(c.rotulos.join(' · '))}</small>` : ''}</span><span class="price">${brl(c.preco * x.qtd)}</span></div>
+          <input class="input dl-c-obs" data-dl-obs="${esc(k)}" maxlength="140" placeholder="Observação (ex.: sem cebola)" value="${esc(x.obs || '')}"></li>`;
       }).join('')}</ul>
 
       <section class="stack"><h3 class="dl-h3">Entrega</h3>
@@ -270,7 +336,7 @@
       r = await store.deliveryPedir({
         cliente: { nome: cliente.nome, telefone: cliente.telefone },
         endereco,
-        itens: [...carrinho].map(([id, x]) => ({ id, qtd: x.qtd, obs: x.obs || '' })),
+        itens: [...carrinho.values()].map((x) => ({ id: x.id, qtd: x.qtd, obs: x.obs || '', opcoes: x.opcoes || [] })),
         pagamento: { forma, troco },
         obs: cliente.obs || '',
       });
@@ -325,7 +391,7 @@
           ${p.status !== 'entregue' && rest.tempo ? `<p class="muted dl-tempo">${icon('clock')} Tempo estimado: ${esc(rest.tempo)} min</p>` : ''}`}
       ${p.pagamento.forma === 'pix' && rest.pix && !cancelado ? `<div class="dl-pix"><span>Pague pelo Pix na entrega ou agora:</span><b class="mono">${esc(rest.pix)}</b><button type="button" class="btn btn-line btn-sm" data-dl-copiar="${esc(rest.pix)}">${icon('copy')} Copiar chave</button></div>` : ''}
       <section class="stack"><h3 class="dl-h3">Resumo</h3>
-        <ul class="dl-resumo">${p.itens.map((x) => `<li><span>${x.qtd}× ${esc(x.nome)}${x.obs ? `<small>${esc(x.obs)}</small>` : ''}</span><span>${brl(x.preco * x.qtd)}</span></li>`).join('')}</ul>
+        <ul class="dl-resumo">${p.itens.map((x) => `<li><span>${x.qtd}× ${esc(x.nome)}${x.opcoes && x.opcoes.length ? `<small>${esc(x.opcoes.join(' · '))}</small>` : ''}${x.obs ? `<small>${esc(x.obs)}</small>` : ''}</span><span>${brl(x.preco * x.qtd)}</span></li>`).join('')}</ul>
         <dl class="dl-totais"><div><dt>Itens</dt><dd>${brl(p.subtotal)}</dd></div><div><dt>Entrega</dt><dd>${+p.taxa ? brl(p.taxa) : 'Grátis'}</dd></div><div class="dl-total"><dt>Total</dt><dd>${brl(p.total)}</dd></div></dl>
         <p class="muted">${esc([p.endereco.rua, p.endereco.numero].filter(Boolean).join(', '))}${p.endereco.complemento ? ` · ${esc(p.endereco.complemento)}` : ''} · ${esc(p.endereco.bairro || '')}<br>
           Pagamento: ${esc({ pix: 'Pix', cartao: 'Cartão na entrega', dinheiro: 'Dinheiro' }[p.pagamento.forma] || '')}${p.pagamento.troco ? ` (troco para ${brl(p.pagamento.troco)})` : ''}</p>
@@ -356,6 +422,18 @@
       const s = document.getElementById('cat-' + cat);
       return s && s.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
+    const esc1 = t.closest('[data-dl-escolher]');
+    if (esc1) return abrirOpcoes(esc1.dataset.dlEscolher);
+    const ext = t.closest('[data-op-ext]');
+    if (ext && OP) {
+      const [g, o, d] = ext.dataset.opExt.split('|');
+      const m = (OP.ext[g] = OP.ext[g] || {});
+      m[o] = Math.max(0, Math.min(20, (m[o] || 0) + +d));
+      return redesenharOpcoes();
+    }
+    const oq = t.closest('[data-op-qtd]');
+    if (oq && OP) { OP.qtd = Math.max(1, Math.min(50, OP.qtd + +oq.dataset.opQtd)); return redesenharOpcoes(); }
+    if (t.closest('[data-op-ok]') && OP) return confirmarOpcoes();
     const mais = t.closest('[data-dl-mais]');
     const menos = t.closest('[data-dl-menos]');
     if (mais || menos) {
@@ -392,6 +470,8 @@
     }
   });
   document.addEventListener('change', (e) => {
+    const r = e.target.closest('[data-op-esc]');
+    if (r && OP) { OP.esc[r.dataset.opEsc] = r.value; return redesenharOpcoes(); }
     // Número ou rua mudaram: a localização precisa ser refeita.
     if (e.target.closest('#dlForm') && ['numero', 'rua', 'bairro', 'cidade'].includes(e.target.name)) atualizarResumo();
   });
@@ -420,7 +500,12 @@
         $('#dlMain').innerHTML = `<div class="empty"><h2>Delivery indisponível</h2><p>Este restaurante ainda não faz pedidos por aqui.</p></div>`;
         return;
       }
-      try { JSON.parse(safeGet('dl-carrinho') || '[]').forEach(([id, x]) => itemDe(id) && carrinho.set(id, x)); } catch {}
+      try {
+        JSON.parse(safeGet('dl-carrinho') || '[]').forEach(([k, x]) => {
+          const linha = { opcoes: [], ...x, id: x.id || k };
+          if (itemDe(linha.id) && !calc(linha).erro) carrinho.set(k, linha);
+        });
+      } catch {}
       const token = new URLSearchParams(location.search).get('pedido');
       if (token) return acompanhar(token);
       renderCardapio();

@@ -2411,6 +2411,7 @@ declare
   e jsonb := coalesce(p_pedido -> 'endereco', '{}'::jsonb);
   v_lat numeric; v_lng numeric; v_dist numeric; v_taxa numeric;
   itens jsonb := '[]'::jsonb; x jsonb; it jsonb; q int; sub numeric := 0; v_total numeric;
+  g jsonb; op jsonb; sel jsonb; s2 jsonb; n int; qq int; tot int; v_preco numeric; rot jsonb;
   forma text := p_pedido #>> '{pagamento,forma}'; troco numeric;
   v_num int; v_token uuid := gen_random_uuid(); v_id uuid;
 begin
@@ -2439,9 +2440,49 @@ begin
      where i ->> 'id' = x ->> 'id' and coalesce(i ->> 'delivery', '') = 'true' limit 1;
     if it is null then return jsonb_build_object('status', 'erro', 'mensagem', 'Um item do carrinho não está mais disponível. Atualize a página.'); end if;
     q := least(greatest(coalesce(public.num_ou(x ->> 'qtd', 1), 1), 1), 50)::int;
-    itens := itens || jsonb_build_object('id', it ->> 'id', 'nome', it ->> 'nome', 'preco', public.num_ou(it ->> 'preco', 0), 'qtd', q,
-      'obs', nullif(left(btrim(coalesce(x ->> 'obs', '')), 140), ''));
-    sub := sub + public.num_ou(it ->> 'preco', 0) * q;
+    -- Opções: 'escolha' (uma, soma ao preço) e 'extras' (adicionais com quantidade). Mesmas regras de Store.opcoes.
+    v_preco := public.num_ou(it ->> 'preco', 0);
+    rot := '[]'::jsonb;
+    sel := case when jsonb_typeof(x -> 'opcoes') = 'array' then x -> 'opcoes' else '[]'::jsonb end;
+    for g in select gr from jsonb_array_elements(case when jsonb_typeof(it -> 'grupos') = 'array' then it -> 'grupos' else '[]'::jsonb end) gr
+              where jsonb_typeof(gr -> 'opcoes') = 'array' and jsonb_array_length(gr -> 'opcoes') > 0 loop
+      if g ->> 'tipo' = 'escolha' then
+        select count(*) into n from jsonb_array_elements(sel) z where z ->> 'g' = g ->> 'id';
+        if n > 1 then return jsonb_build_object('status', 'erro', 'mensagem', (it ->> 'nome') || ': escolha só uma opção em "' || (g ->> 'nome') || '".'); end if;
+        if n = 0 then
+          if coalesce(public.num_ou(g ->> 'min', 0), 0) >= 1 then
+            return jsonb_build_object('status', 'erro', 'mensagem', (it ->> 'nome') || ': escolha ' || (g ->> 'nome') || '.');
+          end if;
+          continue;
+        end if;
+        select o into op from jsonb_array_elements(sel) z, jsonb_array_elements(g -> 'opcoes') o
+         where z ->> 'g' = g ->> 'id' and o ->> 'id' = z ->> 'o' limit 1;
+        if op is null then return jsonb_build_object('status', 'erro', 'mensagem', 'Opção indisponível. Atualize a página.'); end if;
+        v_preco := v_preco + coalesce(public.num_ou(op ->> 'preco', 0), 0);
+        rot := rot || to_jsonb(op ->> 'nome');
+      else
+        tot := 0;
+        for s2 in select z from jsonb_array_elements(sel) z where z ->> 'g' = g ->> 'id' loop
+          select o into op from jsonb_array_elements(g -> 'opcoes') o where o ->> 'id' = s2 ->> 'o' limit 1;
+          if op is null then return jsonb_build_object('status', 'erro', 'mensagem', 'Opção indisponível. Atualize a página.'); end if;
+          qq := least(greatest(round(coalesce(public.num_ou(s2 ->> 'q', 0), 0)), 0), 20)::int;
+          continue when qq = 0;
+          tot := tot + qq;
+          v_preco := v_preco + coalesce(public.num_ou(op ->> 'preco', 0), 0) * qq;
+          rot := rot || to_jsonb(case when qq > 1 then qq || '× ' || (op ->> 'nome') else op ->> 'nome' end);
+        end loop;
+        if coalesce(public.num_ou(g ->> 'max', 0), 0) > 0 and tot > public.num_ou(g ->> 'max', 0) then
+          return jsonb_build_object('status', 'erro', 'mensagem', (it ->> 'nome') || ': em "' || (g ->> 'nome') || '", escolha até ' || (g ->> 'max') || '.');
+        end if;
+        if tot < coalesce(public.num_ou(g ->> 'min', 0), 0) then
+          return jsonb_build_object('status', 'erro', 'mensagem', (it ->> 'nome') || ': em "' || (g ->> 'nome') || '", escolha pelo menos ' || (g ->> 'min') || '.');
+        end if;
+      end if;
+    end loop;
+    v_preco := round(v_preco, 2);
+    itens := itens || jsonb_build_object('id', it ->> 'id', 'nome', it ->> 'nome', 'preco', v_preco, 'qtd', q,
+      'obs', nullif(left(btrim(coalesce(x ->> 'obs', '')), 140), ''), 'opcoes', rot);
+    sub := sub + v_preco * q;
   end loop;
   if sub < coalesce(public.num_ou(c ->> 'minimo', 0), 0) then
     return jsonb_build_object('status', 'erro', 'mensagem', 'O pedido mínimo é ' || public.brl(public.num_ou(c ->> 'minimo', 0)) || '.');
