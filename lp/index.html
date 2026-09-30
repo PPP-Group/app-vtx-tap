@@ -16,7 +16,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@800;900&family=IBM+Plex+Mono:wght@500;600&family=Schibsted+Grotesk:wght@400;500;600;700&display=swap">
 <style>
-  /* Mesma linguagem da página de preços (/precos): noite + roxo, títulos em Big Shoulders, cartões claros. */
+  /* Mesma linguagem da página de orçamento (/orcamento): noite + roxo, títulos em Big Shoulders, cartões claros. */
   :root {
     --bg: #F4F2F9;
     --surface: #FFFFFF;
@@ -120,12 +120,24 @@
   .hero-etq--a { left: 0; top: 16%; }
   .hero-etq--b { right: 0; top: 30%; }
 
-  /* Moldura de celular e de navegador */
-  .fone { display: block; padding: 8px; border-radius: 38px; background: #0B0720; box-shadow: 0 30px 60px rgba(20, 11, 51, .35), inset 0 0 0 1.5px rgba(255, 255, 255, .12); }
-  .fone img { display: block; width: 100%; height: auto; border-radius: 30px; }
-  .janela { display: block; border-radius: 16px; overflow: hidden; background: #0B0720; box-shadow: 0 30px 60px rgba(20, 11, 51, .28), 0 0 0 1px var(--line); }
-  .janela::before { content: ''; display: block; height: 26px; background: #1E1646 radial-gradient(circle at 16px 13px, #FF6B6B 4px, transparent 5px), radial-gradient(circle at 32px 13px, #FFC61A 4px, transparent 5px), radial-gradient(circle at 48px 13px, #4FD196 4px, transparent 5px); background-color: #1E1646; }
-  .janela img { display: block; width: 100%; height: auto; }
+  /* Mockups: iPhone (moldura, Dynamic Island, barra de status) e notebook (tela com borda, câmera e base).
+     Tudo em proporção à largura do aparelho (cqw), então funciona em qualquer tamanho. */
+  .fone { display: block; container-type: inline-size; position: relative; padding: 0; background: none; border-radius: 16%; }
+  .fone::before, .fone::after { content: ''; position: absolute; z-index: 0; width: 1.4cqw; border-radius: 1cqw; background: linear-gradient(90deg, #4A4458, #2B2638); }
+  .fone::before { left: -1cqw; top: 20%; height: 9%; box-shadow: 0 13cqw 0 #3A3548; }
+  .fone::after { right: -1cqw; top: 27%; height: 14%; }
+  .fone-tela { display: block; position: relative; z-index: 1; overflow: hidden; border: 3.2cqw solid #0A0810; border-radius: 15cqw; background: #F4F2F9;
+    box-shadow: 0 0 0 1cqw #3A3548, 0 0 0 1.3cqw #6B6480, 0 30px 60px -10px rgba(20, 11, 51, .5); }
+  .fone-status { display: flex; align-items: center; justify-content: space-between; height: 11cqw; padding: 0 8cqw 0 10cqw; color: #160E33; font: 600 4.4cqw/1 -apple-system, 'SF Pro Text', var(--body); letter-spacing: -.01em; }
+  .fone-status svg { width: 17cqw; height: 3.2cqw; }
+  .fone-tela::before { content: ''; position: absolute; z-index: 2; left: 50%; top: 2.6cqw; width: 30cqw; height: 8.4cqw; margin-left: -15cqw; border-radius: 6cqw; background: #000; }
+  .fone img { display: block; width: 100%; height: auto; }
+  .laptop { display: block; container-type: inline-size; position: relative; padding: 0; background: none; }
+  .laptop-tela { display: block; position: relative; margin: 0 6cqw; padding: 2.4cqw 2.4cqw 3.2cqw; border-radius: 2.4cqw 2.4cqw 0 0; background: #0B0910; box-shadow: inset 0 0 0 .25cqw #3A3548, 0 30px 60px -20px rgba(20, 11, 51, .5); }
+  .laptop-tela::before { content: ''; position: absolute; top: 1cqw; left: 50%; width: .7cqw; height: .7cqw; margin-left: -.35cqw; border-radius: 50%; background: #2A2638; box-shadow: inset 0 0 0 .15cqw #4A4560; }
+  .laptop-tela img { display: block; width: 100%; height: auto; border-radius: .4cqw; }
+  .laptop-base { display: block; position: relative; height: 1.9cqw; margin: 0; border-radius: 0 0 3cqw 3cqw / 0 0 1.6cqw 1.6cqw; background: linear-gradient(#E9E6F0, #BDB7CB 60%, #8F899F); box-shadow: 0 18px 30px -12px rgba(20, 11, 51, .45); }
+  .laptop-base::before { content: ''; position: absolute; top: 0; left: 50%; width: 15cqw; height: .8cqw; margin-left: -7.5cqw; border-radius: 0 0 1.2cqw 1.2cqw; background: #A7A1B6; }
   button.zoom { appearance: none; border: 0; margin: 0; font: inherit; color: inherit; text-align: inherit; cursor: zoom-in; width: 100%; transition: transform .2s; }
   button.zoom:hover { transform: translateY(-3px); }
   button.zoom:focus-visible { outline: 3px solid var(--lilas); outline-offset: 4px; }
@@ -158,6 +170,8 @@
   .destaque::after { content: ''; position: absolute; left: -140px; bottom: -160px; width: 380px; height: 380px; border-radius: 50%; border: 20px solid rgba(255, 255, 255, .06); box-shadow: 0 0 0 60px rgba(255, 255, 255, .03); pointer-events: none; }
   .destaque > * { position: relative; z-index: 1; }
   .dupla { display: grid; gap: 30px; align-items: center; }
+  .dupla--igual { align-items: stretch; }
+  .dupla--igual > .aviso-box { align-content: start; }
   @media (min-width: 920px) { .dupla { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 48px; } .dupla--inv > :first-child { order: 2; } }
   .telas { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; max-width: 540px; margin-inline: auto; width: 100%; }
   .telas .fone:nth-child(2) { margin-top: 48px; }
@@ -192,15 +206,26 @@
   .calc input[type="range"] { flex: 1; min-width: 0; accent-color: var(--roxo); }
   .calc output, .calc .val { min-width: 92px; text-align: right; font: 600 16px var(--mono); color: var(--roxo); }
   .calc small { color: #625A80; font-size: 13px; font-weight: 400; }
-  .calc-out { display: grid; gap: 12px; align-content: start; padding: 20px; border-radius: 18px; background: #F4F2F9; }
-  .calc-out .linha { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; font-size: 15px; }
-  .calc-out .linha b { font: 600 17px var(--mono); white-space: nowrap; }
-  .calc-out .ruim b { color: #C2410C; }
-  .calc-out .bom b { color: #1B7F52; }
-  .calc-eco { display: grid; gap: 2px; padding-top: 12px; border-top: 1px solid #E1DCEE; }
-  .calc-eco span { font-weight: 600; }
-  .calc-eco b { font: 900 46px/1 var(--display); color: #1B7F52; }
-  .calc-eco small { color: #625A80; }
+  .calc-out { display: grid; gap: 12px; align-content: start; }
+  .calc-lado { display: grid; gap: 6px; padding: 16px 18px; border-radius: 18px; background: #F4F2F9; }
+  .calc-rot { font-size: 12.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #625A80; }
+  .calc-conta { font-size: 14.5px; color: #2F2752; }
+  .calc-conta b { font-family: var(--mono); font-weight: 600; }
+  .calc-valor { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; }
+  .calc-valor b { font: 900 34px/1 var(--display); font-variant-numeric: tabular-nums; }
+  .calc-valor small { color: #625A80; font-size: 14px; }
+  .calc-hoje .calc-valor b { color: #C2410C; }
+  .calc-vtx { background: #EEE5FF; }
+  .calc-vtx .calc-valor b { color: #6A1BE0; }
+  .calc-barra { display: block; height: 10px; border-radius: 999px; background: rgba(20, 11, 51, .08); overflow: hidden; }
+  .calc-barra i { display: block; height: 100%; border-radius: inherit; transition: width .3s; }
+  .calc-hoje .calc-barra i { background: #EA580C; }
+  .calc-vtx .calc-barra i { background: #7D27FC; }
+  .calc-eco { display: grid; gap: 2px; padding: 16px 18px; border-radius: 18px; background: #DDF3E8; }
+  .calc-eco span { font-weight: 700; color: #145C3B; }
+  .calc-eco b { font: 900 48px/1 var(--display); color: #1B7F52; font-variant-numeric: tabular-nums; }
+  .calc-eco small { color: #145C3B; font-size: 14.5px; }
+  .calc-nota { color: #625A80; font-size: 13px; }
 
   /* Mesa (cardápio + sino) */
   .cols3 { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
@@ -224,12 +249,18 @@
   .placa p { color: var(--muted); font-size: 14.5px; }
 
   /* Preços */
-  .precos { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(186px, 1fr)); }
+  .precos { display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); }
+  @media (min-width: 560px) { .precos { grid-template-columns: repeat(2, minmax(0, 1fr)); } .preco-card.combo { grid-column: 1 / -1; } }
+  @media (min-width: 900px) { .precos { grid-template-columns: repeat(3, minmax(0, 1fr)); } .preco-card.combo { grid-column: 3; grid-row: 1 / span 2; align-content: center; } }
   .preco-card { display: grid; gap: 8px; align-content: start; padding: 20px; border-radius: 22px; background: var(--surface); border: 1px solid var(--line); }
   .preco-card.combo { border: 2px solid var(--roxo); background: var(--roxo-soft); }
   .preco-card .valor { font: 900 42px/1 var(--display); }
   .preco-card .valor span { font: 600 15px var(--body); color: var(--muted); margin-left: 2px; }
   .preco-card p { color: var(--muted); font-size: 14.5px; }
+  .preco-card .eco { justify-self: start; padding: 5px 12px; border-radius: 10px; background: var(--ok); color: #fff; font-size: 14px; font-weight: 700; }
+  .preco-card ul { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 8px; color: var(--ink-2); font-size: 15px; }
+  .preco-card li { display: flex; gap: 8px; align-items: center; }
+  .preco-card li::before { content: ''; flex: none; width: 18px; height: 18px; border-radius: 50%; background: var(--roxo) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E") center / 11px no-repeat; }
   .preco-card .tag { justify-self: start; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; background: var(--roxo); color: #fff; }
   .inclui { display: grid; gap: 12px; padding: 22px; border-radius: 22px; background: var(--surface); border: 1px solid var(--line); }
   @media (min-width: 820px) { .inclui { grid-template-columns: auto 1fr; align-items: center; gap: 22px; } }
@@ -238,7 +269,7 @@
   .inclui svg { width: 18px; height: 18px; color: var(--ok); }
 
   /* FAQ */
-  .faq { display: grid; gap: 10px; max-width: 860px; }
+  .faq { display: grid; gap: 10px; max-width: 860px; width: 100%; margin-inline: auto; }
   .faq details { border-radius: 18px; background: var(--surface); border: 1px solid var(--line); }
   .faq summary { list-style: none; cursor: pointer; padding: 18px 52px 18px 20px; font-weight: 600; font-size: 17px; position: relative; }
   .faq summary::-webkit-details-marker { display: none; }
@@ -282,7 +313,8 @@
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></symbol>
-  <symbol id="i-msg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></symbol>
+  <symbol id="i-msg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.54 21.69a.5.5 0 0 0 .94-.03l6.5-19a.5.5 0 0 0-.64-.63l-19 6.5a.5.5 0 0 0-.02.93l7.93 3.18a2 2 0 0 1 1.11 1.11z"/><path d="m21.85 2.15-10.94 10.94"/></symbol>
+  <symbol id="i-status" viewBox="0 0 78 14"><g fill="currentColor"><rect x="0" y="9" width="3" height="4" rx="1"/><rect x="5" y="6.5" width="3" height="6.5" rx="1"/><rect x="10" y="4" width="3" height="9" rx="1"/><rect x="15" y="1.5" width="3" height="11.5" rx="1"/><path d="M33 3.2a11.5 11.5 0 0 1 8.2 3.4l1.3-1.3A13.4 13.4 0 0 0 33 1.4a13.4 13.4 0 0 0-9.5 3.9l1.3 1.3A11.5 11.5 0 0 1 33 3.2zm0 3.7a7.8 7.8 0 0 1 5.6 2.3l1.3-1.3A9.6 9.6 0 0 0 33 5a9.6 9.6 0 0 0-6.9 2.9l1.3 1.3A7.8 7.8 0 0 1 33 6.9zm0 3.7a4 4 0 0 0-2.9 1.2L33 14.7l2.9-2.9A4 4 0 0 0 33 10.6z"/><rect x="50" y="1.5" width="24" height="11" rx="3.2" fill="none" stroke="currentColor" stroke-opacity=".45"/><rect x="52" y="3.5" width="18" height="7" rx="1.8"/><rect x="75.5" y="5" width="1.8" height="4" rx=".9" fill-opacity=".45"/></g></symbol>
   <symbol id="i-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
   <symbol id="i-gift" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12v10H4V12M2 7h20v5H2zM12 22V7M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7zM12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></symbol>
   <symbol id="i-moto" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6h3l2 5M5.5 17.5 9 10h6l3.5 7.5M9 10 7.5 6H5"/></symbol>
@@ -324,7 +356,7 @@
       <p class="hero-sub">Um <b>clube de pontos pela nota fiscal</b>, um <b>delivery próprio sem comissão</b> e a mesa inteira no celular do cliente: cardápio, chamar o garçom e avaliação no Google. Tudo por uma plaquinha na mesa, <b>sem aplicativo para baixar</b>.</p>
       <div class="ctas">
         <a class="btn btn-ouro" data-contato href="#contato"><svg><use href="#i-msg"/></svg>Quero ver funcionando</a>
-        <a class="btn btn-linha" data-precos href="/precos">Ver preços</a>
+        <a class="btn btn-linha" data-precos href="/orcamento">Montar orçamento</a>
       </div>
       <ul class="selos">
         <li><svg><use href="#i-check"/></svg>Sem comissão por pedido</li>
@@ -333,8 +365,8 @@
       </ul>
     </div>
     <div class="hero-fotos" aria-hidden="true">
-      <span class="fone"><img src="/assets/img/lp/fid-conta.webp" width="600" height="1299" alt="" fetchpriority="high"></span>
-      <span class="fone"><img src="/assets/img/lp/dl-menu.webp" width="600" height="1299" alt=""></span>
+      <span class="fone"><span class="fone-tela"><span class="fone-status" aria-hidden="true"><span>9:41</span><svg><use href="#i-status"/></svg></span><img src="/assets/img/lp/fid-conta.webp" width="600" height="1299" alt="" fetchpriority="high"></span></span>
+      <span class="fone"><span class="fone-tela"><span class="fone-status" aria-hidden="true"><span>9:41</span><svg><use href="#i-status"/></svg></span><img src="/assets/img/lp/dl-menu.webp" width="600" height="1299" alt=""></span></span>
       <span class="hero-etq hero-etq--a"><span class="pt">+13</span><span>pontos<small>nota fiscal lida</small></span></span>
       <span class="hero-etq hero-etq--b"><svg width="20" height="20" style="color:#1B7F52"><use href="#i-moto"/></svg><span>Pedido #4<small>R$ 0 de comissão</small></span></span>
     </div>
@@ -383,8 +415,8 @@
 
     <div class="dupla">
       <div class="telas">
-        <button type="button" class="zoom fone" data-zoom="/assets/img/lp/fid-conta.webp" aria-label="Ampliar: conta do cliente no clube de pontos"><img src="/assets/img/lp/fid-conta.webp" width="600" height="1299" alt="Tela do cliente: 280 pontos, nível Bronze faltando 20 pontos para Prata, botões Ler nota fiscal e Indicar amigos e o ranking do clube" loading="lazy"></button>
-        <button type="button" class="zoom fone" data-zoom="/assets/img/lp/fid-ranking.webp" aria-label="Ampliar: ranking do clube"><img src="/assets/img/lp/fid-ranking.webp" width="600" height="1299" alt="Ranking do clube com pódio dos três primeiros e a lista até o nono lugar" loading="lazy"></button>
+        <button type="button" class="zoom fone" data-zoom="/assets/img/lp/fid-conta.webp" aria-label="Ampliar: conta do cliente no clube de pontos"><span class="fone-tela"><span class="fone-status" aria-hidden="true"><span>9:41</span><svg><use href="#i-status"/></svg></span><img src="/assets/img/lp/fid-conta.webp" width="600" height="1299" alt="Tela do cliente: 280 pontos, nível Bronze faltando 20 pontos para Prata, botões Ler nota fiscal e Indicar amigos e o ranking do clube" loading="lazy"></span></button>
+        <button type="button" class="zoom fone" data-zoom="/assets/img/lp/fid-ranking.webp" aria-label="Ampliar: ranking do clube"><span class="fone-tela"><span class="fone-status" aria-hidden="true"><span>9:41</span><svg><use href="#i-status"/></svg></span><img src="/assets/img/lp/fid-ranking.webp" width="600" height="1299" alt="Ranking do clube com pódio dos três primeiros e a lista até o nono lugar" loading="lazy"></span></button>
       </div>
       <ul class="lista-fx">
         <li><span class="ico"><svg><use href="#i-receipt"/></svg></span><div><b>Pontos pela nota fiscal</b><span>Você define quantos pontos vale cada real. Cada nota vale uma vez só; nota repetida é barrada na hora.</span></div></li>
@@ -397,11 +429,11 @@
     </div>
 
     <figure class="painel-fig" style="margin:0">
-      <button type="button" class="zoom janela" data-zoom="/assets/img/lp/painel-fid-hoje.webp" aria-label="Ampliar: painel da fidelidade"><img src="/assets/img/lp/painel-fid-hoje.webp" width="1600" height="1012" alt="Painel da equipe na aba Clube de pontos: clientes, compras dos últimos 30 dias, pontos em aberto, notas para conferir com botão Aprovar e envio do arquivo XML do caixa" loading="lazy"></button>
+      <button type="button" class="zoom laptop" data-zoom="/assets/img/lp/painel-fid-hoje.webp" aria-label="Ampliar: painel da fidelidade"><span class="laptop-tela"><img src="/assets/img/lp/painel-fid-hoje.webp" width="1600" height="1012" alt="Painel da equipe na aba Clube de pontos: clientes, compras dos últimos 30 dias, pontos em aberto, notas para conferir com botão Aprovar e envio do arquivo XML do caixa" loading="lazy"></span><span class="laptop-base" aria-hidden="true"></span></button>
       <figcaption>O painel da equipe: notas para conferir, prêmios para entregar, clientes e o arquivo de notas do caixa.</figcaption>
     </figure>
 
-    <div class="dupla">
+    <div class="dupla dupla--igual">
       <div class="aviso-box">
         <b>Conferência das notas: você escolhe</b>
         <p><b style="color:#fff">Automática na SEFAZ:</b> o valor oficial, o CPF e os produtos são conferidos na hora e os pontos entram sozinhos. R$ 0,25 por nota conferida.</p>
@@ -430,8 +462,8 @@
 
     <div class="dupla dupla--inv">
       <div class="telas">
-        <button type="button" class="zoom fone" data-zoom="/assets/img/lp/dl-menu.webp" aria-label="Ampliar: cardápio do delivery"><img src="/assets/img/lp/dl-menu.webp" width="600" height="1299" alt="Página de pedidos do delivery: categorias, itens com botão de adicionar e a barra Ver carrinho com 3 itens" loading="lazy"></button>
-        <button type="button" class="zoom fone" data-zoom="/assets/img/lp/dl-acomp.webp" aria-label="Ampliar: acompanhamento do pedido"><img src="/assets/img/lp/dl-acomp.webp" width="600" height="1299" alt="Acompanhamento do pedido número 1: recebido, em preparo, saiu para entrega e entregue, com a chave Pix para pagar" loading="lazy"></button>
+        <button type="button" class="zoom fone" data-zoom="/assets/img/lp/dl-menu.webp" aria-label="Ampliar: cardápio do delivery"><span class="fone-tela"><span class="fone-status" aria-hidden="true"><span>9:41</span><svg><use href="#i-status"/></svg></span><img src="/assets/img/lp/dl-menu.webp" width="600" height="1299" alt="Página de pedidos do delivery: categorias, itens com botão de adicionar e a barra Ver carrinho com 3 itens" loading="lazy"></span></button>
+        <button type="button" class="zoom fone" data-zoom="/assets/img/lp/dl-acomp.webp" aria-label="Ampliar: acompanhamento do pedido"><span class="fone-tela"><span class="fone-status" aria-hidden="true"><span>9:41</span><svg><use href="#i-status"/></svg></span><img src="/assets/img/lp/dl-acomp.webp" width="600" height="1299" alt="Acompanhamento do pedido número 1: recebido, em preparo, saiu para entrega e entregue, com a chave Pix para pagar" loading="lazy"></span></button>
       </div>
       <ul class="lista-fx">
         <li><span class="ico"><svg><use href="#i-link"/></svg></span><div><b>Link próprio de pedidos</b><span>No seu endereço, com a sua marca. Nada de lojas concorrentes do lado.</span></div></li>
@@ -444,7 +476,7 @@
     </div>
 
     <figure class="painel-fig" style="margin:0">
-      <button type="button" class="zoom janela" data-zoom="/assets/img/lp/painel-delivery.webp" aria-label="Ampliar: painel do delivery"><img src="/assets/img/lp/painel-delivery.webp" width="1600" height="1012" alt="Painel do delivery com os pedidos em colunas: novos, em preparo e saiu para entrega, com valores, itens, endereço e botões para avançar" loading="lazy"></button>
+      <button type="button" class="zoom laptop" data-zoom="/assets/img/lp/painel-delivery.webp" aria-label="Ampliar: painel do delivery"><span class="laptop-tela"><img src="/assets/img/lp/painel-delivery.webp" width="1600" height="1012" alt="Painel do delivery com os pedidos em colunas: novos, em preparo e saiu para entrega, com valores, itens, endereço e botões para avançar" loading="lazy"></span><span class="laptop-base" aria-hidden="true"></span></button>
       <figcaption style="color:#E6D9FF">O painel do delivery: pedidos em colunas, do recebido ao entregue, com o total vendido no dia.</figcaption>
     </figure>
 
@@ -460,10 +492,20 @@
           <small>Coloque a porcentagem do seu contrato com o aplicativo de entrega.</small></label>
       </div>
       <div class="calc-out" aria-live="polite">
-        <div class="linha ruim"><span>Comissão por mês hoje</span><b id="rCom">R$ 0</b></div>
-        <div class="linha bom"><span>Delivery VTX Tap por mês</span><b id="rVtx">R$ 149</b></div>
-        <div class="calc-eco"><span>Fica com você, por mês</span><b id="rEco">R$ 0</b><small id="rAno"></small></div>
-        <small>Conta só para comparar comissões. Taxas da maquininha e do Pix não entram.</small>
+        <div class="calc-lado calc-hoje">
+          <span class="calc-rot">Hoje, no aplicativo de entrega</span>
+          <p class="calc-conta"><b id="rVendas">R$ 0</b> vendidos no mês × <b id="rPct">0%</b> de comissão</p>
+          <p class="calc-valor"><b id="rCom">R$ 0</b><small>de comissão por mês</small></p>
+          <span class="calc-barra"><i id="bCom"></i></span>
+        </div>
+        <div class="calc-lado calc-vtx">
+          <span class="calc-rot">Com o seu delivery na VTX Tap</span>
+          <p class="calc-conta">Mensalidade fixa, <b>sem porcentagem</b> sobre as vendas</p>
+          <p class="calc-valor"><b id="rVtx">R$ 149</b><small>por mês, com pedidos ilimitados</small></p>
+          <span class="calc-barra"><i id="bVtx"></i></span>
+        </div>
+        <div class="calc-eco"><span>Fica no seu caixa</span><b id="rEco">R$ 0</b><small id="rAno"></small></div>
+        <small class="calc-nota">Só compara comissão com mensalidade, para os pedidos que viessem pelo seu link. Taxas da maquininha e do Pix não mudam.</small>
       </div>
     </div>
 
@@ -487,8 +529,8 @@
     </div>
     <div class="mesa-grid">
       <div class="telas">
-        <button type="button" class="zoom fone" data-zoom="/assets/img/lp/sino.webp" aria-label="Ampliar: chamar o garçom"><img src="/assets/img/lp/sino.webp" width="600" height="1299" alt="Tela Precisa de algo: motivos Atendimento, Fazer pedido, Fechar a conta, Água ou gelo e o sino dourado Chamar garçom" loading="lazy"></button>
-        <button type="button" class="zoom fone" data-zoom="/assets/img/lp/cardapio.webp" aria-label="Ampliar: cardápio digital"><img src="/assets/img/lp/cardapio.webp" width="600" height="1299" alt="Cardápio digital com busca, categorias, preços e selos como vegetariano, sem glúten e picante" loading="lazy"></button>
+        <button type="button" class="zoom fone" data-zoom="/assets/img/lp/sino.webp" aria-label="Ampliar: chamar o garçom"><span class="fone-tela"><span class="fone-status" aria-hidden="true"><span>9:41</span><svg><use href="#i-status"/></svg></span><img src="/assets/img/lp/sino.webp" width="600" height="1299" alt="Tela Precisa de algo: motivos Atendimento, Fazer pedido, Fechar a conta, Água ou gelo e o sino dourado Chamar garçom" loading="lazy"></span></button>
+        <button type="button" class="zoom fone" data-zoom="/assets/img/lp/cardapio.webp" aria-label="Ampliar: cardápio digital"><span class="fone-tela"><span class="fone-status" aria-hidden="true"><span>9:41</span><svg><use href="#i-status"/></svg></span><img src="/assets/img/lp/cardapio.webp" width="600" height="1299" alt="Cardápio digital com busca, categorias, preços e selos como vegetariano, sem glúten e picante" loading="lazy"></span></button>
       </div>
       <ul class="lista-cl">
         <li><svg><use href="#i-bell"/></svg><div><b>Chamar o garçom pelo celular</b><span>O cliente escolhe o motivo (atendimento, pedido, conta, água) e segura o sino. A equipe vê a mesa, o nome e o tempo de espera.</span></div></li>
@@ -499,7 +541,7 @@
       </ul>
     </div>
     <figure class="painel-fig" style="margin:0">
-      <button type="button" class="zoom janela" data-zoom="/assets/img/lp/painel-chamados.webp" aria-label="Ampliar: painel de chamados"><img src="/assets/img/lp/painel-chamados.webp" width="1600" height="1012" alt="Painel de chamados: quatro mesas chamando com o motivo e o tempo, botões Estou indo e Resolvido e o mapa das mesas" loading="lazy"></button>
+      <button type="button" class="zoom laptop" data-zoom="/assets/img/lp/painel-chamados.webp" aria-label="Ampliar: painel de chamados"><span class="laptop-tela"><img src="/assets/img/lp/painel-chamados.webp" width="1600" height="1012" alt="Painel de chamados: quatro mesas chamando com o motivo e o tempo, botões Estou indo e Resolvido e o mapa das mesas" loading="lazy"></span><span class="laptop-base" aria-hidden="true"></span></button>
       <figcaption class="muted">Os chamados no painel: motivo, mesa, nome do cliente e o mapa do salão.</figcaption>
     </figure>
   </section>
@@ -535,13 +577,13 @@
       </ul>
     </div>
     <div class="ctas">
-      <a class="btn btn-roxo" data-precos href="/precos">Montar meu orçamento<svg><use href="#i-arrow"/></svg></a>
+      <a class="btn btn-roxo" data-precos href="/orcamento">Montar meu orçamento<svg><use href="#i-arrow"/></svg></a>
       <span class="muted">Simulador com implantação, plaquinhas e mensalidade separadas.</span>
     </div>
   </section>
 
   <section class="sec rev" id="duvidas" aria-labelledby="faqTitulo">
-    <div class="sec-h">
+    <div class="sec-h centro">
       <p class="kicker">Dúvidas</p>
       <h2 id="faqTitulo">Perguntas frequentes</h2>
     </div>
@@ -564,19 +606,19 @@
     <p>Mande uma mensagem: mostramos o sistema, montamos o orçamento para o seu número de mesas e tiramos as dúvidas. Sem compromisso.</p>
     <div class="ctas" style="justify-content:center">
       <a class="btn btn-ouro" data-contato href="https://ig.me/m/vortexsoftwareco" target="_blank" rel="noopener"><svg><use href="#i-msg"/></svg>Falar com a gente</a>
-      <a class="btn btn-linha" data-precos href="/precos">Montar meu orçamento</a>
+      <a class="btn btn-linha" data-precos href="/orcamento">Montar meu orçamento</a>
     </div>
   </section>
 
   <footer class="rodape">
     <span><img class="logo-escuro" src="/assets/img/vtx-tap-escuro.png" alt="VTX Tap" width="104" height="48"><img class="logo-claro" src="/assets/img/vtx-tap.png" alt="" width="104" height="48"></span>
-    <nav aria-label="Rodapé"><a data-precos href="/precos">Preços</a><a href="#duvidas">Dúvidas</a><a href="https://instagram.com/vortexsoftwareco" target="_blank" rel="noopener">@vortexsoftwareco</a></nav>
+    <nav aria-label="Rodapé"><a data-precos href="/orcamento">Orçamento</a><a href="#duvidas">Dúvidas</a><a href="https://instagram.com/vortexsoftwareco" target="_blank" rel="noopener">@vortexsoftwareco</a></nav>
   </footer>
 </main>
 
 <div class="cta-fixo" id="ctaFixo">
   <a class="btn btn-ouro" data-contato href="#contato">Quero conhecer</a>
-  <a class="btn btn-linha" data-precos href="/precos">Preços</a>
+  <a class="btn btn-linha" data-precos href="/orcamento">Orçamento</a>
 </div>
 
 <dialog class="zoom-dlg" id="zoomDlg" aria-label="Imagem ampliada"><img alt="" id="zoomImg"><button type="button" aria-label="Fechar" id="zoomFechar">×</button></dialog>
@@ -589,10 +631,10 @@
     const $ = (s) => document.getElementById(s);
     const brl = (v) => 'R$ ' + Math.round(v).toLocaleString('pt-BR');
     document.querySelectorAll('[data-contato]').forEach((a) => { a.href = CONTATO; a.target = '_blank'; a.rel = 'noopener'; });
-    // Local (/lp/) a página de preços é precos.html; publicada, é /precos.
-    if (location.pathname.startsWith('/lp/')) document.querySelectorAll('[data-precos]').forEach((a) => (a.href = '/lp/precos.html'));
+    // Local (/lp/) o simulador é orcamento.html; publicado, é /orcamento.
+    if (location.pathname.startsWith('/lp/')) document.querySelectorAll('[data-precos]').forEach((a) => (a.href = '/lp/orcamento.html'));
 
-    // Preços vêm de /assets/js/precos.js (a mesma tabela do painel e da página de preços).
+    // Preços vêm de /assets/js/precos.js (a mesma tabela do painel e do orçamento).
     const P = window.Precos;
     if (P) {
       const s = Object.fromEntries(P.SERVICOS.map((x) => [x.id, x]));
@@ -601,7 +643,9 @@
       const txt = { pagina: 'Cardápio, Wi-Fi, Google e comentários.', garcom: 'O sino na mesa e o painel de chamados.', fidelidade: 'Pontos pela nota, prêmios, níveis e ranking.', delivery: 'Pedidos ilimitados, sem comissão.' };
       const ordem = ['fidelidade', 'delivery', 'garcom', 'pagina'];
       $('precosCards').innerHTML = ordem.map((id) => `<article class="preco-card"><h3>${s[id].nome}</h3><p class="valor num">${brl(s[id].preco)}<span>/mês</span></p><p>${txt[id]}</p></article>`).join('')
-        + `<article class="preco-card combo"><span class="tag">Os quatro</span><h3>Tudo junto</h3><p class="valor num">${brl(todos.total)}<span>/mês</span></p><p>${brl(todos.economia)} a menos por mês que separados.</p></article>`;
+        + `<article class="preco-card combo"><span class="tag">Os quatro</span><h3>Tudo junto</h3><p class="valor num">${brl(todos.total)}<span>/mês</span></p>
+          <p class="eco">Economia de ${brl(todos.economia)}/mês</p>
+          <ul>${ordem.map((id) => `<li>${s[id].nome}</li>`).join('')}</ul></article>`;
       $('rVtx').textContent = brl(s.delivery.preco);
     }
 
@@ -611,12 +655,19 @@
       $('oPed').textContent = ped.toLocaleString('pt-BR');
       $('oTic').textContent = brl(tic);
       $('oCom').textContent = String(com).replace('.', ',') + '%';
-      const comissao = ped * tic * com / 100;
+      const vendas = ped * tic;
+      const comissao = vendas * com / 100;
       const vtx = P ? P.SERVICOS.find((x) => x.id === 'delivery').preco : 149;
       const eco = Math.max(0, comissao - vtx);
+      $('rVendas').textContent = brl(vendas);
+      $('rPct').textContent = String(com).replace('.', ',') + '%';
       $('rCom').textContent = brl(comissao);
-      $('rEco').textContent = brl(eco);
-      $('rAno').textContent = eco ? `${brl(eco * 12)} em um ano, se esses pedidos viessem pelo seu link.` : 'Com esse volume, a comissão ainda é menor que a mensalidade.';
+      $('rEco').textContent = eco ? brl(eco) + ' por mês' : 'R$ 0';
+      $('rAno').textContent = eco ? `${brl(eco * 12)} em um ano. É o que você deixa de pagar de comissão.` : 'Com esse volume, a comissão ainda é menor que a mensalidade.';
+      // Barras na mesma escala: o tamanho mostra quanto cada um custa.
+      const max = Math.max(comissao, vtx);
+      $('bCom').style.width = Math.max(2, comissao / max * 100) + '%';
+      $('bVtx').style.width = Math.max(2, vtx / max * 100) + '%';
     }
     ['cPed', 'cTic', 'cCom'].forEach((id) => $(id).addEventListener('input', calc));
     calc();
