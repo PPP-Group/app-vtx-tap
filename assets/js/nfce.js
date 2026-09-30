@@ -5,7 +5,7 @@
  * os produtos (para os mais pedidos) e se a nota foi cancelada. Aceita NFC-e (modelo 65), CF-e SAT e os eventos de
  * cancelamento; ignora o resto.
  *
- *   Nfce.lerArquivos(files) → { notas: [{ chave, cpf, valor, emitida_em } | { chave, cancelada }], resumo }
+ *   Nfce.lerArquivos(files) → { notas: [{ chave, cpf, valor, emitida_em, itens } | { chave, cancelada }], resumo }
  */
 (function () {
   const FFLATE = 'https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js';
@@ -124,7 +124,8 @@
     let canceladas = 0;
     for (const n of notas.values()) {
       if (Number.isFinite(n.valor) && n.emitida_em) {
-        lista.push({ chave: n.chave, cpf: n.cpf || null, valor: n.valor, emitida_em: n.emitida_em });
+        // Os produtos vão junto: alimentam o ranking de mais pedidos (fid_itens_salvar).
+        lista.push({ chave: n.chave, cpf: n.cpf || null, valor: n.valor, emitida_em: n.emitida_em, itens: n.itens || [] });
         if (n.cpf && !n.cancelada) comCpf++;
       }
       if (n.cancelada) {

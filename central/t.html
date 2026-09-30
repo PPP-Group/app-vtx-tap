@@ -108,9 +108,11 @@
       // Endereço do restaurante: subdomínio do domínio base. Sem domínio base
       // (teste local), o mesmo servidor com ?r=.
       var BASE = String(env.BASE_DOMAIN || '').toLowerCase();
-      function site(slug, caminho, params) {
-        var u = BASE ? new URL('https://' + slug + '.' + BASE + caminho) : new URL(caminho, location.origin);
-        if (!BASE) u.searchParams.set('r', slug);
+      // Domínio próprio no ar (ex.: cardapio.seurestaurante.com.br): a página da mesa abre por ele.
+      function site(slug, caminho, params, dominio) {
+        var u = dominio ? new URL('https://' + dominio + caminho)
+          : BASE ? new URL('https://' + slug + '.' + BASE + caminho) : new URL(caminho, location.origin);
+        if (!BASE && !dominio) u.searchParams.set('r', slug);
         Object.keys(params).forEach(function (k) { u.searchParams.set(k, params[k]); });
         return u.href;
       }
@@ -181,7 +183,7 @@
       if (!codigo) return mostrar('Link incompleto', 'Encoste o celular na plaquinha de novo ou aponte a câmera para o QR.');
       consultar().then(function (r) {
         if (r && r.status === 'ok' && r.slug) {
-          location.replace(site(r.slug, '/', { tag: codigo }));
+          location.replace(site(r.slug, '/', { tag: codigo }, r.dominio));
         } else if (r && r.status === 'livre') {
           telaAtivar();
         } else if (r && r.status === 'inativo') {

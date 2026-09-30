@@ -70,7 +70,7 @@
     { nome: 'Ouro', descricao: 'Os mais fiéis', cor: '#ca8a04', minimo: 1500, mult: 1.25, bonus: 150, beneficios: ['Prêmios exclusivos', 'Prioridade na reserva'] },
   ];
   const novoId = (nome) => `${String(nome || 'nivel').normalize('NFD').replace(/[^A-Za-z0-9]/g, '').toLowerCase().slice(0, 12) || 'nivel'}-${Math.random().toString(36).slice(2, 6)}`;
-  const linkPrograma = () => new URL('/?fidelidade', location.origin).href;
+  const linkPrograma = () => new URL('/?fidelidade', window.VTX_ORIGEM || location.origin).href;
   const sefazDe = (n) => n.url || null;
 
   /* ============================== Dados ============================== */

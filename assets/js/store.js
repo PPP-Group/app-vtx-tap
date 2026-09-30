@@ -924,6 +924,45 @@
         return { status: 'ok', pedido: { ...p, endereco, token: undefined, cliente: undefined },
           restaurante: { nome: conf.restaurante.nome, telefone: conf.restaurante.telefone, whatsapp: conf.delivery.whatsapp, pix: p.pagamento.forma === 'pix' ? conf.delivery.pix : null, tempo: conf.delivery.tempo } };
       },
+      /* ---------- Domínio próprio: demonstração (sem DNS de verdade, avança um passo a cada conferência) ---------- */
+      async dominio() {
+        const db = read();
+        const d = db.dominio || {};
+        return { slug: 'demo', dominio: d.dominio || null, status: d.status || null, mensagem: d.mensagem || null, ativo_em: d.ativo_em || null,
+          alvo: 'tap.vortexsystems.tech', base: 'vortexsystems.tech', admin: true, plano_dominio: d.status === 'ativo' ? 'proprio' : 'sub' };
+      },
+      async dominioDefinir(dominio) {
+        const v = String(dominio || '').trim().toLowerCase().replace(/^[a-z]+:\/\//, '').replace(/[/?#:@\s].*$/, '').replace(/\.+$/, '');
+        if (!/^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]$/.test(v)) throw new Error('Domínio inválido. Use só o endereço, sem https:// (ex.: cardapio.seurestaurante.com.br).');
+        if (v === 'vortexsystems.tech' || v.endsWith('.vortexsystems.tech')) throw new Error('Esse endereço já é da VTX Tap. Use um domínio do restaurante (ex.: cardapio.seurestaurante.com.br).');
+        const db = read();
+        if (!db.dominio || db.dominio.dominio !== v) db.dominio = { dominio: v, status: 'dns' };
+        write(db);
+        return this.dominio();
+      },
+      async dominioRemover() {
+        const db = read();
+        delete db.dominio;
+        write(db);
+        return this.dominio();
+      },
+      async dominioVerificar() {
+        const db = read();
+        const d = db.dominio;
+        if (!d) return { status: 'ok', ...(await this.dominio()), registros: [] };
+        const p = d.dominio.split('.');
+        const zona = ['com.br', 'net.br', 'org.br'].includes(p.slice(-2).join('.')) ? p.slice(-3).join('.') : p.slice(-2).join('.');
+        const raiz = zona === d.dominio;
+        // A primeira conferência (ao abrir a tela) ainda não acha o registro, como na vida real.
+        d.checks = (d.checks || 0) + 1;
+        if (d.checks > 1) d.status = { dns: 'certificado', certificado: 'ativo', ativo: 'ativo' }[d.status];
+        d.mensagem = d.status === 'certificado' ? 'DNS certo. Estamos gerando o certificado HTTPS: costuma levar poucos minutos.' : null;
+        if (d.status === 'ativo') d.ativo_em = d.ativo_em || nowIso();
+        write(db);
+        const ok = d.status !== 'dns';
+        return { status: 'ok', ...(await this.dominio()), raiz, zona, encontrado: ok ? 'CNAME apontando para tap.vortexsystems.tech' : 'nenhum registro ainda',
+          registros: raiz ? [{ tipo: 'A', nome: '@', valor: '187.0.0.10', ok }] : [{ tipo: 'CNAME', nome: d.dominio.slice(0, -(zona.length + 1)), valor: 'tap.vortexsystems.tech', ok }] };
+      },
       // Mesmas regras de public.delivery_enderecos.
       async deliveryEnderecos(telefone) {
         const db = read();
@@ -1350,7 +1389,9 @@
      Um banco para todos os restaurantes: tudo é filtrado pelo restaurante
      deste endereço (subdomínio), e as regras do banco garantem o isolamento. */
   function SupabaseAdapter() {
-    const { supabaseUrl, supabaseAnonKey, slug } = cfg.backend;
+    const { supabaseUrl, supabaseAnonKey } = cfg.backend;
+    // Restaurante deste endereço: o subdomínio (ou ?r=). Num domínio próprio, sai de restaurante_por_dominio no init.
+    let slug = cfg.backend.slug;
     const listeners = new Set();
     let sb;
     let rid = null;
@@ -1374,7 +1415,13 @@
       async init({ realtimeAll = false } = {}) {
         await loadScript('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js');
         sb = window.supabase.createClient(supabaseUrl, supabaseAnonKey);
-        const r = slug ? must(await sb.rpc('restaurante_publico', { p_slug: slug })) : null;
+        let r = null;
+        // Domínio próprio (ex.: cardapio.seurestaurante.com.br): o restaurante sai do endereço cadastrado.
+        if (cfg.backend.dominio) {
+          r = must(await sb.rpc('restaurante_por_dominio', { p_host: cfg.backend.dominio }));
+          if (r) slug = cfg.backend.slug = r.slug;
+        }
+        if (!r && slug) r = must(await sb.rpc('restaurante_publico', { p_slug: slug }));
         if (!r) throw Object.assign(new Error('Restaurante não encontrado.'), { code: 'SEM_RESTAURANTE' });
         rid = r.id;
         this.restaurante = { id: r.id, slug: r.slug, nome: r.nome };
@@ -1560,6 +1607,28 @@
       },
       async deliveryAcompanhar(token) {
         return must(await sb.rpc('delivery_acompanhar', { p_token: token }));
+      },
+      /* ---------- Domínio próprio (Ajustes › Endereço) ---------- */
+      async dominio() {
+        return must(await sb.rpc('meu_dominio'));
+      },
+      async dominioDefinir(dominio) {
+        return must(await sb.rpc('dominio_definir', { p_dominio: dominio }));
+      },
+      async dominioRemover() {
+        return must(await sb.rpc('dominio_remover'));
+      },
+      // Confere o DNS e o HTTPS agora (função "dominio") e devolve os registros a criar.
+      async dominioVerificar() {
+        const token = (await sb.auth.getSession()).data.session?.access_token;
+        const r = await fetch(`${supabaseUrl}/functions/v1/dominio`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', apikey: supabaseAnonKey, Authorization: `Bearer ${token || supabaseAnonKey}` },
+          body: JSON.stringify({ acao: 'verificar' }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.mensagem || 'Não foi possível conferir agora. Tente de novo em instantes.');
+        return j;
       },
       // Endereços já usados, achados pelo celular (resumo mascarado + taxa; para pedir vai só a referência).
       async deliveryEnderecos(telefone) {

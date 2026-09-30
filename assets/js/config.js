@@ -24,6 +24,14 @@ function slugDoEndereco(base) {
     return (p || '').toLowerCase();
   }
 }
+// cardapio.seurestaurante.com.br → esse endereço; subdomínios da VTX, a central, localhost e IP → ''.
+function dominioProprio(base, central) {
+  const host = location.hostname.toLowerCase();
+  base = String(base || '').toLowerCase().replace(/^\.+|\.+$/g, '');
+  if (!host.includes('.') || /^[\d.]+$/.test(host) || host === 'localhost') return '';
+  if ((base && (host === base || host.endsWith('.' + base))) || host === String(central || '').toLowerCase()) return '';
+  return host;
+}
 window.NFC_CONFIG = {
   restaurante: {
     nome: 'Quintal Bistrô',
@@ -91,6 +99,8 @@ window.NFC_CONFIG = {
     supabaseAnonKey: env.SUPABASE_ANON_KEY || '',
     // Restaurante deste endereço: o subdomínio (quintal.vortexsystems.tech → "quintal").
     slug: slugDoEndereco(env.BASE_DOMAIN),
+    // Endereço fora do domínio da VTX (ex.: cardapio.seurestaurante.com.br): o restaurante é achado pelo domínio.
+    dominio: dominioProprio(env.BASE_DOMAIN, env.CENTRAL_HOST),
   },
 
   tags: {

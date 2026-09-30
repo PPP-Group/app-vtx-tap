@@ -914,8 +914,9 @@
   // As plaquinhas saem de fábrica com um código (NFC e QR iguais) que passa
   // pelo redirecionador central e chega aqui como /?tag=CODIGO. Na primeira
   // leitura, alguém da equipe escolhe a mesa; depois o código abre direto.
-  const tableUrl = (n) => new URL(`/?mesa=${n}`, location.origin).href;
-  const tagUrl = (codigo) => new URL(`/?tag=${encodeURIComponent(codigo)}`, location.origin).href;
+  // Links públicos: pelo domínio próprio quando ele está no ar (window.VTX_ORIGEM), senão por este endereço.
+  const tableUrl = (n) => new URL(`/?mesa=${n}`, window.VTX_ORIGEM || location.origin).href;
+  const tagUrl = (codigo) => new URL(`/?tag=${encodeURIComponent(codigo)}`, window.VTX_ORIGEM || location.origin).href;
   const normCodigo = (c) => String(c || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
   const placasDa = (n) => S.etiquetas.filter((e) => e.mesa === n);
 
@@ -1181,13 +1182,14 @@
     { id: 'cardapio', label: 'Cardápio', intro: 'Categorias e pratos que o cliente vê no cardápio da mesa.' },
     { id: 'widgets', label: 'Widgets', intro: 'Escolha o que aparece na página da mesa e em que ordem.' },
     { id: 'aparelho', label: 'Aparelho', intro: 'Preferências deste aparelho. Cada pessoa da equipe ajusta o seu.' },
+    { id: 'endereco', label: 'Endereço', intro: 'O endereço do site do restaurante. O incluso funciona sempre; se quiser, conecte o domínio do restaurante e o sistema confere e ativa sozinho.' },
     { id: 'plano', label: 'Plano', intro: 'Serviços e mesas contratados. Aumente ou diminua aqui: a mudança vale na hora e a nova mensalidade entra na próxima cobrança.' },
   ];
   const DIAS = [[1, 'Segunda'], [2, 'Terça'], [3, 'Quarta'], [4, 'Quinta'], [5, 'Sexta'], [6, 'Sábado'], [0, 'Domingo']];
 
   function vAjustes() {
     const tab = AJ_TABS.find((t) => t.id === S.ajTab) || AJ_TABS[0];
-    const body = { restaurante: ajRestaurante, cardapio: ajCardapio, widgets: ajWidgets, aparelho: ajAparelho, plano: ajPlano }[tab.id]();
+    const body = { restaurante: ajRestaurante, cardapio: ajCardapio, widgets: ajWidgets, aparelho: ajAparelho, endereco: ajEndereco, plano: ajPlano }[tab.id]();
     return `<div class="vhead"><div><h1>Ajustes</h1><p>${tab.intro}</p></div><span class="save-state" id="saveState" role="status"></span></div>
       <div class="aj-tabs" role="tablist" aria-label="Seções de ajustes">
         ${AJ_TABS.map((t) => `<button type="button" role="tab" aria-selected="${t.id === tab.id}" data-aj="${t.id}">${t.label}</button>`).join('')}
@@ -1723,6 +1725,129 @@
 
   /* Este aparelho */
   const temaAtual = () => get('nfc-tema-painel') || 'light';
+  /* Endereço: domínio próprio (ex.: cardapio.seurestaurante.com.br), configurado pelo próprio restaurante.
+     O painel mostra o registro DNS a criar e confere sozinho a cada 20 s (função "dominio"); o roteador de
+     domínios põe a rota e o certificado HTTPS no Traefik. Situações: dns → certificado → ativo. */
+  const DOM_PASSOS = [['dns', 'Registro no DNS'], ['certificado', 'Certificado HTTPS'], ['ativo', 'No ar']];
+  const DOM_ROTULO = { dns: 'Aguardando o DNS', certificado: 'Gerando o certificado', ativo: 'No ar' };
+  let domTimer = 0;
+  async function carregarDominio(silencioso) {
+    clearTimeout(domTimer);
+    try {
+      S.dom = await store.dominioVerificar();
+      if (S.dom.status === 'ativo' && S.dom.dominio) window.VTX_ORIGEM = `https://${S.dom.dominio}`;
+      else window.VTX_ORIGEM = '';
+    } catch (e) {
+      console.error(e);
+      if (!S.dom) S.dom = await store.dominio().catch(() => ({ erro: true }));
+      if (!silencioso) toast(e.message || 'Não foi possível conferir o domínio agora.', { tone: 'error' });
+    }
+    S.domVerificando = false;
+    if (S.view === 'ajustes' && S.ajTab === 'endereco') {
+      renderView();
+      // Enquanto não está no ar, confere sozinho a cada 20 segundos.
+      if (S.dom && S.dom.dominio && S.dom.status !== 'ativo') domTimer = setTimeout(() => S.view === 'ajustes' && S.ajTab === 'endereco' && carregarDominio(true), 20000);
+    }
+  }
+  function ajEndereco() {
+    if (!S.dom) {
+      carregarDominio(true);
+      return '<p class="muted">Carregando o endereço…</p>';
+    }
+    const d = S.dom;
+    const incluso = d.base && d.slug ? `${d.slug}.${d.base}` : location.host;
+    const adm = !!S.user.admin;
+    const i = d.dominio ? Math.max(0, DOM_PASSOS.findIndex(([k]) => k === d.status)) : -1;
+    const regs = d.registros || [];
+    const hora = d.checado_em ? new Date(d.checado_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
+    return `<div class="aj-grid dom-grid">
+      <section class="panel stack">
+        <h2>Endereço incluso</h2>
+        <p class="dom-end"><a class="mono" href="https://${esc(incluso)}" target="_blank" rel="noopener">${esc(incluso)}</a>${icon('check')}</p>
+        <p class="help">Funciona sempre, com HTTPS, e não precisa configurar nada.${d.status === 'ativo' ? ' Com o domínio próprio no ar, os dois endereços abrem o mesmo site.' : ''}</p>
+      </section>
+      <section class="panel stack dom-proprio">
+        <h2>Domínio próprio</h2>
+        ${!d.dominio ? (adm ? `<form class="stack" id="domForm" novalidate>
+            <p>Use o domínio do restaurante, como <b class="mono">cardapio.seurestaurante.com.br</b>. O ideal é um subdomínio (cardapio., pedidos., menu.), que não mexe no site que vocês já têm.</p>
+            <label class="field"><span>Domínio</span><input class="input mono" name="dominio" placeholder="cardapio.seurestaurante.com.br" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="url" required></label>
+            <p class="note">${icon('receipt')}<span><b>R$ 190 de configuração + R$ 19 por mês</b>, somados ao plano só quando o domínio ficar no ar.</span></p>
+            <p class="form-error" id="domErro" role="alert"></p>
+            <button type="submit" class="btn btn-cobalt">${icon('plus')} Adicionar domínio</button>
+          </form>` : `<p class="note">${icon('lock')}<span>Só o administrador do restaurante conecta um domínio próprio.</span></p>`)
+        : `<div class="dom-topo"><b class="mono dom-nome">${esc(d.dominio)}</b><span class="dom-selo is-${esc(d.status)}">${esc(DOM_ROTULO[d.status] || d.status)}</span></div>
+          <ol class="dom-passos">
+            <li class="is-feito">${icon('check')}<span>Domínio adicionado</span></li>
+            ${DOM_PASSOS.map(([k, t], n) => `<li class="${n < i || d.status === 'ativo' ? 'is-feito' : n === i ? 'is-agora' : ''}">${n < i || d.status === 'ativo' ? icon('check') : `<i>${n + 2}</i>`}<span>${t}</span></li>`).join('')}
+          </ol>
+          ${d.status === 'ativo' ? `<div class="dom-ok">${icon('check')}<div><b>No ar em <a href="https://${esc(d.dominio)}" target="_blank" rel="noopener">https://${esc(d.dominio)}</a></b>
+              <p>As plaquinhas, o link do clube de pontos e o link do delivery já abrem por ele.</p></div></div>`
+            : `<p>${d.status === 'certificado' ? 'O DNS está certo. Agora é com a gente: o certificado HTTPS sai sozinho em poucos minutos.' : `Crie ${regs.length > 1 ? 'estes registros' : 'este registro'} no painel onde o domínio foi comprado (Registro.br, Hostinger, GoDaddy, Cloudflare…):`}</p>
+            ${regs.length ? `<div class="dom-regs" role="table" aria-label="Registros DNS">
+              <div class="dom-reg dom-reg--cab" role="row"><span role="columnheader">Tipo</span><span role="columnheader">Nome</span><span role="columnheader">Valor</span><span></span></div>
+              ${regs.map((r) => `<div class="dom-reg ${r.ok ? 'is-ok' : ''}" role="row">
+                <span role="cell"><b class="mono">${esc(r.tipo)}</b></span>
+                <span role="cell" class="dom-copia"><b class="mono">${esc(r.nome)}</b><button type="button" class="icon-btn" data-copiar="${esc(r.nome)}" aria-label="Copiar o nome">${icon('copy')}</button></span>
+                <span role="cell" class="dom-copia"><b class="mono">${esc(r.valor)}</b><button type="button" class="icon-btn" data-copiar="${esc(r.valor)}" aria-label="Copiar o valor">${icon('copy')}</button></span>
+                <span role="cell" class="dom-reg-st">${r.ok ? `${icon('check')} Certo` : 'Aguardando'}</span></div>`).join('')}
+            </div>` : ''}
+            ${d.status === 'dns' ? `<ul class="dom-dicas">
+              <li>${d.raiz ? 'No domínio inteiro (sem subdomínio) o registro é do tipo <b>A</b>, com o nome <b>@</b>. Apague outros registros A ou AAAA desse nome.' : 'No campo Nome vai só a parte antes do domínio. Se já existir um registro com esse nome, troque pelo novo.'}</li>
+              <li>Na Cloudflare, deixe a nuvem <b>cinza</b> (somente DNS).</li>
+              <li>A mudança costuma aparecer em minutos, mas pode levar algumas horas. Pode fechar esta tela: a conferência continua sozinha.</li>
+            </ul>` : ''}
+            ${d.mensagem ? `<p class="help">${esc(d.mensagem)}</p>` : ''}`}
+          <div class="dom-acoes">
+            ${d.status !== 'ativo' ? `<button type="button" class="btn btn-cobalt" data-dom="verificar" ${S.domVerificando ? 'disabled' : ''}>${icon('search')} ${S.domVerificando ? 'Conferindo…' : 'Verificar agora'}</button>` : ''}
+            ${adm ? `<button type="button" class="btn btn-quiet" data-dom="remover">${d.status === 'ativo' ? 'Remover domínio' : 'Trocar ou remover'}</button>` : ''}
+            ${hora && d.status !== 'ativo' ? `<small class="muted">Última conferência às ${hora}. Confere de novo sozinho a cada 20 s.</small>` : ''}
+          </div>`}
+      </section>
+    </div>`;
+  }
+  document.addEventListener('submit', async (e) => {
+    if (e.target.id !== 'domForm') return;
+    e.preventDefault();
+    const f = e.target;
+    const v = f.elements.dominio.value.trim();
+    const erro = (m) => { $('#domErro').textContent = m; };
+    if (!v) return erro('Digite o domínio.');
+    const b = f.querySelector('[type=submit]');
+    b.disabled = true;
+    try {
+      await store.dominioDefinir(v);
+      S.dom = null;
+      toast('Domínio adicionado. Agora crie o registro DNS.', { tone: 'ok' });
+      await carregarDominio(true);
+    } catch (ex) {
+      b.disabled = false;
+      erro(ex.message || 'Não foi possível adicionar o domínio.');
+    }
+  });
+  document.addEventListener('click', async (e) => {
+    const cp = e.target.closest('.dom-regs [data-copiar]');
+    if (cp) return UI.copyText(cp.dataset.copiar).then((ok) => toast(ok ? 'Copiado.' : 'Não foi possível copiar.', { tone: ok ? 'ok' : 'error' }));
+    const b = e.target.closest('[data-dom]');
+    if (!b) return;
+    if (b.dataset.dom === 'verificar') {
+      S.domVerificando = true;
+      renderView();
+      return carregarDominio();
+    }
+    if (b.dataset.dom === 'remover') {
+      const d = S.dom || {};
+      if (!confirm(`Remover o domínio ${d.dominio}? O site continua no endereço incluso${d.status === 'ativo' ? ', e o domínio próprio sai do plano' : ''}.`)) return;
+      try {
+        S.dom = await store.dominioRemover();
+        window.VTX_ORIGEM = '';
+        toast('Domínio removido.', { tone: 'ok' });
+        await carregarDominio(true);
+      } catch (ex) {
+        toast(ex.message || 'Não foi possível remover.', { tone: 'error' });
+      }
+    }
+  });
+
   /* Plano: upsell e downsell pelo próprio restaurante */
   const SERVICOS = Precos.SERVICOS.map((x) => [x.id, x.nome, x.preco, x.desc]);
   const reais = (v) => 'R$ ' + Number(v || 0).toLocaleString('pt-BR');
@@ -1776,7 +1901,7 @@
         <ul class="plano-atual">${SERVICOS.map(([k, n]) => `<li class="${atual.servicos[k] ? 'is-on' : ''}">${icon(atual.servicos[k] ? 'check' : 'x')} ${n}</li>`).join('')}
           <li class="is-on">${icon('grid')} ${atual.mesas >= 500 ? 'Mesas sem limite' : `${atual.mesas} mesas`}</li></ul>
         <p class="plano-valor"><b>${reais(S.plano.mensal)}</b> por mês</p>
-        <p class="help">Endereço (domínio) e tempo de contrato: fale com a VTX.</p>
+        <p class="help">Domínio próprio: em Ajustes › Endereço. Tempo de contrato: fale com a VTX.</p>
       </section>
       ${sefazPlano()}
       ${!S.user.admin ? `<section class="panel stack">
@@ -2336,6 +2461,8 @@
     $$('.sheet [data-close].icon-btn').forEach((b) => (b.innerHTML = icon('x')));
     if (started) return;
     started = true;
+    // Domínio próprio no ar: os links públicos (QR das mesas, clube, delivery) passam a usar ele.
+    if (store.dominio) store.dominio().then((d) => { if (d && d.status === 'ativo' && d.dominio) window.VTX_ORIGEM = `https://${d.dominio}`; }).catch(() => {});
     if (window.FidPainel) FidPainel.iniciar({ store, S, rerender: renderView, chrome: renderChrome, ding, isDemo, prepararImagem });
     if (window.DelPainel) DelPainel.iniciar({ store, S, rerender: renderView, chrome: renderChrome, ding });
     route();
