@@ -19,10 +19,11 @@
   --cobalt-rgb: 125, 39, 252;
   --enamel: #FBFBF7;
 
-  --brass: #C9962D;
-  --brass-hi: #E9C271;
-  --brass-lo: #8C6416;
-  --brass-soft: #F6ECD4;
+  /* Amarelo da marca: o mesmo amarelo claro da página da mesa (selo, clube de pontos). */
+  --brass: #FFC61A;
+  --brass-hi: #FFD84A;
+  --brass-lo: #8A6200;
+  --brass-soft: #FFF3C4;
   --pepper: #CF3E27;
   --pepper-soft: #FBE4DF;
   --amber: #B86E00;
@@ -361,3 +362,11 @@ img, svg { display: block; }
   :root:not([data-theme="light"]) .vtx-logo .vtx-escuro { display: none; }
   :root:not([data-theme="light"]) .vtx-logo .vtx-claro { display: inline; }
 }
+
+/* Seleção de texto e barra de rolagem na cor de destaque (a cor principal do restaurante). */
+::selection { background: rgba(var(--cobalt-rgb), .28); color: inherit; }
+html { scrollbar-color: rgba(var(--cobalt-rgb), .55) transparent; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(var(--cobalt-rgb), .5); border-radius: 999px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background-color: rgba(var(--cobalt-rgb), .75); }

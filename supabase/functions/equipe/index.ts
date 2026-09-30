@@ -1,7 +1,8 @@
 // Cadastro e login da equipe por PIN, por restaurante.
-// Todo pedido traz o restaurante (id). A senha da equipe (definida pela central)
-// só cria a PRIMEIRA conta, que vira a administradora. Depois disso, só quem é
-// administrador adiciona, remove e troca o PIN das pessoas. Entrar exige só o PIN.
+// Todo pedido traz o restaurante (id). Com o código da equipe (a "senha da equipe", definida
+// pela central e trocada pelo administrador), a pessoa cria a própria conta: a PRIMEIRA vira
+// administradora, as outras entram como equipe. Só administrador adiciona, remove, dá acesso de
+// administrador, troca o PIN dos outros e o código da equipe. Entrar exige só o PIN.
 // A sessão devolvida é uma sessão normal do Supabase Auth, então as regras
 // de acesso do banco (public.meu_restaurante()) valem para tudo o que vem depois.
 import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2';
@@ -116,26 +117,26 @@ Deno.serve(async (req) => {
       return json({ nome: m.nome, admin: !!m.admin, sessao: await abrirSessao(sb, u.user.email) });
     }
 
-    // Só a primeira conta do restaurante se cadastra sozinha (com a senha da equipe) e vira administradora.
+    // Cadastro com o código da equipe (nome + código + PIN próprio). A primeira conta do restaurante vira
+    // administradora; as outras entram como equipe e só viram administradoras se um administrador der o acesso.
     if (acao === 'cadastrar') {
       const nome = String(body.nome || '').trim().slice(0, 60);
       const pin = String(body.pin || '');
       const senha = String(body.senhaEquipe || '');
       if (!nome) return erro('Informe seu nome.');
       if (!PIN_OK.test(pin)) return erro('O PIN precisa ter de 4 a 8 números.');
-      if (senha.length < 6) return erro('A senha da equipe tem pelo menos 6 caracteres.');
+      if (senha.length < 6) return erro('O código da equipe tem pelo menos 6 caracteres.');
       if (!(await podeTentar(sb, `cadastrar:${ip}`, 6, 15))) return erro('Muitas tentativas. Aguarde 15 minutos e tente de novo.', 429);
 
-      const { count } = await sb.from('equipe_membros').select('id', { count: 'exact', head: true }).eq('restaurante_id', rest);
-      if ((count || 0) > 0) return erro('Este restaurante já tem administrador. Peça para ele cadastrar você no painel.', 403);
-
       const conf = await rpc<string>(sb, 'equipe_conferir_senha', { p_restaurante: rest, p_senha: senha });
-      if (conf === 'sem_senha') return erro('A senha da equipe ainda não foi definida. Fale com a Vortex.', 403);
-      if (conf === 'errada') return erro('Senha da equipe incorreta. Ela foi enviada pela Vortex.', 403);
+      if (conf === 'sem_senha') return erro('O código da equipe ainda não foi definido. Fale com a Vortex.', 403);
+      if (conf === 'errada') return erro('Código da equipe incorreto. Peça o código ao administrador do restaurante.', 403);
 
-      const r = await criarMembro(sb, rest, nome, pin, true);
+      const { count } = await sb.from('equipe_membros').select('id', { count: 'exact', head: true }).eq('restaurante_id', rest);
+      const primeira = (count || 0) === 0;
+      const r = await criarMembro(sb, rest, nome, pin, primeira);
       if (r.erro) return erro(r.erro, 409);
-      return json({ nome, admin: true, primeiraConta: true, sessao: await abrirSessao(sb, r.email!) });
+      return json({ nome, admin: primeira, primeiraConta: primeira, sessao: await abrirSessao(sb, r.email!) });
     }
 
     // A partir daqui, só quem já é da equipe.
@@ -200,7 +201,7 @@ Deno.serve(async (req) => {
 
     if (acao === 'trocar_senha') {
       const senha = String(body.senha || '');
-      if (senha.length < 6) return erro('A senha da equipe precisa ter pelo menos 6 caracteres.');
+      if (senha.length < 6) return erro('O código da equipe precisa ter pelo menos 6 caracteres.');
       await rpc(sb, 'equipe_trocar_senha', { p_restaurante: rest, p_senha: senha });
       return json({ ok: true });
     }

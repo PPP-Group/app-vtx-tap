@@ -631,7 +631,7 @@
             <td>${fmtData(m.criado_em)}</td>
             <td>${esc((m.restaurantes && m.restaurantes.nome) || '—')}</td>
             <td><b>${tipo}</b><br><small class="muted">${esc(txt(m.antes))} → ${esc(txt(m.depois))}</small></td>
-            <td class="num">${m.mensal_antes == null ? '' : `${reais(m.mensal_antes)} → `}<b>${reais(m.mensal_depois)}</b>${dif ? ` <span class="${dif > 0 ? 'up' : 'down'}">${dif > 0 ? '+' : '−'}${reais(Math.abs(dif))}</span>` : ''}</td>
+            <td class="num">${m.mensal_antes == null ? '' : `${reais(m.mensal_antes)} → `}<b>${reais(m.mensal_depois)}</b>${dif ? ` <span class="${dif > 0 ? 'up' : 'down'}">${dif > 0 ? '+' : '−'}${reais(Math.abs(dif))}</span>` : ''}${+m.taxa_unica ? `<small class="up">+ taxa única ${reais(m.taxa_unica)} (mesas)</small>` : ''}</td>
             <td>${m.origem === 'restaurante' ? `Restaurante (${esc(m.por || 'equipe')})` : `Central${m.por ? ` (${esc(m.por)})` : ''}`}</td></tr>`;
         }).join('')}</tbody></table></div></section>`;
   }

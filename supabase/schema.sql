@@ -199,6 +199,8 @@ create table if not exists public.plano_mudancas (
   visto          boolean not null default false,
   criado_em      timestamptz not null default now()
 );
+-- Taxa única da mudança: diferença da implantação quando o restaurante sobe de faixa de mesas.
+alter table public.plano_mudancas add column if not exists taxa_unica numeric(10, 2) not null default 0;
 create index if not exists plano_mudancas_rest_idx on public.plano_mudancas (restaurante_id, criado_em desc);
 create index if not exists plano_mudancas_visto_idx on public.plano_mudancas (visto, criado_em desc);
 alter table public.plano_mudancas enable row level security;
@@ -208,12 +210,36 @@ create policy "operador ve mudancas" on public.plano_mudancas
   for all to authenticated using (public.eh_operador()) with check (public.eh_operador());
 
 -- Aplica um plano: guarda, sincroniza a fidelidade, corta mesas acima do contratado e registra a mudança.
+-- Implantação por faixa de mesas (a mesma tabela de Precos.IMPLANTACAO): até 20, 21 a 50, 51 ou mais.
+create or replace function public.implantacao_faixa(p_mesas int) returns numeric language sql immutable as $$
+  select (case when coalesce(p_mesas, 0) <= 20 then 590 when p_mesas <= 50 then 890 else 1190 end)::numeric;
+$$;
+
+-- Maior faixa de implantação que o restaurante já pagou: o plano atual e todas as mudanças anteriores.
+-- Assim, diminuir as mesas e aumentar de novo não cobra duas vezes. Plano ainda não definido: 0.
+create or replace function public.implantacao_paga(p_restaurante uuid) returns numeric
+language sql stable security definer set search_path = public as $$
+  select case when not coalesce((public.plano_de(p_restaurante) ->> 'definido')::boolean, false) then 0
+    else greatest(public.implantacao_faixa((public.plano_de(p_restaurante) ->> 'mesas')::int),
+      coalesce((select max(public.implantacao_faixa((m.depois ->> 'mesas')::int)) from public.plano_mudancas m where m.restaurante_id = p_restaurante), 0)) end;
+$$;
+
+-- Taxa única ao subir de faixa pelo painel: a diferença da implantação (metade no contrato de 12 meses).
+create or replace function public.taxa_mesas(p_restaurante uuid, p_novo jsonb) returns numeric
+language sql stable security definer set search_path = public as $$
+  select case when public.implantacao_paga(p_restaurante) = 0 then 0
+    else round(greatest(public.implantacao_faixa((p_novo ->> 'mesas')::int) - public.implantacao_paga(p_restaurante), 0)
+      * case when (p_novo ->> 'contrato') = '12' then 0.5 else 1 end, 2) end;
+$$;
+
 create or replace function public.plano_aplicar(p_restaurante uuid, p_plano jsonb, p_origem text, p_por text) returns jsonb
 language plpgsql security definer set search_path = public as $$
-declare antes jsonb := public.plano_de(p_restaurante); novo jsonb := public.plano_normalizar(p_plano); n int;
+declare antes jsonb := public.plano_de(p_restaurante); novo jsonb := public.plano_normalizar(p_plano); n int; taxa numeric := 0;
 begin
   if antes is null then raise exception 'Restaurante não encontrado.'; end if;
   n := (novo ->> 'mesas')::int;
+  -- Só a mudança feita pelo próprio restaurante gera a taxa; a central define o plano já com a implantação combinada.
+  if p_origem = 'restaurante' then taxa := public.taxa_mesas(p_restaurante, novo); end if;
   update public.restaurantes set
     plano = novo,
     modulos = coalesce(modulos, '{}'::jsonb) || jsonb_build_object('fidelidade', novo -> 'servicos' -> 'fidelidade'),
@@ -224,11 +250,11 @@ begin
       else mesas end
   where id = p_restaurante;
   if (antes - 'definido' - 'inicio') is distinct from (novo - 'definido' - 'inicio') or not coalesce((antes ->> 'definido')::boolean, false) then
-    insert into public.plano_mudancas (restaurante_id, antes, depois, mensal_antes, mensal_depois, origem, por)
+    insert into public.plano_mudancas (restaurante_id, antes, depois, mensal_antes, mensal_depois, origem, por, taxa_unica)
     values (p_restaurante, case when coalesce((antes ->> 'definido')::boolean, false) then antes end, novo,
-            case when coalesce((antes ->> 'definido')::boolean, false) then public.plano_preco(antes) end, public.plano_preco(novo), p_origem, left(p_por, 120));
+            case when coalesce((antes ->> 'definido')::boolean, false) then public.plano_preco(antes) end, public.plano_preco(novo), p_origem, left(p_por, 120), taxa);
   end if;
-  return novo;
+  return novo || jsonb_build_object('taxa_unica', taxa);
 end $$;
 
 create or replace function public.restaurante_ativo(p_restaurante uuid) returns boolean
@@ -2051,8 +2077,9 @@ begin
   if r is null then raise exception 'Acesso negado.'; end if;
   p := public.plano_de(r);
   return jsonb_build_object('plano', p, 'mensal', public.plano_preco(p), 'sefaz', public.sefaz_uso(r),
+    'implantacao_paga', public.implantacao_paga(r),
     'historico', coalesce((select jsonb_agg(jsonb_build_object('criado_em', criado_em, 'origem', origem, 'por', por,
-        'antes', antes, 'depois', depois, 'mensal_antes', mensal_antes, 'mensal_depois', mensal_depois) order by criado_em desc)
+        'antes', antes, 'depois', depois, 'mensal_antes', mensal_antes, 'mensal_depois', mensal_depois, 'taxa_unica', taxa_unica) order by criado_em desc)
       from (select * from public.plano_mudancas where restaurante_id = r order by criado_em desc limit 20) m), '[]'::jsonb));
 end $$;
 
@@ -2090,7 +2117,8 @@ begin
     'public.fid_conferir_xml(text)', 'public.fid_auto_creditar(text)', 'public.fid_chave_problema(uuid, text)',
     'public.fid_nova_sessao(uuid, text)', 'public.fid_quem()',
     'public.plano_normalizar(jsonb)', 'public.plano_de(uuid)', 'public.plano_preco(jsonb)', 'public.plano_tem(uuid, text)',
-    'public.plano_aplicar(uuid, jsonb, text, text)'] loop
+    'public.plano_aplicar(uuid, jsonb, text, text)', 'public.implantacao_faixa(int)', 'public.implantacao_paga(uuid)',
+    'public.taxa_mesas(uuid, jsonb)'] loop
     execute format('revoke execute on function %s from public, anon, authenticated', f);
   end loop;
   -- Só a função "equipe" (service_role).

@@ -84,33 +84,35 @@
   const nomeDaSessao = (id) => (id && (S.sessoes.find((s) => s.id === id) || {}).nome) || '';
 
   /* ============================== Entrada ============================== */
-  // Entrar: só o PIN. Criar conta (só a primeira, que vira administradora): nome, PIN novo e a senha da equipe.
-  // Depois disso, o administrador cadastra as outras pessoas em Ajustes → Restaurante → Equipe.
+  // Entrar: só o PIN. Criar conta: nome, PIN novo e o código da equipe. A primeira conta vira administradora;
+  // as outras entram como equipe (um administrador pode dar o acesso de administrador em Ajustes → Restaurante → Equipe).
   let temSenhaEquipe = true;
   let temEquipe = false;
   function showLogin(msg = '') {
     $('#shell').hidden = true;
     $('#login').hidden = false;
     $('#loginBrand').textContent = nomeRest();
-    const criar = S.loginModo === 'criar' && !temEquipe;
+    const criar = S.loginModo === 'criar';
     $('#loginForm').innerHTML = `${S.vincular ? `<p class="note">${icon('nfc')}<span>Entre para ligar a plaquinha <b class="mono">${esc(S.vincular)}</b> a uma mesa.</span></p>` : ''}
-      ${temEquipe ? '' : `<div class="seg login-tabs" role="tablist" aria-label="Acesso da equipe">
+      <div class="seg login-tabs" role="tablist" aria-label="Acesso da equipe">
         <button type="button" role="tab" aria-selected="${!criar}" data-login="entrar">Entrar</button>
         <button type="button" role="tab" aria-selected="${criar}" data-login="criar">Criar conta</button>
-      </div>`}
+      </div>
       ${criar
         ? `<label class="field"><span>Seu nome</span><input class="input" id="lgNome" autocomplete="name" maxlength="60" required placeholder="Como a mesa vai ver você"></label>
            <label class="field"><span>Crie seu PIN</span><input class="input pin-input" id="lgPinNovo" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="new-password" required>
              <small class="help">De 4 a 8 números. É com ele que você entra daqui para frente.</small></label>
-           <p class="note">${icon('lock')}<span>Esta é a conta do <b>administrador</b>. Depois, é ele quem cadastra o resto da equipe.</span></p>
-           <label class="field"><span>${temSenhaEquipe ? 'Senha da equipe' : 'Crie a senha da equipe'}</span><input class="input" id="lgSenha" type="password" autocomplete="${temSenhaEquipe ? 'off' : 'new-password'}" minlength="6" required>
-             <small class="help">${temSenhaEquipe ? 'A senha enviada pela Vortex para este restaurante.' : 'Demonstração: esta senha passa a ser a da equipe neste navegador.'}</small></label>
+           ${temEquipe
+             ? `<p class="note">${icon('users')}<span>Você entra como <b>equipe</b>. Se precisar ser administrador, peça para um administrador liberar em Ajustes → Restaurante → Equipe.</span></p>`
+             : `<p class="note">${icon('lock')}<span>É a primeira conta do restaurante: ela vira a do <b>administrador</b>.</span></p>`}
+           <label class="field"><span>${temSenhaEquipe ? 'Código da equipe' : 'Crie o código da equipe'}</span><input class="input" id="lgSenha" type="password" autocomplete="${temSenhaEquipe ? 'off' : 'new-password'}" minlength="6" required>
+             <small class="help">${temSenhaEquipe ? 'Peça ao administrador do restaurante. Na primeira conta, é o código enviado pela Vortex.' : 'Demonstração: este passa a ser o código da equipe neste navegador.'}</small></label>
            <p class="form-error" id="lgErr" role="alert">${esc(msg)}</p>
            <button class="btn btn-cobalt btn-block" type="submit">Criar conta e entrar</button>`
         : `<label class="field"><span>Seu PIN</span><input class="input pin-input" id="lgPin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="current-password" required></label>
            <p class="form-error" id="lgErr" role="alert">${esc(msg)}</p>
            <button class="btn btn-cobalt btn-block" type="submit">Entrar no painel</button>
-           <p class="login-hint">${temEquipe ? 'Ainda não tem PIN? Peça para o administrador cadastrar você.' : 'Primeira vez aqui? Toque em “Criar conta”.'}</p>`}`;
+           <p class="login-hint">Ainda não tem PIN? Toque em “Criar conta” com o código da equipe, ou peça para o administrador cadastrar você.</p>`}`;
     setTimeout(() => ($('#lgPin') || $('#lgNome')).focus(), 50);
   }
 
@@ -136,15 +138,15 @@
       const senhaEquipe = $('#lgSenha').value;
       if (!nome) return falhar('Informe seu nome. Ele aparece para a mesa quando você estiver a caminho.', $('#lgNome'));
       if (!/^\d{4,8}$/.test(pin)) return falhar('O PIN precisa ter de 4 a 8 números.', $('#lgPinNovo'));
-      if (senhaEquipe.length < 6) return falhar('A senha da equipe tem pelo menos 6 caracteres.', $('#lgSenha'));
+      if (senhaEquipe.length < 6) return falhar('O código da equipe tem pelo menos 6 caracteres.', $('#lgSenha'));
       btn.disabled = true;
       try {
         r = await store.auth.cadastrar({ nome, pin, senhaEquipe });
       } catch (ex) {
         btn.disabled = false;
-        return falhar(ex.message, /PIN/.test(ex.message) ? $('#lgPinNovo') : /[Ss]enha/.test(ex.message) ? $('#lgSenha') : null);
+        return falhar(ex.message, /PIN/.test(ex.message) ? $('#lgPinNovo') : /[Cc]ódigo/.test(ex.message) ? $('#lgSenha') : null);
       }
-      toast('Conta de administrador criada. Cadastre a equipe em Ajustes → Restaurante → Equipe.', { tone: 'ok', ms: 6000 });
+      toast(r.admin ? 'Conta de administrador criada. Cadastre a equipe em Ajustes → Restaurante → Equipe.' : `Bem-vindo, ${firstName(r.nome)}! Sua conta da equipe foi criada.`, { tone: 'ok', ms: 6000 });
     } else {
       const pin = $('#lgPin').value.trim();
       if (!/^\d{4,8}$/.test(pin)) return falhar('Digite seu PIN (4 a 8 números).', $('#lgPin'));
@@ -1286,7 +1288,16 @@
             <label class="set-inline"><span>Também é administrador</span><span class="switch"><input type="checkbox" name="admin"><span></span></span></label>
             <button type="submit" class="btn btn-cobalt btn-sm">${icon('plus')} Cadastrar</button>
           </form>
-          <small class="help">Só o administrador cadastra, remove e troca o PIN das pessoas. Passe o PIN para a pessoa: ela entra só com ele.</small>`
+          <small class="help">Passe o PIN para a pessoa: ela entra só com ele. Ou passe o código da equipe: ela mesma cria a conta em “Criar conta” e entra como equipe.</small>
+          <form class="team-add stack" id="teamCodigoForm" novalidate>
+            <h3>Código da equipe</h3>
+            <p class="help">Quem tiver o código cria a própria conta no painel (entra como equipe, nunca como administrador). Trocar o código não tira ninguém que já tem conta.</p>
+            <div class="team-add-row">
+              <label class="field"><span>Novo código</span><input class="input mono" name="codigo" type="password" minlength="6" maxlength="40" autocomplete="new-password" required></label>
+              <label class="field"><span>Repita o código</span><input class="input mono" name="codigo2" type="password" minlength="6" maxlength="40" autocomplete="new-password" required></label>
+            </div>
+            <button type="submit" class="btn btn-line btn-sm">${icon('lock')} Trocar o código</button>
+          </form>`
           : '<small class="help">Quem cadastra e remove pessoas é o administrador do restaurante. Você pode trocar o seu PIN.</small>'}
         </section>
       </div>
@@ -1367,6 +1378,24 @@
       toast(ex.message, { tone: 'error', ms: 4500 });
     }
     carregarEquipe();
+  });
+  document.addEventListener('submit', async (e) => {
+    if (e.target.id !== 'teamCodigoForm') return;
+    e.preventDefault();
+    const f = e.target;
+    const codigo = f.elements.codigo.value;
+    if (codigo.length < 6) return toast('O código da equipe precisa ter pelo menos 6 caracteres.', { tone: 'error' });
+    if (codigo !== f.elements.codigo2.value) return toast('Os dois códigos não estão iguais. Digite de novo.', { tone: 'error' });
+    const btn = f.querySelector('[type=submit]');
+    btn.disabled = true;
+    try {
+      await store.auth.trocarSenha(codigo);
+      f.reset();
+      toast('Código da equipe trocado. Passe o novo código para quem ainda vai criar a conta.', { tone: 'ok', ms: 5000 });
+    } catch (ex) {
+      toast(ex.message, { tone: 'error', ms: 4500 });
+    }
+    btn.disabled = false;
   });
   document.addEventListener('submit', async (e) => {
     if (e.target.id !== 'teamAddForm') return;
@@ -1732,6 +1761,8 @@
     const novoPreco = Store.precoPlano({ ...atual, ...ed });
     const dif = novoPreco - S.plano.mensal;
     const mudou = SERVICOS.some(([k]) => !!ed.servicos[k] !== !!atual.servicos[k]) || ed.mesas !== atual.mesas;
+    // Subir de faixa de mesas (até 20, 21 a 50, 51 ou mais) cobra uma vez a diferença da implantação.
+    const taxa = Precos.taxaMesas(S.plano.implantacao_paga || 0, ed.mesas, atual.contrato);
     const avisos = [
       atual.servicos.garcom && !ed.servicos.garcom && 'Sem “Chamar o garçom”, o sino some da página da mesa e as abas Chamados e Salão saem do painel.',
       atual.servicos.pagina && !ed.servicos.pagina && 'Sem a página e o cardápio, somem o cardápio, o Wi-Fi, a avaliação no Google e as informações.',
@@ -1761,11 +1792,14 @@
         <label class="field plano-mesas"><span>Mesas contratadas</span>
           <span class="plano-stepper"><button type="button" class="icon-btn" data-plano-mesas="-1" aria-label="Menos mesas">${icon('minus')}</button>
           <input class="input mono" id="planoMesas" type="number" min="1" max="500" value="${ed.mesas}">
-          <button type="button" class="icon-btn" data-plano-mesas="1" aria-label="Mais mesas">${icon('plus')}</button></span></label>
+          <button type="button" class="icon-btn" data-plano-mesas="1" aria-label="Mais mesas">${icon('plus')}</button></span>
+          <small class="help">Faixas de implantação: ${Precos.IMPLANTACAO.map((f) => `${f.nome} ${reais(f.valor)}`).join(' · ')}. Passar para uma faixa maior cobra uma vez a diferença.</small></label>
         <div class="plano-resumo ${dif > 0 ? 'is-up' : dif < 0 ? 'is-down' : ''}">
           <span>Nova mensalidade</span><b>${reais(novoPreco)}<small> por mês</small></b>
           ${mudou ? `<small>${dif > 0 ? `+${reais(dif)} por mês` : dif < 0 ? `−${reais(-dif)} por mês` : 'mesmo valor'} (hoje ${reais(S.plano.mensal)})${Precos.combo(ed.servicos).economia ? ` · desconto de combo: −${reais(Precos.combo(ed.servicos).economia)}` : ''}</small>` : '<small>Mude os serviços ou as mesas acima.</small>'}
         </div>
+        ${taxa ? `<div class="plano-resumo is-up"><span>Taxa única pelas mesas a mais</span><b>${reais(taxa)}<small> uma vez</small></b>
+          <small>Diferença da implantação para ${esc(Precos.faixa(ed.mesas).nome)}${+atual.contrato === 12 ? ' (com os 50% do contrato de 12 meses)' : ''}. Entra na próxima cobrança, junto com a mensalidade.</small></div>` : ''}
         ${avisos.length ? `<ul class="plano-avisos">${avisos.map((a) => `<li>${icon('alert')} <span>${esc(a)}</span></li>`).join('')}</ul>` : ''}
         <button type="button" class="btn btn-cobalt" data-plano-confirmar ${mudou ? '' : 'disabled'}>${icon('check')} Confirmar mudança</button>
         <small class="help">A mudança vale na hora. A nova mensalidade entra na próxima cobrança.</small>
@@ -1774,7 +1808,7 @@
         <h2>Histórico</h2>
         ${S.plano.historico.length ? `<ul class="plano-hist">${S.plano.historico.map((h) => `<li>
             <span><b>${h.mensal_antes == null ? 'Plano definido' : h.mensal_depois > h.mensal_antes ? 'Aumento' : h.mensal_depois < h.mensal_antes ? 'Redução' : 'Ajuste'}</b> · ${esc(planoTxt(h.depois))}</span>
-            <small class="muted">${new Date(h.criado_em).toLocaleDateString('pt-BR')} · ${h.origem === 'restaurante' ? esc(h.por || 'Equipe') : 'VTX'} · ${h.mensal_antes == null ? '' : `${reais(h.mensal_antes)} → `}${reais(h.mensal_depois)}/mês</small>
+            <small class="muted">${new Date(h.criado_em).toLocaleDateString('pt-BR')} · ${h.origem === 'restaurante' ? esc(h.por || 'Equipe') : 'VTX'} · ${h.mensal_antes == null ? '' : `${reais(h.mensal_antes)} → `}${reais(h.mensal_depois)}/mês${+h.taxa_unica ? ` · taxa única ${reais(h.taxa_unica)}` : ''}</small>
           </li>`).join('')}</ul>` : '<p class="muted">Nenhuma mudança ainda.</p>'}
       </section>
     </div>`;
@@ -1801,7 +1835,8 @@
     const ed = S.planoEd;
     if (!Object.values(ed.servicos).some(Boolean)) return toast('Escolha pelo menos um serviço.', { tone: 'error' });
     const preco = Store.precoPlano({ ...S.plano.plano, ...ed });
-    if (!confirm(`Confirmar o novo plano (${planoTxt(ed)})? A mensalidade passa a ${reais(preco)} por mês.`)) return;
+    const taxa = Precos.taxaMesas(S.plano.implantacao_paga || 0, ed.mesas, S.plano.plano.contrato);
+    if (!confirm(`Confirmar o novo plano (${planoTxt(ed)})? A mensalidade passa a ${reais(preco)} por mês.${taxa ? ` Taxa única pelas mesas a mais: ${reais(taxa)}, na próxima cobrança.` : ''}`)) return;
     ok.disabled = true;
     try {
       await store.alterarPlano(ed);

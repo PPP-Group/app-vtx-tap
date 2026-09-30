@@ -7,6 +7,8 @@
  *   Precos.plano(plano)              → mensalidade do plano (serviços + domínio próprio)
  *   Precos.combo({ ... })            → { soma, total, economia, desconto } para mostrar o desconto
  *   Precos.SEFAZ_NOTA                → preço de cada nota conferida na SEFAZ (opcional, cobrado à parte)
+ *   Precos.implantacao(mesas)        → implantação da faixa de mesas (até 20, 21 a 50, 51 ou mais)
+ *   Precos.taxaMesas(paga, mesas, contrato) → taxa única ao subir de faixa (a diferença; metade no contrato de 12 meses)
  */
 (function () {
   const SERVICOS = [
@@ -21,6 +23,12 @@
   const DOMINIO_MES = 19;
   // Conferência automática da nota na SEFAZ (fidelidade): o restaurante liga se quiser e paga por nota conferida.
   const SEFAZ_NOTA = 0.25;
+  // Implantação por faixa de mesas (a mesma tabela de public.implantacao_faixa no banco).
+  const IMPLANTACAO = [{ ate: 20, valor: 590, nome: 'até 20 mesas' }, { ate: 50, valor: 890, nome: '21 a 50 mesas' }, { ate: Infinity, valor: 1190, nome: '51 mesas ou mais' }];
+  const faixa = (mesas) => IMPLANTACAO.find((f) => (+mesas || 0) <= f.ate);
+  const implantacao = (mesas) => faixa(mesas).valor;
+  // paga: a maior implantação já paga (0 quando o plano ainda não foi definido: não cobra).
+  const taxaMesas = (paga, mesas, contrato) => (paga ? Math.max(0, implantacao(mesas) - paga) * (+contrato === 12 ? 0.5 : 1) : 0);
 
   function combo(sv = {}) {
     const escolhidos = SERVICOS.filter((s) => sv[s.id]);
@@ -37,5 +45,5 @@
   const servicos = (sv) => combo(sv).total;
   const plano = (p) => servicos((p && p.servicos) || {}) + (p && ['proprio', 'registro'].includes(p.dominio) ? DOMINIO_MES : 0);
 
-  window.Precos = { SERVICOS, DESCONTO, TODOS, DOMINIO_MES, SEFAZ_NOTA, combo, servicos, plano };
+  window.Precos = { SERVICOS, DESCONTO, TODOS, DOMINIO_MES, SEFAZ_NOTA, IMPLANTACAO, faixa, implantacao, taxaMesas, combo, servicos, plano };
 })();
