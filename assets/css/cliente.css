@@ -704,6 +704,11 @@ button.fid-nivel { cursor: pointer; }
 .fid-ocr-mira { position: absolute; inset: 36% 8%; border: 3px solid rgba(255, 255, 255, .9); border-radius: 12px; box-shadow: 0 0 0 999px rgba(0, 0, 0, .35); }
 .fid-ocr-msg { color: var(--ink-2); }
 .fid-ocr-msg.is-ok { color: var(--ink); }
+.fid-ocr-acoes { display: flex; flex-wrap: wrap; gap: 8px; }
+.fid-ocr-acoes:empty { display: none; }
+.fid-ocr-acoes .btn { flex: 1 1 auto; }
+.fid-ocr-acoes .is-on { background: var(--brass-soft); color: var(--ink); }
+.fid-ocr-acoes .is-disabled { opacity: .5; pointer-events: none; }
 
 /* Ranking do clube: pódio (2º, 1º, 3º) e a lista até o 10º */
 .fid-rank-cartao { display: grid; gap: 10px; width: 100%; padding: 14px 14px 12px; border: 1px solid var(--line); border-radius: 20px; background: var(--surface); color: inherit; text-align: left; cursor: pointer; font: inherit; }

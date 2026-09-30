@@ -701,14 +701,18 @@
         const r = regras(db);
         const mes = (k) => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - k); return diaIso(d); };
         const sefaz = { ativo: !!(r.sefaz && r.sefaz.ativo), preco: window.Precos ? Precos.SEFAZ_NOTA : 0.25, meses: [0, 1].map((k) => ({ mes: mes(k), notas: 0, valor: 0 })) };
-        return { plano, mensal: precoPlano(plano), sefaz, historico: db.planoHistorico || [] };
+        // Maior implantação já paga (mesma regra de public.implantacao_paga): 0 enquanto o plano não foi definido.
+        const hist = db.planoHistorico || [];
+        const implantacao_paga = plano.definido && window.Precos ? Math.max(Precos.implantacao(plano.mesas), ...hist.map((h) => Precos.implantacao(h.depois.mesas))) : 0;
+        return { plano, mensal: precoPlano(plano), sefaz, implantacao_paga, historico: hist };
       },
       async alterarPlano(p) {
         const db = read();
         const sv = (p && p.servicos) || {};
         const ids = window.Precos.SERVICOS.map((x) => x.id);
         if (!ids.some((k) => sv[k])) throw new Error('Escolha pelo menos um serviço.');
-        const antes = (await this.meuPlano()).plano;
+        const atual = await this.meuPlano();
+        const antes = atual.plano;
         const novo = { servicos: Object.fromEntries(ids.map((k) => [k, !!sv[k]])), mesas: Math.min(Math.max(Math.round(+p.mesas || 20), 1), 500), dominio: 'sub', contrato: 6, definido: true };
         const cfgAtual = mergeSettings(db.configuracao, true);
         const mesas = cfgAtual.mesas.total > novo.mesas
@@ -716,9 +720,10 @@
           : cfgAtual.mesas;
         db.configuracao = { ...(db.configuracao || {}), plano: novo, mesas, modulos: { ...((db.configuracao && db.configuracao.modulos) || {}), fidelidade: novo.servicos.fidelidade } };
         (db.planoHistorico = db.planoHistorico || []).unshift({ criado_em: nowIso(), origem: 'restaurante', por: quem(db), antes: antes.definido ? antes : null, depois: novo,
-          mensal_antes: antes.definido ? precoPlano(antes) : null, mensal_depois: precoPlano(novo) });
+          mensal_antes: antes.definido ? precoPlano(antes) : null, mensal_depois: precoPlano(novo),
+          taxa_unica: window.Precos ? Precos.taxaMesas(atual.implantacao_paga, novo.mesas, novo.contrato) : 0 });
         write(db);
-        return novo;
+        return { ...novo, taxa_unica: db.planoHistorico[0].taxa_unica };
       },
 
       /* ---------- Fidelidade: cliente ---------- */
@@ -1227,21 +1232,21 @@
         abrir(m);
         return { nome: m.nome, admin: !!m.admin };
       },
-      // Só a primeira conta se cadastra sozinha e vira administradora; as outras o administrador adiciona.
+      // Cadastro com o código da equipe: a primeira conta vira administradora; as outras entram como equipe.
       async cadastrar({ nome, pin, senhaEquipe }) {
         nome = String(nome || '').trim().slice(0, 60);
         if (!nome) falha('Informe seu nome.');
         if (!/^\d{4,8}$/.test(pin)) falha('O PIN precisa ter de 4 a 8 números.');
-        if (String(senhaEquipe || '').length < 6) falha('A senha da equipe tem pelo menos 6 caracteres.');
+        if (String(senhaEquipe || '').length < 6) falha('O código da equipe tem pelo menos 6 caracteres.');
         const eq = equipe();
-        if (eq.membros.length) falha('Este restaurante já tem administrador. Peça para ele cadastrar você no painel.');
-        const pinHash = await pinLivre(pin);
         const senhaHash = await hash('senha:' + senhaEquipe);
-        if (eq.senhaHash && eq.senhaHash !== senhaHash) falha('Senha da equipe incorreta. Ela foi enviada pela Vortex.');
-        const m = { id: uid(), nome, pinHash, admin: true, criado_em: nowIso() };
-        salvar({ senhaHash: eq.senhaHash || senhaHash, membros: [m] });
+        if (eq.senhaHash && eq.senhaHash !== senhaHash) falha('Código da equipe incorreto. Peça o código ao administrador do restaurante.');
+        const pinHash = await pinLivre(pin);
+        const primeira = !eq.membros.length;
+        const m = { id: uid(), nome, pinHash, admin: primeira, criado_em: nowIso() };
+        salvar({ senhaHash: eq.senhaHash || senhaHash, membros: [...eq.membros, m] });
         abrir(m);
-        return { nome, admin: true, primeiraConta: true };
+        return { nome, admin: primeira, primeiraConta: primeira };
       },
       async sessao() {
         const m = eu();
@@ -1287,7 +1292,7 @@
       },
       async trocarSenha(senha) {
         soAdmin();
-        if (String(senha || '').length < 6) falha('A senha da equipe precisa ter pelo menos 6 caracteres.');
+        if (String(senha || '').length < 6) falha('O código da equipe precisa ter pelo menos 6 caracteres.');
         salvar({ ...equipe(), senhaHash: await hash('senha:' + senha) });
       },
     };

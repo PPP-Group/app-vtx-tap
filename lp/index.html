@@ -57,6 +57,13 @@
     --ok: #4FD196; color-scheme: dark;
   }
   * { box-sizing: border-box; }
+  /* Seleção de texto e barra de rolagem no roxo da VTX. */
+  ::selection { background: rgba(125, 39, 252, .28); color: inherit; }
+  html { scrollbar-color: rgba(125, 39, 252, .55) transparent; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(125, 39, 252, .5); border-radius: 999px; border: 2px solid transparent; background-clip: padding-box; }
+  ::-webkit-scrollbar-thumb:hover { background-color: rgba(125, 39, 252, .75); }
   body { margin: 0; background: var(--bg); color: var(--ink); font: 400 16px/1.55 var(--body); }
   .wrap { max-width: 1120px; margin: 0 auto; padding-inline: 18px; padding-block: 24px 56px; display: grid; gap: 44px; }
   h1, h2 { font-family: var(--display); font-weight: 900; text-transform: uppercase; line-height: .95; margin: 0; text-wrap: balance; }
@@ -387,6 +394,7 @@
         <li>No contrato de 12 meses, a implantação sai com 50% de desconto.</li>
         <li>Mensalidades reajustadas uma vez por ano pelo IPCA.</li>
         <li>Plaquinha perdida ou quebrada: reposição pelo mesmo valor da unidade.</li>
+        <li>Aumentou as mesas e passou para uma faixa maior de implantação? Paga uma vez só a diferença entre as faixas.</li>
       </ul>
     </div>
   </section>

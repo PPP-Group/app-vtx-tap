@@ -333,18 +333,35 @@
   // Valor da nota: vem sozinho (QR de contingência, foto ou câmera apontada para o total); o cliente só confere.
   function tValor() {
     const v = S.valorNota;
-    const msgOcr = v ? `Achamos <b>${esc(brl(v))}</b> na nota. Confira e toque em Confirmar.`
-      : S.ocr === 'camera' ? `Agora aponte a câmera para o <b>VALOR A PAGAR</b> da nota.`
-      : S.ocr === 'lendo' ? 'Procurando o valor na nota…'
-      : 'Não conseguimos ler o valor. Digite o total que está na nota.';
     return `<form class="stack-lg fid" id="fidValorForm" novalidate>
       <div class="fid-ocr" ${S.ocr === 'camera' && !v ? '' : 'hidden'}><video playsinline muted id="fidOcrVideo"></video><span class="fid-ocr-mira" aria-hidden="true"></span></div>
-      <p class="fid-ocr-msg ${v ? 'is-ok' : ''}" id="fidOcrMsg" aria-live="polite">${msgOcr}</p>
+      <p class="fid-ocr-msg ${v ? 'is-ok' : ''}" id="fidOcrMsg" aria-live="polite">${msgOcr()}</p>
+      <div class="fid-ocr-acoes">${acoesOcr()}</div>
       <label class="field"><span>Valor total da nota</span><input class="input mono" id="fidValor" inputmode="decimal" autocomplete="off" placeholder="0,00" value="${v ? esc(v.toFixed(2).replace('.', ',')) : ''}"></label>
       <p class="form-error" id="fidErro" role="alert">${esc(S.aviso || '')}</p>
       <button type="submit" class="btn btn-cobalt btn-block">${icon('check')} Confirmar e enviar</button>
       <button type="button" class="btn btn-quiet btn-block" data-fid-semvalor>Enviar sem o valor</button>
     </form>`;
+  }
+  function msgOcr() {
+    const v = S.valorNota;
+    if (v) return `Achamos <b>${esc(brl(v))}</b> na nota. Confira e toque em Confirmar.`;
+    if (S.ocr === 'camera') return S.ocrDica || 'Aponte a câmera para o <b>VALOR A PAGAR</b>, bem de perto. Se demorar, toque em <b>Ler agora</b> ou tire uma foto.';
+    if (S.ocr === 'capturando') return 'Lendo a imagem com calma… segure a nota parada.';
+    if (S.ocr === 'foto') return `Lendo a foto… (${S.ocrPasso || 1} de ${S.ocrPassos || 4})`;
+    if (S.ocr === 'lendo') return 'Procurando o valor na nota…';
+    if (S.ocr === 'nada') return 'Não achamos o valor nessa foto. Tente outra mais de perto, com a nota reta e bem iluminada (use o flash), ou digite o total.';
+    return 'Não conseguimos ler o valor. Tire uma foto do total ou digite o valor que está na nota.';
+  }
+  function acoesOcr() {
+    if (S.valorNota || S.ocr === 'qr') return '';
+    const ocupado = S.ocr === 'capturando' || S.ocr === 'foto' || S.ocr === 'lendo';
+    const dis = ocupado ? 'disabled' : '';
+    const cam = S.ocr === 'camera';
+    return `${cam ? `<button type="button" class="btn btn-line" data-fid-capturar ${dis}>${icon('search')} Ler agora</button>` : ''}
+      ${cam && S.temLanterna ? `<button type="button" class="btn btn-line ${S.lanterna ? 'is-on' : ''}" data-fid-lanterna aria-pressed="${S.lanterna ? 'true' : 'false'}">${icon('zap')} ${S.lanterna ? 'Desligar luz' : 'Lanterna'}</button>` : ''}
+      <label class="btn btn-line ${ocupado ? 'is-disabled' : ''}">${icon('camera')} Tirar foto do valor<input type="file" accept="image/*" capture="environment" id="fidFoto" hidden ${dis}></label>
+      ${!cam && !ocupado && window.OcrNota ? `<button type="button" class="btn btn-quiet" data-fid-camera>Apontar a câmera</button>` : ''}`;
   }
 
   function tResgatar() {
@@ -485,17 +502,19 @@
   const naTelaDoValor = (qr) => S.tela === 'valor' && S.qr === qr && $('#fidValorForm');
   function mostrarOcr() {
     if (!$('#fidValorForm')) return;
-    const f = document.createElement('div');
-    f.innerHTML = tValor();
-    const novo = f.firstElementChild;
-    ['.fid-ocr', '#fidOcrMsg'].forEach((sel) => {
-      const a = $(sel);
-      const b = novo.querySelector(sel);
-      a.hidden = b.hidden;
-      a.className = b.className;
-      if (sel === '#fidOcrMsg') a.innerHTML = b.innerHTML;
-    });
+    $('.fid-ocr').hidden = !(S.ocr === 'camera' && !S.valorNota);
+    const msg = $('#fidOcrMsg');
+    msg.className = `fid-ocr-msg ${S.valorNota ? 'is-ok' : ''}`;
+    msg.innerHTML = msgOcr();
+    $('.fid-ocr-acoes').innerHTML = acoesOcr();
     if (S.valorNota && !S.digitou) $('#fidValor').value = S.valorNota.toFixed(2).replace('.', ',');
+  }
+  function achouValor(v) {
+    pararOcr();
+    S.valorNota = v;
+    S.ocr = 'achou';
+    mostrarOcr();
+    navigator.vibrate && navigator.vibrate(40);
   }
   async function buscarValor(qr, quadro) {
     if (!window.OcrNota) { S.ocr = 'falhou'; return mostrarOcr(); }
@@ -505,25 +524,70 @@
       const h = quadro.naturalHeight || quadro.height;
       const v = await OcrNota.lerValor(quadro, w, h);
       if (!naTelaDoValor(qr)) return;
-      if (v) { S.valorNota = v; S.ocr = 'achou'; return mostrarOcr(); }
+      if (v) return achouValor(v);
     }
-    // 2) câmera apontada para o "VALOR A PAGAR"
-    S.ocr = 'camera';
-    mostrarOcr();
+    // 2) câmera apontada para o "VALOR A PAGAR" (com "Ler agora", lanterna e foto como alternativa)
+    ligarCamera(qr);
+  }
+  function ligarCamera(qr) {
     pararOcr();
+    S.ocr = 'camera';
+    S.ocrDica = null;
+    S.temLanterna = false;
+    S.lanterna = false;
+    mostrarOcr();
     pararCam = OcrNota.camera($('#fidOcrVideo'), {
-      achou: (v) => {
-        if (!naTelaDoValor(qr)) return;
-        S.valorNota = v;
-        S.ocr = 'achou';
-        mostrarOcr();
-        navigator.vibrate && navigator.vibrate(40);
-      },
+      achou: (v) => naTelaDoValor(qr) && achouValor(v),
       aviso: (a) => {
         if (!naTelaDoValor(qr)) return;
-        if (a === 'sem-camera' || a === 'sem-ocr') { S.ocr = 'falhou'; mostrarOcr(); }
+        if (a === 'camera' && pararCam) { S.temLanterna = pararCam.temLanterna(); return mostrarOcr(); }
+        if (a === 'carregando' && S.ocr === 'camera') { S.ocrDica = 'Preparando a leitura… já pode apontar para o <b>VALOR A PAGAR</b>.'; return mostrarOcr(); }
+        if (a === 'lendo' && S.ocr === 'camera') { S.ocrDica = null; return mostrarOcr(); }
+        if (a === 'sem-camera' || a === 'sem-ocr') { pararOcr(); S.ocr = 'falhou'; mostrarOcr(); }
       },
     });
+  }
+  // "Ler agora": lê o quadro atual com mais tempo (várias leituras).
+  async function capturarAgora() {
+    const qr = S.qr;
+    const cam = pararCam;
+    if (!cam || !cam.capturar) return;
+    S.ocr = 'capturando';
+    mostrarOcr();
+    const v = await cam.capturar().catch(() => null);
+    if (!naTelaDoValor(qr) || S.valorNota) return;
+    if (v) return achouValor(v);
+    S.ocr = 'camera';
+    S.ocrDica = 'Ainda não deu. Chegue mais perto do <b>VALOR A PAGAR</b>, deixe a nota reta e acenda a luz — ou tire uma foto.';
+    mostrarOcr();
+  }
+  async function alternarLanterna() {
+    if (!pararCam) return;
+    const ok = await pararCam.lanterna(!S.lanterna);
+    if (ok) S.lanterna = !S.lanterna;
+    mostrarOcr();
+  }
+  // Foto tirada pela câmera do aparelho (tem flash e foco melhores que o vídeo).
+  async function lerFotoValor(arquivo) {
+    const qr = S.qr;
+    if (!arquivo || !window.OcrNota) return;
+    pararOcr();
+    S.ocr = 'foto';
+    S.ocrPasso = 1;
+    mostrarOcr();
+    let v = null;
+    try {
+      const img = await OcrNota.abrirFoto(arquivo);
+      v = await OcrNota.lerFoto(img, {
+        progresso: (n, de) => { S.ocrPasso = n; S.ocrPassos = de; if (naTelaDoValor(qr)) mostrarOcr(); },
+      });
+    } catch (e) {
+      console.error(e);
+    }
+    if (!naTelaDoValor(qr)) return;
+    if (v) return achouValor(v);
+    S.ocr = 'nada';
+    mostrarOcr();
   }
 
   async function enviarNota(qr, valor) {
@@ -557,6 +621,9 @@
     }
     if (t.closest('[data-fid-nota]')) return lerNota();
     if (t.closest('[data-fid-semvalor]') && S.qr) return enviarNota(S.qr, null);
+    if (t.closest('[data-fid-capturar]')) return capturarAgora();
+    if (t.closest('[data-fid-lanterna]')) return alternarLanterna();
+    if (t.closest('[data-fid-camera]') && S.qr) return ligarCamera(S.qr);
     const r = t.closest('[data-fid-resgatar]');
     if (r) {
       S.premio = (prog.premios || []).find((p) => p.id === r.dataset.fidResgatar);
@@ -677,6 +744,12 @@
     sh.addEventListener('click', onClick);
     sh.addEventListener('submit', onSubmit);
     sh.addEventListener('input', onInput);
+    sh.addEventListener('change', (e) => {
+      if (e.target.id !== 'fidFoto') return;
+      const f = e.target.files && e.target.files[0];
+      e.target.value = '';
+      lerFotoValor(f);
+    });
     sh.addEventListener('sheet:close', pararOcr);
     document.addEventListener('click', (e) => e.target.closest('[data-fid-abrir]') && abrir());
     const p = new URLSearchParams(location.search);

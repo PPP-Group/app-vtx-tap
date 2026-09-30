@@ -793,10 +793,12 @@
     body.innerHTML = `<div class="stack">
       <ul class="sel-list">${lines.map((l) => `<li><strong>${esc(l.item.nome)}</strong><span class="price">${brl(Store.opcoes.aPartir(l.item) * l.q)}</span>${qtyHtml(l.item.id)}</li>`).join('')}</ul>
       <div class="sel-total"><span>Total estimado</span><span class="price">${brl(selTotal())}</span></div>
-      <p class="note">${icon('msg')}<span>A lista é um lembrete: o garçom vem até a mesa e confirma o pedido com você.</span></p>
-      ${liberado()
-        ? `<button type="button" class="btn btn-cobalt btn-block" id="sendList">${icon('bell')} Chamar garçom com esta lista</button>`
-        : `<button type="button" class="btn btn-cobalt btn-block" id="gateList" ${mesa ? '' : 'disabled'}>${icon('bell')} Liberar o sino para enviar a lista</button>`}
+      ${sinoLigado()
+        ? `<p class="note">${icon('msg')}<span>A lista é um lembrete: o garçom vem até a mesa e confirma o pedido com você.</span></p>
+          ${liberado()
+            ? `<button type="button" class="btn btn-cobalt btn-block" id="sendList">${icon('bell')} Chamar garçom com esta lista</button>`
+            : `<button type="button" class="btn btn-cobalt btn-block" id="gateList" ${mesa ? '' : 'disabled'}>${icon('bell')} Liberar o sino para enviar a lista</button>`}`
+        : `<p class="note">${icon('msg')}<span>A lista é um lembrete: mostre ao garçom na hora de pedir.</span></p>`}
       <button type="button" class="btn btn-quiet btn-block" id="clearList">Limpar lista</button>
     </div>`;
   }
@@ -809,6 +811,8 @@
       renderSelBar();
       renderSelSheet();
     }
+    // Sino desligado (ou fora do plano): a lista não chama o garçom.
+    if (!sinoLigado()) return;
     if (e.target.closest('#gateList')) return irParaGate();
     const send = e.target.closest('#sendList');
     if (send) {

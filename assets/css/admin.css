@@ -779,6 +779,11 @@
 .fid-ocr-mira { position: absolute; inset: 36% 8%; border: 3px solid rgba(255, 255, 255, .9); border-radius: 12px; box-shadow: 0 0 0 999px rgba(0, 0, 0, .35); }
 .fid-ocr-msg { color: var(--ink-2); }
 .fid-ocr-msg.is-ok { color: var(--ink); }
+.fid-ocr-acoes { display: flex; flex-wrap: wrap; gap: 8px; }
+.fid-ocr-acoes:empty { display: none; }
+.fid-ocr-acoes .btn { flex: 1 1 auto; }
+.fid-ocr-acoes .is-on { background: var(--brass-soft); color: var(--ink); }
+.fid-ocr-acoes .is-disabled { opacity: .5; pointer-events: none; }
 
 /* Equipe: ações do administrador */
 .team-row { flex-wrap: wrap; }
