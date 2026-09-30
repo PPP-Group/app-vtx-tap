@@ -1,11 +1,12 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="pt-BR" data-theme="light">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>VTX Tap · Fidelidade, delivery e a mesa no celular</title>
 <meta name="description" content="Clube de pontos pela nota fiscal, delivery próprio sem comissão, cardápio e chamar o garçom numa plaquinha na mesa. Sem aplicativo para baixar. Implantação e treinamento inclusos.">
-<meta name="theme-color" content="#140B33">
+<meta name="theme-color" content="#F4F2F9">
+<meta name="color-scheme" content="light">
 <meta property="og:title" content="VTX Tap · Faça o cliente voltar e pedir direto com você">
 <meta property="og:description" content="Clube de pontos pela nota fiscal, delivery sem comissão, cardápio e chamar o garçom. Tudo no celular do cliente, sem aplicativo.">
 <meta property="og:image" content="/assets/img/lp/fid-conta.webp">
@@ -16,7 +17,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@800;900&family=IBM+Plex+Mono:wght@500;600&family=Schibsted+Grotesk:wght@400;500;600;700&display=swap">
 <style>
-  /* Mesma linguagem da página de orçamento (/orcamento): noite + roxo, títulos em Big Shoulders, cartões claros. */
+  /* Mesma linguagem da página de orçamento (/orcamento): noite + roxo, títulos em Big Shoulders, cartões claros.
+     Só no modo claro (converte mais); o orçamento fica no escuro. */
   :root {
     --bg: #F4F2F9;
     --surface: #FFFFFF;
@@ -38,16 +40,7 @@
     --display: 'Big Shoulders Display', 'Oswald', 'Arial Narrow', Impact, sans-serif;
     --body: 'Schibsted Grotesk', system-ui, -apple-system, 'Segoe UI', sans-serif;
     --mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Consolas, monospace;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      --bg: #0C0820; --surface: #161034; --surface-2: #221949; --ink: #EFECFA; --ink-2: #CFC9E6; --muted: #A298C6;
-      --line: #30275C; --roxo-ink: #BB97FF; --roxo-soft: #2C1766; --noite: #1D1245; --ok: #4FD196; --ok-soft: #0E3322; color-scheme: dark;
-    }
-  }
-  :root[data-theme="dark"] {
-    --bg: #0C0820; --surface: #161034; --surface-2: #221949; --ink: #EFECFA; --ink-2: #CFC9E6; --muted: #A298C6;
-    --line: #30275C; --roxo-ink: #BB97FF; --roxo-soft: #2C1766; --noite: #1D1245; --ok: #4FD196; --ok-soft: #0E3322; color-scheme: dark;
+    color-scheme: light;
   }
   * { box-sizing: border-box; }
   ::selection { background: rgba(125, 39, 252, .28); color: inherit; }
@@ -91,9 +84,6 @@
   .topo nav a:hover { background: var(--surface-2); }
   .topo .btn { min-height: 42px; padding: 0 18px; font-size: 15px; }
   .logo-claro { display: none; }
-  :root[data-theme="dark"] .logo-escuro { display: none; }
-  :root[data-theme="dark"] .logo-claro { display: inline; }
-  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .logo-escuro { display: none; } :root:not([data-theme="light"]) .logo-claro { display: inline; } }
   @media (max-width: 860px) { .topo nav { display: none; } .topo .btn { margin-left: auto; } }
 
   /* Hero */
