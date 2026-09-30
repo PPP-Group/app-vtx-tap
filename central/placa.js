@@ -2,7 +2,8 @@
  * PDF das plaquinhas para a gráfica: uma plaquinha por página, no tamanho exato de um
  * cartão de crédito (ISO/IEC 7810 ID-1: 85,60 × 53,98 mm, cantos com raio de 3,18 mm).
  *
- * Layout: fundo branco, divisória em roxo claro no meio exato do cartão. À esquerda, o QR
+ * Layout: fundo branco com um contorno fininho por dentro, divisória no meio exato do cartão
+ * (os dois em roxo claro, ou nos tons da cor do restaurante no personalizado). À esquerda, o QR
  * centralizado, com uma logo no meio e o miolo dos três quadrados de canto em roxo claro.
  * À direita, centralizados na mesma linha: o ícone de NFC grande, "Aproxime o celular" e o @.
  * O código da plaquinha sai pequeno, em pé na lateral direita (lido de cima para baixo).
@@ -222,6 +223,11 @@
       // Esquerda: QR com a logo no meio (padrão: VTX Tap; personalizado: a do restaurante).
       const logoMeio = (modelo === 'personalizado' && it.logo && logos[it.logo]) || vtx;
       const pal = modelo === 'personalizado' ? paleta(it.cor) : PALETA_VTX;
+      // Contorno fininho por dentro do cartão, na cor de destaque (roxo claro ou a cor do restaurante).
+      const bordaIn = 1.8;
+      doc.setDrawColor(pal.claro);
+      doc.setLineWidth(0.3);
+      doc.roundedRect(bordaIn, bordaIn, L - 2 * bordaIn, A - 2 * bordaIn, PLACA.raio - 1, PLACA.raio - 1, 'S');
       const meio = desenharQr(doc, it.url, qrX, qrY, qr, 0.26, pal.qr);
       if (logoMeio) {
         const f = meio.lado * 0.08;
