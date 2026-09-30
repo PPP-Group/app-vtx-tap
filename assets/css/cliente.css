@@ -704,3 +704,39 @@ button.fid-nivel { cursor: pointer; }
 .fid-ocr-mira { position: absolute; inset: 36% 8%; border: 3px solid rgba(255, 255, 255, .9); border-radius: 12px; box-shadow: 0 0 0 999px rgba(0, 0, 0, .35); }
 .fid-ocr-msg { color: var(--ink-2); }
 .fid-ocr-msg.is-ok { color: var(--ink); }
+
+/* Ranking do clube: pódio (2º, 1º, 3º) e a lista até o 10º */
+.fid-rank-cartao { display: grid; gap: 10px; width: 100%; padding: 14px 14px 12px; border: 1px solid var(--line); border-radius: 20px; background: var(--surface); color: inherit; text-align: left; cursor: pointer; font: inherit; }
+.fid-rank-topo { display: flex; align-items: center; gap: 8px; }
+.fid-rank-topo svg { width: 20px; height: 20px; color: #d4a017; }
+.fid-rank-topo .link { margin-left: auto; font-size: 13.5px; }
+.fid-rank-eu { font-size: 14px; color: var(--ink-2); text-align: center; }
+.podio { --ouro: #e8b931; --prata: #aeb7c4; --bronze: #c98b55; list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); align-items: end; gap: 8px; }
+.pd { position: relative; display: grid; justify-items: center; gap: 3px; min-width: 0; text-align: center; }
+.pd b { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; }
+.pd b em { font-style: normal; font-weight: 500; color: var(--ink-2); }
+.pd small { font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.pd-av { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; font-weight: 800; color: #1a1330; background: var(--c, var(--prata)); box-shadow: 0 0 0 3px var(--surface), 0 0 0 5px var(--c, var(--prata)); }
+.pd-degrau { display: grid; place-items: center; width: 100%; margin-top: 6px; border-radius: 12px 12px 4px 4px; font-weight: 900; font-size: 18px; color: #1a1330; background: linear-gradient(180deg, var(--c), color-mix(in srgb, var(--c) 70%, #000 8%)); }
+.pd--1 { --c: var(--ouro); } .pd--2 { --c: var(--prata); } .pd--3 { --c: var(--bronze); }
+.pd--1 .pd-degrau { height: 64px; } .pd--2 .pd-degrau { height: 46px; } .pd--3 .pd-degrau { height: 34px; }
+.pd--1 .pd-av { width: 48px; height: 48px; font-size: 18px; }
+.pd-coroa { position: absolute; top: -18px; color: var(--ouro); }
+.pd-coroa svg { width: 22px; height: 22px; }
+.pd.is-vazio { opacity: .35; }
+.pd.is-voce b { color: var(--cobalt, #7d27fc); }
+.podio--grande { padding-top: 22px; }
+.podio--grande .pd-av { width: 56px; height: 56px; font-size: 20px; }
+.podio--grande .pd--1 .pd-av { width: 66px; height: 66px; font-size: 24px; }
+.podio--grande .pd b { font-size: 15px; }
+.podio--grande .pd--1 .pd-degrau { height: 96px; font-size: 26px; } .podio--grande .pd--2 .pd-degrau { height: 70px; font-size: 22px; } .podio--grande .pd--3 .pd-degrau { height: 52px; font-size: 20px; }
+.podio--grande .pd-coroa { top: -24px; } .podio--grande .pd-coroa svg { width: 28px; height: 28px; }
+.rk-lista { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.rk-lista li { display: grid; grid-template-columns: 34px 32px 1fr auto; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 14px; background: var(--surface-2, rgba(0,0,0,.04)); }
+.rk-lista .pd-av { width: 32px; height: 32px; font-size: 14px; box-shadow: none; background: var(--line); }
+.rk-lista b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14.5px; }
+.rk-lista b em { font-style: normal; font-weight: 500; color: var(--ink-2); }
+.rk-pos { font-weight: 900; color: var(--ink-2); }
+.rk-pts { font-size: 13.5px; font-variant-numeric: tabular-nums; color: var(--ink-2); }
+.rk-lista li.is-voce { outline: 2px solid var(--cobalt, #7d27fc); }
+.fid-rank-regra { font-size: 13px; text-align: center; }

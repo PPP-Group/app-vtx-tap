@@ -28,13 +28,13 @@
  *   Programa de fidelidade (módulo liberado pela Vortex; regras em settings.fidelidade):
  *   cliente: fidPrograma() / fidConsultar(cpf) / fidIndicador(codigo) / fidCadastrar(dados) /
  *            fidEntrar(cpf, pin) / fidConta(token) / fidSair(token) /
- *            fidRegistrarNota({ cpf, qr, valor }) / fidResgatar(token, premioId)
+ *            fidRegistrarNota({ cpf, qr, valor }) / fidSefaz({ cpf, qr }) / fidRanking(token) / fidResgatar(token, premioId)
  *            → sempre { status, ... } (status 'erro' traz a mensagem)
  *   equipe:  fidResumo() / fidPendencias() / fidClientes(busca) / fidCliente(cpf) / fidRecentes() /
  *            fidAprovarNota(chave, valor, emitidaIso) / fidRecusarNota(chave, motivo) /
  *            fidImportarXml(notas) / fidResgateDecidir(id, entregar) / fidLancar(cpf, valor, descricao) /
  *            fidRedefinirPin(cpf) / fidExcluirCliente(cpf) / fidEditarCliente(cpf, dados) /
- *            fidPremios() / fidSalvarPremio(p) / fidExcluirPremio(id) / fidExportar()
+ *            fidPremios() / fidSalvarPremio(p) / fidExcluirPremio(id) / fidExportar() / fidTopProdutos(cpf, dias)
  *            → erros viram exceção com a mensagem
  */
 (function () {
@@ -48,7 +48,7 @@
   const FID_PADRAO = {
     ativo: false, nome: 'Clube de pontos', pontosPorReal: 1, boosts: [], cnpjs: [], prazoDias: 7, inicio: null,
     manual: false, regulamento: '', fuso: 'America/Sao_Paulo', indicacao: { ativo: true, indicador: 50, indicado: 20, quando: 'cadastro' },
-    niveis: { ativo: false, base: 'sempre', meses: 12, lista: [] },
+    niveis: { ativo: false, base: 'sempre', meses: 12, lista: [] }, ranking: { ativo: true },
   };
   const soDigitos = (s) => String(s || '').replace(/\D/g, '');
   function cpfValido(c) {
@@ -324,6 +324,31 @@
         .reduce((t, m) => t + m.pontos, 0), 0);
     }
     const nivelDe = (db, cpf) => fidNivelDe(fidNiveis(regras(db)), pontosNivel(db, cpf));
+    // Produtos das notas (do XML), para os mais pedidos.
+    function salvarItens(db, chave, cpf, emitida, itens) {
+      if (!Array.isArray(itens)) return;
+      const f = F(db);
+      f.itens = (f.itens || []).filter((i) => i.chave !== chave);
+      itens.slice(0, 300).forEach((i, n) => i.descricao && f.itens.push({ chave, n: n + 1, cpf: cpf || null, descricao: String(i.descricao).trim().slice(0, 120),
+        quantidade: +i.quantidade || 1, unidade: i.unidade || '', valor: i.valor == null ? null : +i.valor, emitida_em: emitida || null }));
+    }
+    function topProdutos(db, cpf, dias = 90, limite = 20) {
+      const desde = Date.now() - dias * DIA;
+      const g = new Map();
+      for (const i of F(db).itens || []) {
+        if ((cpf && i.cpf !== cpf) || (i.emitida_em && new Date(i.emitida_em) < desde)) continue;
+        const k = i.descricao.toLowerCase();
+        const x = g.get(k) || { descricao: i.descricao, quantidade: 0, notas: new Set(), clientes: new Set(), valor: 0 };
+        x.quantidade += i.quantidade; x.notas.add(i.chave); if (i.cpf) x.clientes.add(i.cpf); x.valor += i.valor || 0;
+        g.set(k, x);
+      }
+      return [...g.values()].map((x) => ({ ...x, notas: x.notas.size, clientes: x.clientes.size }))
+        .sort((a, b) => b.quantidade - a.quantidade || b.notas - a.notas).slice(0, limite);
+    }
+    const nomeCurto = (nome) => {
+      const p = String(nome || '').trim().split(/\s+/);
+      return p[0] + (p.length > 1 ? ` ${p[p.length - 1][0]}.` : '');
+    };
     function atualizarNivel(db, cpf, bonus = true) {
       const c = cliDe(db, cpf);
       const nv = nivelDe(db, cpf);
@@ -753,6 +778,29 @@
         write(db);
         return r;
       },
+      async fidSefaz() {
+        return { status: 'indisponivel' };
+      },
+      async fidRanking(token) {
+        const db = read();
+        if (!noAr(db) || (regras(db).ranking || {}).ativo === false) return { ativo: false };
+        const f = F(db);
+        const ganhos = new Map();
+        for (const m of f.movimentos) {
+          if (m.tipo === 'resgate' || (m.tipo === 'estorno' && m.resgate_id)) continue;
+          ganhos.set(m.cpf, (ganhos.get(m.cpf) || 0) + m.pontos);
+        }
+        const lista = [...ganhos].filter(([, p]) => p > 0).map(([cpf, pontos]) => ({ cpf, pontos, nome: nomeCurto((cliDe(db, cpf) || {}).nome) }))
+          .sort((a, b) => b.pontos - a.pontos || a.nome.localeCompare(b.nome));
+        lista.forEach((x, i) => (x.pos = i && lista[i - 1].pontos === x.pontos ? lista[i - 1].pos : i + 1));
+        const eu = token && f.sessoes[token];
+        return {
+          ativo: true,
+          top: lista.slice(0, 10).map((x) => ({ pos: x.pos, nome: x.nome, pontos: x.pontos, voce: x.cpf === eu })),
+          eu: eu ? { pos: (lista.find((x) => x.cpf === eu) || {}).pos || null, pontos: (lista.find((x) => x.cpf === eu) || {}).pontos || 0,
+            favoritos: topProdutos(db, eu, 3650, 3).map((x) => x.descricao) } : null,
+        };
+      },
       async fidResgatar(token, premioId) {
         const db = read();
         const cpf = sessaoDe(db, token);
@@ -823,6 +871,9 @@
           resgates: f.resgates.filter((x) => x.cpf === cpf).sort((a, b) => (a.criado_em < b.criado_em ? 1 : -1)).slice(0, 30),
         };
       },
+      async fidTopProdutos(cpf, dias) {
+        return topProdutos(read(), cpf ? soDigitos(cpf) : null, dias || 90);
+      },
       async fidRecentes() {
         const db = read();
         return F(db).movimentos.slice(-40).reverse().map((m) => comNome(db, m));
@@ -876,6 +927,7 @@
           if (!(valor >= 0) || !it.emitida_em || isNaN(new Date(it.emitida_em))) { k.invalidas++; continue; }
           if (x) Object.assign(x, { cpf, valor, emitida_em: it.emitida_em, importada_em: nowIso() });
           else f.xml.push((x = { chave: it.chave, cpf, valor: Math.round(valor * 100) / 100, emitida_em: it.emitida_em, cancelada: false, importada_em: nowIso(), importada_por: quem(db) }));
+          salvarItens(db, it.chave, cpf, it.emitida_em, it.itens);
           if (!cpf) k.sem_cpf++;
           const n = f.notas.find((y) => y.chave === it.chave);
           if (n && n.status === 'pendente') {
@@ -1280,6 +1332,28 @@
       },
       async fidRegistrarNota({ cpf, qr, valor }) {
         return must(await sb.rpc('fid_registrar_nota', { p_restaurante: rid, p_cpf: soDigitos(cpf), p_qr: qr, p_valor: valor || null }));
+      },
+      // Conferência automática na SEFAZ (função "nfce"). 'indisponivel' / 'falhou' / 'limite' / 'xml': segue o fluxo com a equipe.
+      async fidSefaz({ cpf, qr }) {
+        if (!rid) return { status: 'indisponivel' };
+        try {
+          const r = await fetch(`${supabaseUrl}/functions/v1/nfce`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', apikey: supabaseAnonKey, Authorization: `Bearer ${supabaseAnonKey}` },
+            body: JSON.stringify({ restaurante: rid, cpf: soDigitos(cpf), qr }),
+            signal: AbortSignal.timeout ? AbortSignal.timeout(75000) : undefined,
+          });
+          if (!r.ok) return { status: 'indisponivel' };
+          return await r.json();
+        } catch {
+          return { status: 'falhou' };
+        }
+      },
+      async fidRanking(token) {
+        return must(await sb.rpc('fid_ranking', { p_restaurante: rid, p_token: token || null }));
+      },
+      async fidTopProdutos(cpf, dias) {
+        return must(await sb.rpc('fid_top_produtos', { p_cpf: cpf || null, p_dias: dias || 90 }));
       },
       async fidResgatar(token, premioId) {
         return must(await sb.rpc('fid_resgatar', { p_token: token, p_premio: premioId }));

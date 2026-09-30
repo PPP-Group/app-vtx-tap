@@ -16,6 +16,7 @@
     { id: 'hoje', label: 'Hoje' },
     { id: 'clientes', label: 'Clientes' },
     { id: 'premios', label: 'Prêmios' },
+    { id: 'ranking', label: 'Ranking' },
     { id: 'regras', label: 'Regras' },
   ];
   const TIPO = { nivel: 'Bônus de nível', compra: 'Compra', indicacao: 'Indicação', boas_vindas: 'Boas-vindas', manual: 'Lançamento', resgate: 'Troca', estorno: 'Estorno', ajuste: 'Ajuste' };
@@ -25,6 +26,7 @@
   const P = {
     tab: 'hoje', resumo: null, pend: { notas: [], resgates: [] }, recentes: null, clientes: null, busca: '',
     premios: null, premioEdit: null, regras: null, vistos: new Set(), pronto: false, ficha: null, importando: false,
+    ranking: null, dias: 90,
   };
 
   const num = (n) => Number(n || 0).toLocaleString('pt-BR');
@@ -105,7 +107,10 @@
       if (P.tab === 'hoje' && !P.recentes) P.recentes = await store.fidRecentes();
       else if (P.tab === 'clientes' && !P.clientes) P.clientes = await store.fidClientes(P.busca);
       else if (P.tab === 'premios' && !P.premios) P.premios = await store.fidPremios();
-      else return;
+      else if (P.tab === 'ranking' && !P.ranking) {
+        const [rk, top] = await Promise.all([store.fidRanking ? store.fidRanking(null) : null, store.fidTopProdutos(null, P.dias)]);
+        P.ranking = { rk, top };
+      } else return;
     } catch (e) {
       console.error(e);
       return toast(erroMsg(e), { tone: 'error' });
@@ -124,6 +129,7 @@
       hoje: 'Prêmios para entregar, notas para conferir e o arquivo de notas do caixa.',
       clientes: 'Quem participa do programa, com o saldo e o extrato de cada um.',
       premios: 'O que o cliente pode trocar pelos pontos. Aparece na página da mesa na hora.',
+      ranking: 'Os 10 clientes que mais ganharam pontos e os produtos mais pedidos nas notas.',
       regras: 'Quanto vale cada real, dias com pontos em dobro e o regulamento.',
     }[tab];
     setTimeout(carregarAba, 0);
@@ -132,7 +138,7 @@
       <div class="aj-tabs" role="tablist" aria-label="Seções da fidelidade">
         ${TABS.map((t) => `<button type="button" role="tab" aria-selected="${t.id === tab}" data-fp-tab="${t.id}">${t.label}${t.id === 'hoje' && badge() ? ` <span class="badge">${badge()}</span>` : ''}</button>`).join('')}
       </div>
-      ${{ hoje: tHoje, clientes: tClientes, premios: tPremios, regras: tRegras }[tab]()}`;
+      ${{ hoje: tHoje, clientes: tClientes, premios: tPremios, ranking: tRanking, regras: tRegras }[tab]()}`;
   }
 
   /* ---------- Hoje ---------- */
@@ -242,12 +248,53 @@
           </div>${lista.length >= 300 ? '<p class="help">Mostrando os 300 mais recentes. Use a busca para achar os outros.</p>' : ''}`}`;
   }
 
+  /* ---------- Ranking e produtos mais pedidos ---------- */
+  const PERIODOS = [[30, '30 dias'], [90, '90 dias'], [365, '12 meses']];
+  function tabelaProdutos(top, vazio) {
+    if (!top || !top.length) return `<p class="muted">${vazio}</p>`;
+    const max = Math.max(...top.map((x) => +x.quantidade || 0), 1);
+    return `<ol class="fp-top">${top.map((x, i) => `<li>
+        <span class="fp-top-pos">${i + 1}º</span>
+        <span class="fp-top-nome"><b>${esc(x.descricao)}</b><span class="fp-top-barra"><i style="width:${Math.max(4, Math.round((+x.quantidade / max) * 100))}%"></i></span></span>
+        <span class="fp-top-num"><b>${num(Math.round(+x.quantidade))}</b><small>${num(x.notas)} ${+x.notas === 1 ? 'nota' : 'notas'}${x.clientes != null ? ` · ${num(x.clientes)} ${+x.clientes === 1 ? 'cliente' : 'clientes'}` : ''}</small></span>
+      </li>`).join('')}</ol>`;
+  }
+  function tRanking() {
+    const d = P.ranking;
+    if (!d) return '<p class="muted">Carregando…</p>';
+    const rk = d.rk;
+    const top = (rk && rk.top) || [];
+    return `<div class="fp-grid">
+      <section class="panel stack">
+        <h2>Top 10 do clube</h2>
+        ${rk && rk.ativo === false && regras().ativo ? `<p class="note">${icon('alert')}<span>O ranking está escondido dos clientes. Ligue em <button type="button" class="link" data-fp-tab="regras">Regras</button>.</span></p>` : ''}
+        ${top.length ? `${podioHtml(top)}
+          ${top.length > 3 ? `<ol class="rk-lista">${top.slice(3).map((x) => `<li><span class="rk-pos">${x.pos}º</span><span class="pd-av">${esc((x.nome || '?')[0])}</span><b>${esc(x.nome)}</b><span class="rk-pts">${num(x.pontos)} pts</span></li>`).join('')}</ol>` : ''}
+          <small class="help">É assim que o cliente vê: primeiro nome e a inicial do sobrenome. Trocas não tiram pontos do ranking.</small>`
+        : '<p class="muted">O ranking aparece quando os clientes começarem a ganhar pontos.</p>'}
+      </section>
+      <section class="panel stack">
+        <div class="fp-top-head"><h2>Produtos mais pedidos</h2>
+          <div class="seg" role="radiogroup" aria-label="Período">${PERIODOS.map(([v, l]) => `<button type="button" role="radio" aria-checked="${P.dias === v}" data-fp-dias="${v}">${l}</button>`).join('')}</div></div>
+        ${tabelaProdutos(d.top, 'Os produtos vêm das notas conferidas na SEFAZ ou do XML importado em Hoje. Assim que as primeiras chegarem, eles aparecem aqui.')}
+      </section>
+    </div>`;
+  }
+  function podioHtml(top) {
+    return `<ol class="podio podio--grande">${[1, 0, 2].map((i) => {
+      const x = top[i];
+      if (!x) return `<li class="pd pd--${i + 1} is-vazio"><span class="pd-av">?</span><b>—</b><span class="pd-degrau">${i + 1}º</span></li>`;
+      return `<li class="pd pd--${i + 1}">${i === 0 ? `<span class="pd-coroa">${icon('trophy')}</span>` : ''}<span class="pd-av">${esc((x.nome || '?')[0])}</span><b>${esc(x.nome)}</b><small>${num(x.pontos)} pts</small><span class="pd-degrau">${x.pos}º</span></li>`;
+    }).join('')}</ol>`;
+  }
+
   async function abrirCliente(cpf) {
     $('#fpTitle').textContent = 'Cliente';
     $('#fpBody').innerHTML = '<p class="muted">Carregando…</p>';
     openSheet('sh-fp');
     try {
       P.ficha = await ctx.store.fidCliente(cpf);
+      if (P.ficha) P.ficha.top = await ctx.store.fidTopProdutos(cpf, 3650).catch(() => []);
     } catch (e) {
       $('#fpBody').innerHTML = `<p class="form-error">${esc(erroMsg(e))}</p>`;
       return;
@@ -295,6 +342,7 @@
             <label class="field"><span>Motivo</span><input class="input" name="descricao" maxlength="100" placeholder="Ex.: pedido do delivery"></label>
             <button type="submit" class="btn btn-cobalt btn-sm">Lançar</button>
           </div></form>` : ''}
+      ${f.top && f.top.length ? `<section class="stack"><h3 class="fp-h3">Mais pedidos por ${esc(c.nome.split(' ')[0])}</h3>${tabelaProdutos(f.top.slice(0, 5), '')}</section>` : ''}
       ${f.resgates.length ? `<section class="stack"><h3 class="fp-h3">Trocas</h3><ul class="fp-mov">${f.resgates.map((x) => `<li>
           <span><b>${esc(x.premio_nome)}</b></span><span class="muted">código ${esc(x.codigo)} · ${dataHora(x.criado_em)}</span>
           <b class="fp-st fp-st--${x.status}">${STATUS[x.status]}</b></li>`).join('')}</ul></section>` : ''}
@@ -381,6 +429,10 @@
         ${niveisForm(r)}
       </div>
       <div class="aj-col">
+        <section class="panel stack">
+          <div class="set-row fp-row"><div><h3>Ranking do clube</h3><p>Mostra aos clientes o top 10 de quem mais ganhou pontos (primeiro nome e inicial).</p></div>
+            <label class="switch"><input type="checkbox" name="rankAtivo" ${!r.ranking || r.ranking.ativo !== false ? 'checked' : ''} aria-label="Ranking do clube"><span></span></label></div>
+        </section>
         <section class="panel stack">
           <div class="set-row fp-row"><div><h3>Indicação</h3><p>O cliente convida alguém com o código dele e os dois ganham pontos.</p></div>
             <label class="switch"><input type="checkbox" name="indAtivo" ${ind.ativo ? 'checked' : ''} aria-label="Indicação"><span></span></label></div>
@@ -490,6 +542,7 @@
       return x || '';
     };
     r.inicio = di(v('inicio').value, 'Vale para compras desde') || null;
+    r.ranking = { ativo: v('rankAtivo').checked };
     r.indicacao = { ativo: v('indAtivo').checked, indicador: Math.round(+v('indIndicador').value || 0), indicado: Math.round(+v('indIndicado').value || 0), quando: v('indQuando').value === 'compra' ? 'compra' : 'cadastro' };
     r.manual = v('manual').checked;
     r.regulamento = v('regulamento').value.trim();
@@ -561,6 +614,7 @@
     ctx.rerender();
   };
   const recarregar = async () => {
+    P.ranking = null;
     await atualizar();
     if (ctx.S.view === 'fidelidade') ctx.rerender();
     ctx.chrome();
@@ -666,6 +720,12 @@
     if (tab) {
       if (P.tab === 'regras') lerRegras();
       P.tab = tab.dataset.fpTab;
+      return ctx.rerender();
+    }
+    const dias = t.closest('[data-fp-dias]');
+    if (dias) {
+      P.dias = +dias.dataset.fpDias;
+      P.ranking = null;
       return ctx.rerender();
     }
     const cli = t.closest('[data-fp-cliente]');
@@ -966,7 +1026,28 @@
           dica: 'Aponte a câmera para o QR Code no fim da nota.',
           aceitar: (tx) => { const k = F.chaveDoTexto(tx); return k && F.chaveValida(k) ? null : 'Este QR não é de uma nota fiscal (NFC-e).'; },
           valor: true,
-          pronto: (tx, x) => depoisDoQr(cpf, tx, x && x.quadro),
+          pronto: async (tx, x) => {
+            // Primeiro a conferência automática na SEFAZ; sem ela, o valor vem da foto e a equipe confere.
+            if (ctx.store.fidSefaz) {
+              $('#fpTitle').textContent = 'Lançar nota';
+              $('#fpBody').innerHTML = '<div class="fid-carregando"><span class="dot"></span><p>Conferindo a nota na SEFAZ…</p></div>';
+              openSheet('sh-fp');
+              const r = await ctx.store.fidSefaz({ cpf, qr: tx });
+              if (r.status === 'creditada') {
+                closeSheet();
+                toast(`+${pts(r.pontos || 0)} creditados. Nota conferida na SEFAZ${r.itens ? ` (${r.itens} ${r.itens === 1 ? 'produto' : 'produtos'})` : ''}.`, { tone: 'ok', ms: 5000 });
+                return recarregar();
+              }
+              if (['repetida', 'recusada', 'erro', 'sem_cadastro', 'inativo'].includes(r.status)) {
+                const msg = r.status === 'repetida' ? `Esta nota já foi registrada (${STATUS[r.nota] || r.nota}).`
+                  : r.status === 'sem_cadastro' ? 'Este CPF não tem cadastro no programa.'
+                  : r.status === 'inativo' ? 'O programa está pausado.' : r.motivo || r.mensagem || 'Esta nota não vale pontos.';
+                $('#fpBody').innerHTML = `<div class="stack"><p class="form-error">${esc(msg)}</p><button type="button" class="btn btn-quiet btn-block" data-close>Fechar</button></div>`;
+                return;
+              }
+            }
+            depoisDoQr(cpf, tx, x && x.quadro);
+          },
         }), 350);
         return;
       }

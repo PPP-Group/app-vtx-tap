@@ -1842,6 +1842,7 @@ begin
     values (v_chave, r, v_cpf, round(v_valor, 2), v_emit, quem)
     on conflict (chave) do update set cpf = excluded.cpf, valor = excluded.valor, emitida_em = excluded.emitida_em,
       importada_em = now(), importada_por = excluded.importada_por;
+    perform public.fid_itens_salvar(r, v_chave, v_cpf, v_emit, item -> 'itens');
     if v_cpf is null then k_sem_cpf := k_sem_cpf + 1; end if;
     select * into n from public.fid_notas where chave = v_chave for update;
     if found and n.status = 'pendente' then
@@ -2149,4 +2150,202 @@ begin
       execute format('alter publication supabase_realtime add table public.%I', t);
     end if;
   end loop;
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- Produtos das notas, conferência automática na SEFAZ e rankings.
+-- Os produtos vêm do XML importado pela equipe ou da consulta da nota na SEFAZ
+-- (função "nfce", pela API da Infosimples). Com eles saem os mais pedidos,
+-- no geral e de cada cliente.
+-- ---------------------------------------------------------------------------
+create table if not exists public.fid_itens (
+  chave          text not null check (chave ~ '^[0-9]{44}$'),
+  n              int not null,
+  restaurante_id uuid not null references public.restaurantes (id) on delete cascade,
+  cpf            text,
+  descricao      text not null check (char_length(descricao) between 1 and 120),
+  quantidade     numeric(12, 3) not null default 1,
+  unidade        text check (char_length(unidade) <= 10),
+  valor          numeric(12, 2),
+  emitida_em     timestamptz,
+  primary key (chave, n)
+);
+create index if not exists fid_itens_rest_idx on public.fid_itens (restaurante_id, emitida_em desc);
+create index if not exists fid_itens_cpf_idx on public.fid_itens (restaurante_id, cpf);
+alter table public.fid_itens enable row level security;
+revoke all on public.fid_itens from anon;
+revoke insert, update, delete, truncate on public.fid_itens from authenticated;
+drop policy if exists "equipe ve itens das notas" on public.fid_itens;
+create policy "equipe ve itens das notas" on public.fid_itens
+  for select to authenticated using (restaurante_id = public.meu_restaurante());
+
+-- Grava os produtos de uma nota (substitui os que já existiam).
+create or replace function public.fid_itens_salvar(p_restaurante uuid, p_chave text, p_cpf text, p_emitida timestamptz, p_itens jsonb)
+returns int language plpgsql security definer set search_path = public as $$
+declare k int;
+begin
+  if jsonb_typeof(p_itens) <> 'array' then return 0; end if;
+  delete from public.fid_itens where chave = p_chave;
+  insert into public.fid_itens (chave, n, restaurante_id, cpf, descricao, quantidade, unidade, valor, emitida_em)
+  select p_chave, x.i, p_restaurante, nullif(p_cpf, ''),
+         left(btrim(regexp_replace(x.e ->> 'descricao', '\s+', ' ', 'g')), 120),
+         least(greatest(coalesce(public.num_ou(x.e ->> 'quantidade', 1), 1), 0), 100000),
+         left(nullif(btrim(x.e ->> 'unidade'), ''), 10),
+         case when public.num_ou(x.e ->> 'valor', null) between 0 and 1000000 then round(public.num_ou(x.e ->> 'valor', null), 2) end,
+         p_emitida
+    from jsonb_array_elements(p_itens) with ordinality as x(e, i)
+   where x.i <= 300 and btrim(coalesce(x.e ->> 'descricao', '')) <> '';
+  get diagnostics k = row_count;
+  return k;
+end $$;
+
+-- Uso da consulta paga, por restaurante e mês (freio de custo).
+create table if not exists private.fid_sefaz_uso (
+  restaurante_id uuid not null references public.restaurantes (id) on delete cascade,
+  mes            date not null,
+  consultas      int not null default 0,
+  primary key (restaurante_id, mes)
+);
+
+-- Antes de pagar a consulta: a nota é do restaurante, está no prazo, o cliente existe e a nota ainda não
+-- foi usada. Devolve { status: 'ok', chave, url } ou o motivo para não consultar.
+create or replace function public.fid_sefaz_preparar(p_restaurante uuid, p_cpf text, p_qr text, p_limite int)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v_cpf text := regexp_replace(coalesce(p_cpf, ''), '[^0-9]', '', 'g');
+  v_txt text := btrim(coalesce(p_qr, ''));
+  v_chave text; prob text; n public.fid_notas; v_mes date := date_trunc('month', now())::date; usados int;
+begin
+  if not public.fid_no_ar(p_restaurante) then return jsonb_build_object('status', 'inativo'); end if;
+  if not public.cpf_valido(v_cpf) then return jsonb_build_object('status', 'erro', 'mensagem', 'CPF inválido. Confira os números.'); end if;
+  if not exists (select 1 from public.fid_clientes where restaurante_id = p_restaurante and cpf = v_cpf) then
+    return jsonb_build_object('status', 'sem_cadastro');
+  end if;
+  v_chave := substring(regexp_replace(v_txt, '[\s.-]', '', 'g') from '([0-9]{44})');
+  if v_chave is null then return jsonb_build_object('status', 'erro', 'mensagem', 'Não achamos a chave da nota. Leia o QR Code impresso na nota fiscal.'); end if;
+  prob := public.fid_chave_problema(p_restaurante, v_chave);
+  if prob is not null then return jsonb_build_object('status', 'erro', 'mensagem', prob); end if;
+  select * into n from public.fid_notas where chave = v_chave;
+  if found then
+    if n.cpf <> v_cpf then return jsonb_build_object('status', 'erro', 'mensagem', 'Esta nota já foi registrada em outra conta.'); end if;
+    if n.status <> 'pendente' then
+      return jsonb_build_object('status', 'repetida', 'nota', n.status, 'pontos', n.pontos, 'motivo', n.motivo);
+    end if;
+  end if;
+  -- Já conferida pelo XML da equipe: não precisa pagar a consulta.
+  if exists (select 1 from public.fid_xml where chave = v_chave) then return jsonb_build_object('status', 'xml', 'chave', v_chave); end if;
+  if not public.equipe_pode_tentar('sefaz:' || p_restaurante || ':' || v_cpf, 15, 1440) then
+    return jsonb_build_object('status', 'limite', 'mensagem', 'Muitas notas hoje. As próximas a equipe confere.');
+  end if;
+  insert into private.fid_sefaz_uso (restaurante_id, mes, consultas) values (p_restaurante, v_mes, 1)
+  on conflict (restaurante_id, mes) do update set consultas = private.fid_sefaz_uso.consultas + 1
+  returning consultas into usados;
+  if usados > greatest(coalesce(p_limite, 3000), 0) then
+    update private.fid_sefaz_uso u set consultas = u.consultas - 1 where u.restaurante_id = p_restaurante and u.mes = v_mes;
+    return jsonb_build_object('status', 'limite', 'mensagem', 'A conferência automática deste mês acabou. A equipe confere a nota.');
+  end if;
+  return jsonb_build_object('status', 'ok', 'chave', v_chave,
+    'url', case when v_txt ~* '^https?://[a-z0-9.-]+[.]gov[.]br/' then left(v_txt, 600) end);
+end $$;
+
+-- Nota conferida na SEFAZ: registra (se ainda não estava), credita com o valor oficial e guarda os produtos.
+create or replace function public.fid_sefaz_registrar(p_restaurante uuid, p_cpf text, p_chave text, p_url text,
+  p_valor numeric, p_emitida timestamptz, p_itens jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare n public.fid_notas; pts int;
+begin
+  if p_valor is null or p_valor <= 0 or p_valor >= 100000 then return jsonb_build_object('status', 'erro', 'mensagem', 'Valor da nota inválido.'); end if;
+  insert into public.fid_notas (chave, restaurante_id, cpf, url, lida_por)
+  values (p_chave, p_restaurante, p_cpf, p_url, 'Cliente')
+  on conflict (chave) do nothing;
+  select * into n from public.fid_notas where chave = p_chave for update;
+  if n.cpf <> p_cpf then return jsonb_build_object('status', 'erro', 'mensagem', 'Esta nota já foi registrada em outra conta.'); end if;
+  perform public.fid_itens_salvar(p_restaurante, p_chave, p_cpf, p_emitida, p_itens);
+  if n.status <> 'pendente' then return jsonb_build_object('status', 'repetida', 'nota', n.status, 'pontos', n.pontos); end if;
+  pts := public.fid_creditar(p_chave, round(p_valor, 2), coalesce(p_emitida, n.lida_em), 'SEFAZ');
+  return jsonb_build_object('status', 'creditada', 'pontos', pts);
+end $$;
+
+-- A SEFAZ mostrou outro CPF (ou nenhum): a nota não vale e fica o motivo para o cliente.
+create or replace function public.fid_sefaz_recusar(p_restaurante uuid, p_cpf text, p_chave text, p_url text, p_motivo text)
+returns jsonb language plpgsql security definer set search_path = public as $$
+begin
+  insert into public.fid_notas (chave, restaurante_id, cpf, url, lida_por, status, motivo, conferida_em, conferida_por)
+  values (p_chave, p_restaurante, p_cpf, p_url, 'Cliente', 'recusada', left(p_motivo, 160), now(), 'SEFAZ')
+  on conflict (chave) do update set status = 'recusada', motivo = left(p_motivo, 160), conferida_em = now(), conferida_por = 'SEFAZ'
+    where public.fid_notas.status = 'pendente' and public.fid_notas.cpf = p_cpf;
+  return jsonb_build_object('status', 'recusada', 'motivo', left(p_motivo, 160));
+end $$;
+
+-- Ranking do clube: os 10 que mais ganharam pontos (trocas não descontam). Nome curto: "Maria S.".
+-- Com o token do cliente, devolve também a posição dele e os produtos que ele mais pede.
+create or replace function public.fid_ranking(p_restaurante uuid, p_token uuid default null) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare v_cpf text; eu jsonb;
+begin
+  if not public.fid_no_ar(p_restaurante) or coalesce(public.fid_cfg(p_restaurante) -> 'ranking' ->> 'ativo', 'true') = 'false' then
+    return jsonb_build_object('ativo', false);
+  end if;
+  if p_token is not null then
+    select s.cpf into v_cpf from private.fid_sessoes s
+     where s.token_hash = public.hash_token(p_token) and s.restaurante_id = p_restaurante and s.criado_em > now() - interval '180 days';
+  end if;
+  return (with ganhos as (
+      select m.cpf, sum(m.pontos)::int as pontos
+        from public.fid_movimentos m
+       where m.restaurante_id = p_restaurante and m.tipo <> 'resgate' and not (m.tipo = 'estorno' and m.resgate_id is not null)
+       group by m.cpf having sum(m.pontos) > 0),
+    pos as (
+      select g.cpf, g.pontos, rank() over (order by g.pontos desc) as pos,
+             (select w[1] || case when array_length(w, 1) > 1 then ' ' || left(w[array_length(w, 1)], 1) || '.' else '' end
+                from (select regexp_split_to_array(btrim(c.nome), '\s+') as w) x) as nome
+        from ganhos g join public.fid_clientes c on c.restaurante_id = p_restaurante and c.cpf = g.cpf)
+    select jsonb_build_object('ativo', true,
+      'top', coalesce((select jsonb_agg(jsonb_build_object('pos', p.pos, 'nome', p.nome, 'pontos', p.pontos, 'voce', p.cpf = v_cpf) order by p.pos, p.nome)
+                        from (select * from pos order by pos, nome limit 10) p), '[]'::jsonb),
+      'eu', case when v_cpf is null then null else jsonb_build_object(
+          'pos', (select p.pos from pos p where p.cpf = v_cpf),
+          'pontos', coalesce((select p.pontos from pos p where p.cpf = v_cpf), 0),
+          'favoritos', coalesce((select jsonb_agg(f.descricao) from (
+              select min(i.descricao) as descricao from public.fid_itens i
+               where i.restaurante_id = p_restaurante and i.cpf = v_cpf
+               group by lower(i.descricao) order by sum(i.quantidade) desc, count(*) desc limit 3) f), '[]'::jsonb)) end));
+end $$;
+
+-- Equipe: produtos mais pedidos (no geral ou de um cliente), nos últimos p_dias.
+create or replace function public.fid_top_produtos(p_cpf text default null, p_dias int default 90) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare r uuid := public.meu_restaurante();
+begin
+  if r is null then raise exception 'Acesso negado.'; end if;
+  return coalesce((select jsonb_agg(jsonb_build_object('descricao', t.descricao, 'quantidade', t.quantidade, 'notas', t.notas, 'clientes', t.clientes, 'valor', t.valor)
+      order by t.quantidade desc, t.notas desc)
+    from (select min(i.descricao) as descricao, sum(i.quantidade) as quantidade, count(distinct i.chave) as notas,
+                 count(distinct i.cpf) as clientes, sum(i.valor) as valor
+            from public.fid_itens i
+           where i.restaurante_id = r and (p_cpf is null or i.cpf = regexp_replace(p_cpf, '[^0-9]', '', 'g'))
+             and coalesce(i.emitida_em, now()) > now() - make_interval(days => least(greatest(coalesce(p_dias, 90), 1), 3650))
+           group by lower(i.descricao)
+           order by sum(i.quantidade) desc, count(distinct i.chave) desc
+           limit 20) t), '[]'::jsonb);
+end $$;
+
+do $$
+declare f text;
+begin
+  foreach f in array array['public.fid_itens_salvar(uuid, text, text, timestamptz, jsonb)'] loop
+    execute format('revoke execute on function %s from public, anon, authenticated', f);
+  end loop;
+  -- Só a função "nfce" (service_role).
+  foreach f in array array[
+    'public.fid_sefaz_preparar(uuid, text, text, int)',
+    'public.fid_sefaz_registrar(uuid, text, text, text, numeric, timestamptz, jsonb)',
+    'public.fid_sefaz_recusar(uuid, text, text, text, text)'] loop
+    execute format('revoke execute on function %s from public, anon, authenticated', f);
+    execute format('grant execute on function %s to service_role', f);
+  end loop;
+  execute 'revoke execute on function public.fid_ranking(uuid, uuid) from public';
+  execute 'grant execute on function public.fid_ranking(uuid, uuid) to anon, authenticated';
+  execute 'revoke execute on function public.fid_top_produtos(text, int) from public, anon';
+  execute 'grant execute on function public.fid_top_produtos(text, int) to authenticated';
 end $$;
