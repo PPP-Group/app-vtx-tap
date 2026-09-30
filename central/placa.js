@@ -2,15 +2,15 @@
  * PDF das plaquinhas para a gráfica: uma plaquinha por página, no tamanho exato de um
  * cartão de crédito (ISO/IEC 7810 ID-1: 85,60 × 53,98 mm, cantos com raio de 3,18 mm).
  *
- * Layout: fundo branco. À esquerda, o QR com uma logo no meio e o miolo dos três quadrados
- * de canto em roxo claro. Divisória em roxo claro. À direita, o ícone de NFC grande e
- * centralizado, com "Aproxime o celular" logo embaixo. O código da plaquinha sai pequeno,
- * em pé na lateral direita (lido de cima para baixo), e o @ fica no canto inferior direito.
+ * Layout: fundo branco, divisória em roxo claro no meio exato do cartão. À esquerda, o QR
+ * centralizado, com uma logo no meio e o miolo dos três quadrados de canto em roxo claro.
+ * À direita, centralizados na mesma linha: o ícone de NFC grande, "Aproxime o celular" e o @.
+ * O código da plaquinha sai pequeno, em pé na lateral direita (lido de cima para baixo).
  *
  * Dois modelos:
  *   'padrao'        → logo da VTX Tap no meio do QR.
  *   'personalizado' → "personalizado básico": logo do restaurante no meio do QR e a logo
- *                     da VTX Tap pequenininha, à esquerda do @. Sem logo do restaurante,
+ *                     da VTX Tap pequenininha, em cima do @. Sem logo do restaurante,
  *                     sai igual ao padrão.
  *
  * Qualidade de impressão: QR, ícone de NFC e textos em vetor (nítidos em qualquer tamanho),
@@ -180,17 +180,19 @@
       for (const u of new Set(itens.map((it) => it.logo).filter(Boolean))) logos[u] = await logoPng(u);
     }
 
-    // Medidas (mm)
-    const qr = 37;                     // lado do QR
-    const qrX = 5.5;
+    // Medidas (mm). A divisória fica no meio exato do cartão; cada metade é centralizada nela.
+    const divX = L / 2;
+    const qr = 32;                     // lado do QR, centralizado na metade esquerda
+    const qrX = (divX - qr) / 2;
     const qrY = (A - qr) / 2;
-    const divX = qrX + qr + 4.5;       // divisória
     const codX = L - 5;                // código em pé na lateral direita (as letras ficam à direita desta linha)
-    const dirCx = (divX + codX - 1.5) / 2;
-    const nfcW = 27;                   // ícone de NFC, bem maior e no centro
+    const dirCx = (divX + L) / 2;      // centro da metade direita: ícone, título e @ alinhados nele
+    const nfcW = 25;                   // ícone de NFC, grande e no centro
     const nfcH = (nfcW * NFC.h) / NFC.w;
-    const blocoH = nfcH + 2.5 + 9;     // ícone + espaço + título em duas linhas
-    const nfcY = (A - blocoH) / 2 - 1.5;
+    const logoH = 3.4;                 // logo da VTX Tap em cima do @ (personalizado)
+    // Bloco da direita: ícone, 2,5 de espaço, título (2 linhas), 3 de espaço, [logo + 1,2], @.
+    const blocoH = nfcH + 2.5 + 8.4 + 3 + (vtxTexto ? logoH + 1.2 : 0) + 2.2;
+    const nfcY = (A - blocoH) / 2;
 
     for (const [i, it] of itens.entries()) {
       if (i) doc.addPage([L, A], 'landscape');
@@ -216,19 +218,20 @@
 
       // Direita: ícone de NFC grande e centralizado, com o título logo embaixo.
       await svgNoPdf(doc, NFC, dirCx - nfcW / 2, nfcY, nfcW, nfcH);
-      // Título em duas linhas ("Aproxime" / "o celular") para caber grande entre a divisória e o código.
+      // Título em duas linhas ("Aproxime" / "o celular").
       const [l1, ...resto] = PLACA.titulo.split(' ');
-      texto(doc, l1, dirCx, nfcY + nfcH + 2.5 + 3.6, { tamanho: 11.5 });
-      texto(doc, resto.join(' '), dirCx, nfcY + nfcH + 2.5 + 8.4, { tamanho: 11.5 });
+      const tY = nfcY + nfcH + 2.5;
+      texto(doc, l1, dirCx, tY + 3.6, { tamanho: 11.5 });
+      texto(doc, resto.join(' '), dirCx, tY + 8.4, { tamanho: 11.5 });
 
-      // Canto inferior direito: @ (no personalizado, com a logo da VTX Tap pequena à esquerda).
-      const rodY = A - 4;
-      const wAt = texto(doc, PLACA.rodape, codX - 2.2, rodY, { tamanho: 6, alinhar: 'direita', peso: 'semibold' });
+      // @ alinhado com o título; no personalizado, a logo da VTX Tap pequena em cima dele.
+      let rodY = tY + 8.4 + 3 + 2.2;
       if (vtxTexto) {
-        const h = 3.4;
-        const w = (vtxTexto.w / vtxTexto.h) * h;
-        doc.addImage(vtxTexto.url, 'PNG', codX - 2.2 - wAt - 1.2 - w, rodY - h + 0.75, w, h, 'logo-vtx-texto', 'FAST');
+        const w = (vtxTexto.w / vtxTexto.h) * logoH;
+        doc.addImage(vtxTexto.url, 'PNG', dirCx - w / 2, tY + 8.4 + 3, w, logoH, 'logo-vtx-texto', 'FAST');
+        rodY += logoH + 1.2;
       }
+      texto(doc, PLACA.rodape, dirCx, rodY, { tamanho: 6, peso: 'semibold' });
 
       // Código em pé na lateral direita, pequeno, lido de cima para baixo.
       doc.setFont('Sora', 'semibold');
