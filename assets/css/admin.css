@@ -788,3 +788,15 @@
 .team-add h3 { font-size: 15px; }
 .team-add-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 @media (max-width: 520px) { .team-add-row { grid-template-columns: 1fr; } }
+
+/* Cardápio por planilha */
+.planilha { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.planilha.stack { display: grid; }
+.planilha h2 { font-size: 17px; }
+.planilha-acts { display: flex; flex-wrap: wrap; gap: 8px; }
+.planilha-cats { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.planilha-cats li { font-size: 14px; }
+.planilha-erros { padding: 10px 12px; border-radius: 12px; background: var(--surface-2); font-size: 13.5px; }
+.planilha-erros ul { margin: 6px 0 0; padding-left: 18px; }
+.planilha-modo { justify-self: start; }
+.tag--delivery { background: color-mix(in srgb, var(--cobalt, #7d27fc) 14%, transparent); }

@@ -1355,6 +1355,7 @@
     const selos = (it) =>
       `${it.destaque ? '<span class="tag tag--casa">Da casa</span>' : ''}${(it.tags || []).map((t) => `<span class="tag">${esc(cfg.tags[t] || t)}</span>`).join('')}`;
     return `<div class="stack menu-edit">
+      ${planilhaPainel()}
       ${cats.length ? '' : `<div class="empty"><span class="empty-ico">${icon('book')}</span><h2>Cardápio vazio</h2><p>Crie uma categoria (Entradas, Pratos, Bebidas…) e adicione os pratos.</p></div>`}
       ${cats.map((c, ci) => `<section class="panel mc" data-ci="${ci}" aria-label="Categoria ${esc(c.nome)}">
         <div class="mc-head">
@@ -1368,7 +1369,7 @@
         </div>
         ${c.itens.length ? `<ul class="mc-items">${c.itens.map((it, ii) => `<li class="mc-item" data-ii="${ii}">
             <button type="button" class="mc-open" data-item-edit aria-label="Editar ${esc(it.nome)}">
-              <span class="mc-body"><b>${esc(it.nome)}</b>${it.desc ? `<small>${esc(it.desc)}</small>` : ''}<span class="tags">${selos(it)}</span></span>
+              <span class="mc-body"><b>${esc(it.nome)}</b>${it.desc ? `<small>${esc(it.desc)}</small>` : ''}<span class="tags">${selos(it)}${it.delivery ? '<span class="tag tag--delivery">Delivery</span>' : ''}</span></span>
               <span class="price">${brl(it.preco)}</span>
               <span class="mc-edit">${icon('edit')}</span>
             </button>
@@ -1390,6 +1391,98 @@
     return Number.isFinite(n) ? Math.round(n * 100) / 100 : NaN;
   };
 
+  /* Cardápio por planilha: baixar o modelo, importar e conferir antes de gravar. */
+  function planilhaPainel() {
+    const imp = S.importacao;
+    if (!imp) return `<section class="panel planilha">
+        <div><h2>Cardápio por planilha</h2><p class="muted">Baixe o modelo, preencha no Excel ou no Google Planilhas (ou peça para uma IA preencher) e importe aqui.</p></div>
+        <div class="planilha-acts">
+          <button type="button" class="btn btn-line btn-sm" data-planilha-modelo>${icon('download')} Baixar modelo</button>
+          <label class="btn btn-cobalt btn-sm">${icon('upload')} Importar planilha<input type="file" accept=".xlsx,.xls,.csv,.ods" class="sr-only" data-planilha-arq></label>
+        </div>
+      </section>`;
+    const nItens = imp.categorias.reduce((t, c) => t + c.itens.length, 0);
+    const nDel = imp.categorias.reduce((t, c) => t + c.itens.filter((i) => i.delivery).length, 0);
+    return `<section class="panel planilha stack">
+        <h2>Conferir a importação</h2>
+        <p><b>${nItens}</b> ${nItens === 1 ? 'item' : 'itens'} em <b>${imp.categorias.length}</b> ${imp.categorias.length === 1 ? 'categoria' : 'categorias'}${nDel ? ` · ${nDel} no delivery` : ''} · arquivo ${esc(imp.arquivo)}</p>
+        <ul class="planilha-cats">${imp.categorias.map((c) => `<li><b>${esc(c.nome)}</b> <span class="muted">${c.itens.length} ${c.itens.length === 1 ? 'item' : 'itens'}: ${esc(c.itens.slice(0, 4).map((i) => i.nome).join(', '))}${c.itens.length > 4 ? '…' : ''}</span></li>`).join('')}</ul>
+        ${imp.erros.length ? `<div class="planilha-erros"><b>${imp.erros.length} ${imp.erros.length === 1 ? 'linha ficou' : 'linhas ficaram'} de fora:</b><ul>${imp.erros.slice(0, 8).map((e) => `<li>${esc(e)}</li>`).join('')}${imp.erros.length > 8 ? `<li>e mais ${imp.erros.length - 8}…</li>` : ''}</ul></div>` : ''}
+        <div class="seg planilha-modo" role="radiogroup" aria-label="Como importar">
+          <button type="button" role="radio" aria-checked="${imp.modo === 'somar'}" data-planilha-modo="somar">Somar ao cardápio atual</button>
+          <button type="button" role="radio" aria-checked="${imp.modo === 'trocar'}" data-planilha-modo="trocar">Trocar o cardápio todo</button>
+        </div>
+        <small class="help">${imp.modo === 'somar' ? 'Itens com o mesmo nome na mesma categoria são atualizados; os novos entram no fim.' : 'O cardápio atual é apagado e fica só o que está na planilha.'}</small>
+        <div class="vhead-actions">
+          <button type="button" class="btn btn-cobalt" data-planilha-ok ${nItens ? '' : 'disabled'}>${icon('check')} Importar ${nItens} ${nItens === 1 ? 'item' : 'itens'}</button>
+          <button type="button" class="btn btn-quiet" data-planilha-cancelar>Cancelar</button>
+        </div>
+      </section>`;
+  }
+  const chaveNome = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+  function aplicarImportacao(imp) {
+    const novo = (it) => ({ id: uid(), ...it });
+    if (imp.modo === 'trocar') return imp.categorias.map((c) => ({ id: uid(), nome: c.nome, itens: c.itens.map(novo) }));
+    const cats = cloneMenu();
+    for (const c of imp.categorias) {
+      let alvo = cats.find((x) => chaveNome(x.nome) === chaveNome(c.nome));
+      if (!alvo) cats.push((alvo = { id: uid(), nome: c.nome, itens: [] }));
+      for (const it of c.itens) {
+        const i = alvo.itens.findIndex((x) => chaveNome(x.nome) === chaveNome(it.nome));
+        if (i >= 0) alvo.itens[i] = { ...alvo.itens[i], ...it };
+        else alvo.itens.push(novo(it));
+      }
+    }
+    return cats;
+  }
+  document.addEventListener('click', async (e) => {
+    const t = e.target;
+    if (t.closest('[data-planilha-modelo]')) {
+      try {
+        await Planilha.baixarModelo();
+      } catch (ex) {
+        toast(ex.message, { tone: 'error' });
+      }
+      return;
+    }
+    const modo = t.closest('[data-planilha-modo]');
+    if (modo && S.importacao) {
+      S.importacao.modo = modo.dataset.planilhaModo;
+      return renderView();
+    }
+    if (t.closest('[data-planilha-cancelar]')) {
+      S.importacao = null;
+      return renderView();
+    }
+    const ok = t.closest('[data-planilha-ok]');
+    if (ok && S.importacao) {
+      const imp = S.importacao;
+      if (imp.modo === 'trocar' && S.settings.cardapio.length && !confirm('Trocar o cardápio todo pelo da planilha? O cardápio atual será apagado.')) return;
+      ok.disabled = true;
+      const n = imp.categorias.reduce((t2, c) => t2 + c.itens.length, 0);
+      if (await saveCardapio(aplicarImportacao(imp))) {
+        S.importacao = null;
+        toast(`${n} ${n === 1 ? 'item importado' : 'itens importados'} para o cardápio.`, { tone: 'ok', ms: 4000 });
+      } else ok.disabled = false;
+      renderView();
+    }
+  });
+  document.addEventListener('change', async (e) => {
+    if (!e.target.matches('[data-planilha-arq]')) return;
+    const f = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!f) return;
+    try {
+      const r = await Planilha.ler(f, cfg.tags);
+      if (!r.total) return toast(r.erros[0] || 'A planilha não tem itens. Preencha a partir da segunda linha.', { tone: 'error', ms: 5000 });
+      S.importacao = { ...r, arquivo: f.name, modo: S.settings.cardapio.length ? 'somar' : 'trocar' };
+      renderView();
+    } catch (ex) {
+      console.error(ex);
+      toast(ex.message || 'Não foi possível ler a planilha.', { tone: 'error', ms: 5000 });
+    }
+  });
+
   function openItem(ci, ii) {
     S.itemEdit = { ci, ii };
     const editing = ii != null;
@@ -1404,6 +1497,7 @@
       </div>
       <div class="field"><span>Selos</span><div class="chips-wrap">${Object.entries(cfg.tags).map(([k, l]) => `<button type="button" class="chip" data-selo="${k}" aria-pressed="${(it.tags || []).includes(k)}">${esc(l)}</button>`).join('')}</div></div>
       <label class="set-inline"><span>Destaque da casa<small>Mostra o selo “Da casa” no prato.</small></span><span class="switch"><input type="checkbox" id="itDestaque" ${it.destaque ? 'checked' : ''}><span></span></span></label>
+      <label class="set-inline"><span>Disponível no delivery<small>O item também aparece no cardápio de entrega.</small></span><span class="switch"><input type="checkbox" id="itDelivery" ${it.delivery ? 'checked' : ''}><span></span></span></label>
       <p class="form-error" id="itErr" role="alert"></p>
       <div class="vhead-actions">
         <button type="submit" class="btn btn-cobalt">${editing ? 'Salvar prato' : 'Adicionar prato'}</button>
@@ -1769,6 +1863,7 @@
       preco,
       tags: $$('[data-selo]').filter((b) => b.getAttribute('aria-pressed') === 'true').map((b) => b.dataset.selo),
       destaque: $('#itDestaque').checked,
+      delivery: $('#itDelivery').checked,
     };
     if (antigo && destino === ci) cats[ci].itens[ii] = item;
     else {
