@@ -50,6 +50,8 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 .selpick { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
 .selpick .input { width: 74px; min-height: 38px; padding: 6px 10px; font-size: 15px; }
 .selacts { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; }
+.selmodelo { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.selmodelo select { width: auto; min-height: 34px; padding-block: 4px; font-size: 13.5px; }
 
 .tabela { overflow-x: auto; border-radius: 18px; background: var(--surface); box-shadow: var(--shadow-1); }
 table { width: 100%; border-collapse: collapse; font-size: 14px; }

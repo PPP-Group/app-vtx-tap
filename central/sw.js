@@ -4,7 +4,7 @@
  * Fontes e bibliotecas externas: cópia guardada, atualizada em segundo plano.
  * Dados do servidor (Supabase) nunca passam pelo cache.
  */
-const VERSAO = 'master-v1';
+const VERSAO = 'master-v2';
 const INICIO = '/master';
 const BASE = [
   INICIO,

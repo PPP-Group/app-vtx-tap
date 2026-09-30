@@ -41,11 +41,21 @@
   const paraSlug = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
   const restDe = (id) => S.rests.find((r) => r.id === id);
   const nomeArq = (t) => String(t || 'plaquinhas').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9-]+/g, '-').replace(/^-|-$/g, '').toLowerCase() || 'plaquinhas';
-  // PDF para a gráfica: uma plaquinha de 12 × 6 cm por página (central/placa.js).
+  // PDF para a gráfica: uma plaquinha do tamanho de um cartão de crédito por página (central/placa.js).
+  // Modelo 'padrao' (logo da VTX no QR) ou 'personalizado' (logo do restaurante da plaquinha no QR).
+  let modeloPlaca = 'padrao';
+  try { modeloPlaca = localStorage.getItem('central-modelo-placa') === 'personalizado' ? 'personalizado' : 'padrao'; } catch {}
   async function pdfPlaquinhas(codigos, titulo) {
     const lista = [...codigos].sort();
-    toast(`Gerando PDF com ${lista.length} ${lista.length === 1 ? 'plaquinha' : 'plaquinhas'}…`);
-    await Placa.baixarPdf(lista.map((c) => ({ codigo: c, url: tagUrl(c) })), `${nomeArq(titulo)}.pdf`);
+    const logoDe = (c) => {
+      const t = S.tags.find((x) => x.codigo === c);
+      const r = t && restDe(t.restaurante_id);
+      return (r && r.restaurante && r.restaurante.logo) || '';
+    };
+    if (modeloPlaca === 'personalizado' && !lista.some(logoDe)) {
+      toast('Nenhuma dessas plaquinhas é de restaurante com logo: saem com a logo da VTX no QR. Atribua a um restaurante com logo antes.', { ms: 6000 });
+    } else toast(`Gerando PDF com ${lista.length} ${lista.length === 1 ? 'plaquinha' : 'plaquinhas'}…`);
+    await Placa.baixarPdf(lista.map((c) => ({ codigo: c, url: tagUrl(c), logo: logoDe(c) })), `${nomeArq(titulo)}.pdf`, { modelo: modeloPlaca });
   }
   // Painel da equipe do restaurante.
   const painelDe = (r) => (BASE ? `https://${r.slug}.${BASE}/admin/` : new URL(`/admin/?r=${r.slug}`, location.origin).href);
@@ -580,7 +590,10 @@
           <button type="button" class="btn btn-line btn-sm" data-acao="mesa">Tirar da mesa</button>
           <button type="button" class="btn btn-line btn-sm" data-acao="estoque">Devolver ao estoque</button>
           <button type="button" class="btn btn-line btn-sm" data-acao="zerar">Zerar tudo</button>
-          <button type="button" class="btn btn-line btn-sm" data-acao="pdf">${icon('download')} PDF das plaquinhas</button>
+          <span class="selmodelo"><select class="input" id="modeloPlaca" aria-label="Modelo da plaquinha">
+            <option value="padrao" ${modeloPlaca === 'padrao' ? 'selected' : ''}>Modelo padrão</option>
+            <option value="personalizado" ${modeloPlaca === 'personalizado' ? 'selected' : ''}>Personalizado básico (logo do restaurante)</option></select>
+          <button type="button" class="btn btn-line btn-sm" data-acao="pdf">${icon('download')} PDF das plaquinhas</button></span>
           <button type="button" class="btn btn-line btn-sm" data-acao="imprimir">${icon('printer')} Imprimir QR</button>
           <button type="button" class="btn btn-line btn-sm" data-acao="etiquetas">${icon('printer')} Etiquetas de código</button>
           <button type="button" class="btn btn-line btn-sm" data-acao="csv">${icon('download')} Exportar CSV</button>
@@ -649,7 +662,7 @@
     $('#shBody').innerHTML = `<form class="stack" id="fGerar" novalidate>
       <label class="field"><span>Quantidade</span><input class="input mono" id="gQtd" type="number" min="1" max="2000" value="50" required></label>
       <label class="field"><span>Nome do lote</span><input class="input" id="gLote" maxlength="40" value="Lote ${hoje}"><small class="help">Ajuda a achar as plaquinhas depois (ex.: pedido da gráfica).</small></label>
-      <p class="help">Ao gerar, baixa na hora o PDF para a gráfica: uma plaquinha de 12 × 6 cm por página, cada uma com o QR e o código dela.</p>
+      <p class="help">Ao gerar, baixa na hora o PDF para a gráfica: uma plaquinha por página no tamanho de um cartão de crédito (85,6 × 54 mm), com o QR e o código dela, no modelo escolhido na seleção (padrão ou personalizado básico).</p>
       <button type="submit" class="btn btn-cobalt btn-block">${icon('plus')} Gerar e baixar PDF</button>
     </form>`;
     openSheet('sh');
@@ -1247,6 +1260,11 @@
 
   document.addEventListener('change', (e) => {
     const t = e.target;
+    if (t.id === 'modeloPlaca') {
+      modeloPlaca = t.value === 'personalizado' ? 'personalizado' : 'padrao';
+      try { localStorage.setItem('central-modelo-placa', modeloPlaca); } catch {}
+      return;
+    }
     if (t.matches('[data-sel]')) {
       t.checked ? S.sel.add(t.dataset.sel) : S.sel.delete(t.dataset.sel);
       return render();

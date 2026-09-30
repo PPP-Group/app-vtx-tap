@@ -39,7 +39,7 @@ Cada restaurante é uma linha em `restaurantes`, identificado pelo **subdomínio
 
 Toda plaquinha sai de fábrica com um código único (ex.: `K7P2QXA`). O NFC e o QR têm o **mesmo link**, `https://tap.vortexsystems.tech/t/K7P2QXA`, e ela não tem número de mesa impresso.
 
-1. **Fábrica (central):** *Gerar lote* baixa o **PDF para a gráfica** (uma plaquinha de 12 × 6 cm por página, com QR e código). Depois, *Gravar NFC* (Chrome no Android) grava e bloqueia as etiquetas: **Ler o QR da plaquinha** (garante NFC igual ao QR) ou **Digitar o código** impresso, sem câmera. Câmera e NFC nunca ficam ligados juntos. As plaquinhas saem **sem dono**.
+1. **Fábrica (central):** *Gerar lote* baixa o **PDF para a gráfica** (uma plaquinha por página no tamanho de um cartão de crédito, 85,6 × 54 mm, modelo padrão ou personalizado básico com a logo do restaurante no QR). Depois, *Gravar NFC* (Chrome no Android) grava e bloqueia as etiquetas: **Ler o QR da plaquinha** (garante NFC igual ao QR) ou **Digitar o código** impresso, sem câmera. Câmera e NFC nunca ficam ligados juntos. As plaquinhas saem **sem dono**.
 2. **Implantação (central):** *Novo restaurante* com nome, **subdomínio** e **senha da equipe**. A tela seguinte tem o site, o painel e a senha com botões de copiar, **Copiar tudo** e **Enviar no WhatsApp** (o mesmo fica em *Acesso*, no cartão do restaurante).
 3. **Instalação (restaurante):** cola a plaquinha e encosta o celular → **Plaquinha nova** → digita o **endereço do restaurante** (só na primeira; o celular lembra) → entra com o PIN (ou cria a conta com a senha da equipe) → escolhe a mesa. Daí em diante, a plaquinha abre direto a mesa. Não existe código de ativação à parte: o login da equipe é a autorização.
 
