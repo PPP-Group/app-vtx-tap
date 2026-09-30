@@ -918,6 +918,13 @@
         return { status: 'ok', pedido: { ...p, endereco, token: undefined, cliente: undefined },
           restaurante: { nome: conf.restaurante.nome, telefone: conf.restaurante.telefone, whatsapp: conf.delivery.whatsapp, pix: p.pagamento.forma === 'pix' ? conf.delivery.pix : null, tempo: conf.delivery.tempo } };
       },
+      // Demonstração: sem servidor de push; os avisos saem da própria página enquanto ela está aberta.
+      async deliveryPushChave() {
+        return null;
+      },
+      async deliveryPushInscrever() {
+        return { status: 'ok' };
+      },
       async deliveryPedidos({ desde } = {}) {
         const d = desde ? new Date(desde) : new Date(Date.now() - 24 * 3600e3);
         return (read().pedidos || []).filter((x) => new Date(x.criado_em) >= d).sort((a, b) => new Date(b.criado_em) - new Date(a.criado_em));
@@ -1522,6 +1529,20 @@
       },
       async deliveryAcompanhar(token) {
         return must(await sb.rpc('delivery_acompanhar', { p_token: token }));
+      },
+      // Avisos do pedido (Web Push): chave pública VAPID da função "push" e inscrição do aparelho.
+      async deliveryPushChave() {
+        const r = await fetch(`${supabaseUrl}/functions/v1/push`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', apikey: supabaseAnonKey, Authorization: `Bearer ${supabaseAnonKey}` },
+          body: JSON.stringify({ acao: 'chave' }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || !j.chave) throw new Error('Os avisos não estão disponíveis agora.');
+        return j.chave;
+      },
+      async deliveryPushInscrever(token, inscricao, url) {
+        return must(await sb.rpc('delivery_push', { p_token: token, p_sub: inscricao, p_url: url }));
       },
       async deliveryPedidos({ desde } = {}) {
         const d = desde ? new Date(desde) : new Date(Date.now() - 24 * 3600e3);

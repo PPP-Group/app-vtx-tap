@@ -69,6 +69,16 @@ body.com-barra .dl-main { padding-bottom: 96px; }
 .dl-pix { display: grid; gap: 8px; padding: 14px; border-radius: 16px; background: var(--surface-2); }
 .dl-pix b { word-break: break-all; }
 .dl-pix .btn { justify-self: start; }
+/* Avisos do pedido (notificações) */
+.dl-avisos:empty { display: none; }
+.dl-avisos-box { display: grid; gap: 8px; padding: 16px; border-radius: 18px; background: var(--cobalt-soft); border: 2px solid var(--cobalt); }
+.dl-avisos-box > b { display: flex; align-items: center; gap: 8px; font-size: 16.5px; }
+.dl-avisos-box p { font-size: 14.5px; color: var(--ink-2, var(--ink)); }
+.dl-avisos-box .i { width: 20px; height: 20px; flex: none; vertical-align: -4px; }
+.dl-avisos-ok, .dl-avisos-off { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 16px; font-size: 14.5px; }
+.dl-avisos-ok { background: var(--ok-soft, #DDF3E8); color: var(--ok-ink, #145C3B); }
+.dl-avisos-off { background: var(--surface-2); color: var(--muted); }
+.dl-avisos-ok .i, .dl-avisos-off .i { width: 20px; height: 20px; flex: none; margin-top: 1px; }
 .dl-resumo { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .dl-resumo li { display: flex; justify-content: space-between; gap: 10px; }
 .dl-resumo small { display: block; color: var(--ink-2); font-size: 12.5px; }
