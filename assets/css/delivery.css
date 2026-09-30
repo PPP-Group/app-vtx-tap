@@ -12,6 +12,11 @@ body.com-barra .dl-main { padding-bottom: 96px; }
 .dl-sec { scroll-margin-top: 64px; display: grid; gap: 10px; }
 .dl-h2 { font-family: var(--font-display); font-weight: 900; font-size: 24px; text-transform: uppercase; line-height: 1; }
 .dl-h3 { font-size: 16px; font-weight: 700; }
+/* Clube de pontos no delivery (cartão do cardápio e da tela do pedido) */
+.dl-fid { display: grid; gap: 8px; margin-bottom: 14px; }
+.dl-fid .dl-h3 { display: flex; align-items: center; gap: 8px; }
+.dl-fid .dl-h3 .i { width: 20px; height: 20px; color: var(--cobalt-ink); }
+.dl-fid .tile--fid { width: 100%; }
 .dl-itens { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .dl-item { display: flex; align-items: center; gap: 12px; padding: 14px; border-radius: 18px; background: var(--surface); border: 1px solid var(--line); }
 .dl-item.is-no-carrinho { border-color: var(--cobalt); }

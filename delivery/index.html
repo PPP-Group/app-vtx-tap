@@ -62,11 +62,25 @@
   </div>
 
 
+  <!-- Programa de fidelidade (o mesmo da página da mesa): pontos, prêmios e leitura da nota fiscal -->
+  <div class="sheet sheet--full" id="sh-fid" role="dialog" aria-modal="true" aria-labelledby="fidTitle" hidden>
+    <div class="sheet-backdrop" data-close></div>
+    <div class="sheet-panel" tabindex="-1">
+      <div class="sheet-grip"></div>
+      <header class="sheet-head"><h2 id="fidTitle">Fidelidade</h2><button class="icon-btn" type="button" data-close aria-label="Fechar"></button></header>
+      <div class="sheet-body" id="fidBody"></div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js" defer></script>
   <script src="/env.js" defer></script>
   <script src="/assets/js/config.js" defer></script>
   <script src="/assets/js/precos.js" defer></script>
   <script src="/assets/js/store.js" defer></script>
   <script src="/assets/js/ui.js" defer></script>
+  <script src="/assets/js/ocr-nota.js" defer></script>
+  <script src="/assets/js/leitor.js" defer></script>
+  <script src="/assets/js/fidelidade.js" defer></script>
   <script src="/assets/js/delivery.js" defer></script>
 </body>
 </html>
