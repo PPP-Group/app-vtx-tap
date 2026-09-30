@@ -84,15 +84,15 @@
   const corpo = () => $('#fidBody');
   function render() {
     const html = {
-      inicio: tInicio, cadastro: tCadastro, conta: tConta, pin: tPin, resultado: tResultado,
+      inicio: tInicio, cadastro: tCadastro, conta: tConta, pin: tPin, resultado: tResultado, valor: tValor, ranking: tRanking,
       resgatar: tResgatar, codigo: tCodigo, indicar: tIndicar, regulamento: tRegulamento, niveis: tNiveis,
     }[S.tela]();
     corpo().innerHTML = html;
-    $('#fidTitle').textContent = S.tela === 'inicio' ? nomeRest || 'Fidelidade' : S.tela === 'niveis' ? 'Níveis do clube' : prog.nome;
+    $('#fidTitle').textContent = S.tela === 'inicio' ? nomeRest || 'Fidelidade' : S.tela === 'niveis' ? 'Níveis do clube' : S.tela === 'ranking' ? 'Ranking do clube' : prog.nome;
     const foco = corpo().querySelector('[data-foco]');
     if (foco) setTimeout(() => foco.focus(), 60);
   }
-  const ir = (tela) => { S.tela = tela; render(); corpo().scrollTop = 0; };
+  const ir = (tela) => { if (tela !== 'valor') pararOcr(); S.tela = tela; render(); corpo().scrollTop = 0; };
 
   const boosts = () => (prog.boosts || []).length
     ? `<ul class="fid-boosts">${prog.boosts.map((b) => `<li>${icon('sparkle')}<span>${b.nome ? `<b>${esc(b.nome)}</b> · ` : ''}${esc(boostTexto(b))}</span></li>`).join('')}</ul>` : '';
@@ -163,7 +163,8 @@
       <div class="plate fid-hero"><span class="rivet r1"></span><span class="rivet r2"></span>
         <small>Programa de fidelidade</small><b>${esc(prog.nome)}</b><p>Ganhe ${esc(regraTexto())} e troque por prêmios.</p></div>
       ${boosts()}
-      ${S.indicador ? `<p class="note">${icon('users')}<span>Você foi indicado por <b>${esc(S.indicador)}</b>. Cadastre-se e ganhe pontos de boas-vindas na primeira compra.</span></p>` : ''}
+      <div id="fidRankSlot">${rankingCartao()}</div>
+      ${S.indicador ? `<p class="note">${icon('users')}<span>Você foi indicado por <b>${esc(S.indicador)}</b>. Cadastre-se e ganhe pontos de boas-vindas${prog.indicacao && prog.indicacao.quando === 'compra' ? ' na primeira compra' : ''}.</span></p>` : ''}
       <form class="stack" id="fidCpfForm" novalidate>
         <label class="field"><span>Seu CPF</span><input class="input mono" id="fidCpf" inputmode="numeric" autocomplete="off" maxlength="14" placeholder="000.000.000-00" data-foco value="${esc(fmtCpf(S.cpf || ''))}"></label>
         <p class="form-error" id="fidErro" role="alert">${esc(S.aviso || '')}</p>
@@ -217,10 +218,61 @@
         <button type="button" class="btn btn-cobalt" data-fid-nota>${icon('receipt')} Ler nota fiscal</button>
         ${prog.indicacao && prog.indicacao.ativo ? `<button type="button" class="btn btn-line" data-fid-ir="indicar">${icon('users')} Indicar amigos</button>` : ''}
       </div>
+      <div id="fidRankSlot">${rankingCartao()}${favoritos()}</div>
       ${pendRes.length ? `<section class="stack"><h3 class="fid-h3">Mostre ao garçom</h3>${pendRes.map((x) => `<div class="fid-cod"><span>${esc(x.premio)}</span><b class="mono">${esc(x.codigo)}</b></div>`).join('')}</section>` : ''}
       <section class="stack"><h3 class="fid-h3">Troque seus pontos</h3>${premiosHtml(true)}</section>
       ${c ? extrato(c) : `<button type="button" class="btn btn-line btn-block" data-fid-ir="pin">${icon('lock')} Ver extrato (PIN)</button>`}
       <p class="fid-rodape">${prog.regulamento ? '<button type="button" class="link" data-fid-ir="regulamento">Regulamento</button> · ' : ''}<button type="button" class="link" data-fid-sair>Não é você? Sair</button></p>
+    </div>`;
+  }
+
+  /* ---------- Ranking do clube: top 10, os três primeiros no pódio ---------- */
+  let ranking = null;
+  async function carregarRanking() {
+    ranking = store.fidRanking ? await store.fidRanking(S.token).catch(() => null) : null;
+    if (S.tela === 'ranking') return render();
+    // Nas outras telas, troca só o cartão do ranking (sem apagar o que a pessoa está digitando).
+    const slot = $('#fidRankSlot');
+    if (slot) slot.innerHTML = rankingCartao() + favoritos();
+  }
+  const favoritos = () => (S.tela === 'conta' && ranking && ranking.eu && ranking.eu.favoritos && ranking.eu.favoritos.length
+    ? `<p class="note fid-fav">${icon('star')}<span>Você mais pede: <b>${ranking.eu.favoritos.map(esc).join(', ')}</b></span></p>` : '');
+  const temRanking = () => ranking && ranking.ativo && ranking.top && ranking.top.length;
+  const inicialDe = (n) => esc((String(n || '?').trim()[0] || '?').toUpperCase());
+  function podio(top, grande) {
+    // Ordem no pódio: 2º, 1º, 3º.
+    return `<ol class="podio ${grande ? 'podio--grande' : ''}" aria-label="Os três primeiros do ranking">${[1, 0, 2].map((i) => {
+      const x = top[i];
+      if (!x) return `<li class="pd pd--${i + 1} is-vazio" aria-hidden="true"><span class="pd-av">?</span><b>—</b><span class="pd-degrau">${i + 1}º</span></li>`;
+      return `<li class="pd pd--${i + 1} ${x.voce ? 'is-voce' : ''}">
+        ${i === 0 ? `<span class="pd-coroa" aria-hidden="true">${icon('trophy')}</span>` : ''}
+        <span class="pd-av">${inicialDe(x.nome)}</span>
+        <b>${esc(x.nome)}${x.voce ? ' <em>(você)</em>' : ''}</b>
+        <small>${num(x.pontos)} pts</small>
+        <span class="pd-degrau">${x.pos}º</span>
+      </li>`;
+    }).join('')}</ol>`;
+  }
+  function rankingCartao() {
+    if (!temRanking()) return '';
+    const eu = ranking.eu;
+    return `<button type="button" class="fid-rank-cartao" data-fid-ir="ranking">
+      <span class="fid-rank-topo">${icon('trophy')} <b>Ranking do clube</b><span class="link">Ver top 10</span></span>
+      ${podio(ranking.top, false)}
+      ${eu ? `<span class="fid-rank-eu">${eu.pos ? (eu.pos <= 10 ? `Você está em <b>${eu.pos}º lugar</b>!` : `Você está em ${eu.pos}º. Faltam <b>${num(Math.max(1, ranking.top[ranking.top.length - 1].pontos - eu.pontos + 1))} pontos</b> para entrar no top 10.`) : 'Leia sua primeira nota para entrar no ranking.'}</span>` : ''}
+    </button>`;
+  }
+  function tRanking() {
+    if (!temRanking()) return `<div class="stack-lg fid"><p class="muted">O ranking aparece quando os primeiros clientes ganharem pontos.</p>
+      <button type="button" class="btn btn-quiet btn-block" data-fid-ir="${S.cpf && S.nome ? 'conta' : 'inicio'}">Voltar</button></div>`;
+    const resto = ranking.top.slice(3);
+    const eu = ranking.eu;
+    return `<div class="stack-lg fid fid-ranking">
+      ${podio(ranking.top, true)}
+      ${resto.length ? `<ol class="rk-lista">${resto.map((x) => `<li class="${x.voce ? 'is-voce' : ''}"><span class="rk-pos">${x.pos}º</span><span class="pd-av">${inicialDe(x.nome)}</span><b>${esc(x.nome)}${x.voce ? ' <em>(você)</em>' : ''}</b><span class="rk-pts">${num(x.pontos)} pts</span></li>`).join('')}</ol>` : ''}
+      ${eu && eu.pos && eu.pos > 10 ? `<p class="note">${icon('trophy')}<span>Você está em <b>${eu.pos}º lugar</b>, com ${num(eu.pontos)} pontos.</span></p>` : ''}
+      <p class="muted fid-rank-regra">Contam todos os pontos ganhos (compras, bônus e indicações). Trocar pontos por prêmios não tira ninguém do ranking.</p>
+      <button type="button" class="btn btn-quiet btn-block" data-fid-ir="${S.cpf && S.nome ? 'conta' : 'inicio'}">Voltar</button>
     </div>`;
   }
 
@@ -266,7 +318,7 @@
     const r = S.resultado || {};
     const ok = r.status === 'creditada';
     const titulo = ok ? `+${pts(r.pontos || 0)}!` : r.status === 'pendente' ? 'Nota recebida!' : r.status === 'repetida' ? 'Essa nota já está na sua conta' : 'Esta nota não valeu';
-    const texto = ok ? 'Compra conferida. Os pontos já estão na sua conta.'
+    const texto = ok ? (r.sefaz ? 'Nota conferida na SEFAZ. Os pontos já estão na sua conta.' : 'Compra conferida. Os pontos já estão na sua conta.')
       : r.status === 'pendente' ? 'Os pontos entram assim que o restaurante conferir a nota. Você acompanha aqui no extrato.'
       : r.status === 'repetida' ? `Situação: ${STATUS[r.nota] || r.nota}${r.motivo ? ` (${r.motivo})` : ''}.`
       : r.motivo || r.mensagem || 'Não foi possível registrar a nota.';
@@ -276,6 +328,23 @@
       <button type="button" class="btn btn-cobalt btn-block" data-fid-nota>${icon('receipt')} Ler outra nota</button>
       <button type="button" class="btn btn-quiet btn-block" data-fid-ir="conta">Ver meus pontos</button>
     </div>`;
+  }
+
+  // Valor da nota: vem sozinho (QR de contingência, foto ou câmera apontada para o total); o cliente só confere.
+  function tValor() {
+    const v = S.valorNota;
+    const msgOcr = v ? `Achamos <b>${esc(brl(v))}</b> na nota. Confira e toque em Confirmar.`
+      : S.ocr === 'camera' ? `Agora aponte a câmera para o <b>VALOR A PAGAR</b> da nota.`
+      : S.ocr === 'lendo' ? 'Procurando o valor na nota…'
+      : 'Não conseguimos ler o valor. Digite o total que está na nota.';
+    return `<form class="stack-lg fid" id="fidValorForm" novalidate>
+      <div class="fid-ocr" ${S.ocr === 'camera' && !v ? '' : 'hidden'}><video playsinline muted id="fidOcrVideo"></video><span class="fid-ocr-mira" aria-hidden="true"></span></div>
+      <p class="fid-ocr-msg ${v ? 'is-ok' : ''}" id="fidOcrMsg" aria-live="polite">${msgOcr}</p>
+      <label class="field"><span>Valor total da nota</span><input class="input mono" id="fidValor" inputmode="decimal" autocomplete="off" placeholder="0,00" value="${v ? esc(v.toFixed(2).replace('.', ',')) : ''}"></label>
+      <p class="form-error" id="fidErro" role="alert">${esc(S.aviso || '')}</p>
+      <button type="submit" class="btn btn-cobalt btn-block">${icon('check')} Confirmar e enviar</button>
+      <button type="button" class="btn btn-quiet btn-block" data-fid-semvalor>Enviar sem o valor</button>
+    </form>`;
   }
 
   function tResgatar() {
@@ -314,9 +383,10 @@
   function tIndicar() {
     const c = S.conta;
     const i = prog.indicacao;
-    const texto = `Entra no ${prog.nome} de ${nomeRest} com o meu código ${c.codigo}${i.indicado ? ` e ganha ${pts(i.indicado)} na primeira compra` : ''}: ${linkIndicacao()}`;
+    const naCompra = i.quando === 'compra';
+    const texto = `Entra no ${prog.nome} de ${nomeRest} com o meu código ${c.codigo}${i.indicado ? ` e ganha ${pts(i.indicado)} ${naCompra ? 'na primeira compra' : 'no cadastro'}` : ''}: ${linkIndicacao()}`;
     return `<div class="stack-lg fid">
-      <p>Quando alguém se cadastrar com o seu código e fizer a primeira compra com CPF na nota, ${i.indicador ? `você ganha <b>${pts(i.indicador)}</b>` : 'vocês dois ganham pontos'}${i.indicador && i.indicado ? ` e quem você indicou ganha <b>${pts(i.indicado)}</b>` : ''}.</p>
+      <p>Quando alguém se cadastrar com o seu código${naCompra ? ' e fizer a primeira compra com CPF na nota' : ''}, ${i.indicador ? `você ganha <b>${pts(i.indicador)}</b>` : 'vocês dois ganham pontos'}${i.indicador && i.indicado ? ` e quem você indicou ganha <b>${pts(i.indicado)}</b>` : ''}.</p>
       <div class="fid-cod fid-cod--ind"><span>Seu código</span><b class="mono">${esc(c.codigo)}</b></div>
       <p class="muted">${c.indicacoes ? `${c.indicacoes} ${c.indicacoes === 1 ? 'pessoa já se cadastrou' : 'pessoas já se cadastraram'} com o seu código.` : 'Ninguém usou o seu código ainda.'}</p>
       <a class="btn btn-cobalt btn-block" href="https://wa.me/?text=${encodeURIComponent(texto)}" target="_blank" rel="noopener">${icon('share')} Mandar no WhatsApp</a>
@@ -380,21 +450,102 @@
         const c = F.chaveDoTexto(t);
         return c && F.chaveValida(c) ? null : 'Este QR não é de uma nota fiscal. Procure o QR Code no fim da nota (NFC-e).';
       },
-      pronto: async (t) => {
-        corpo().innerHTML = '<div class="fid-carregando"><span class="dot"></span><p>Registrando a nota…</p></div>';
-        let r;
-        try {
-          r = await store.fidRegistrarNota({ cpf: S.cpf, qr: t });
-        } catch {
-          r = { status: 'erro', mensagem: 'Sem conexão. Confira a internet e leia a nota de novo.' };
+      valor: true,
+      pronto: async (t, x) => {
+        // 1) Conferência automática na SEFAZ (valor oficial e produtos): os pontos entram na hora.
+        // Só quando o restaurante ligou a conferência (cobrada por nota); desligada, nem chama.
+        if (store.fidSefaz && prog && prog.sefaz) {
+          corpo().innerHTML = `<div class="fid-carregando"><span class="dot"></span><p>Conferindo sua nota na SEFAZ…</p><small class="muted">Leva alguns segundos.</small></div>`;
+          const r = await store.fidSefaz({ cpf: S.cpf, qr: t });
+          if (r.status === 'sem_cadastro') return ir('cadastro');
+          if (['creditada', 'repetida', 'recusada', 'erro', 'inativo'].includes(r.status)) {
+            S.resultado = r.status === 'inativo' ? { status: 'erro', mensagem: 'O programa está pausado no momento.' } : { ...r, sefaz: true };
+            await atualizarConta();
+            carregarRanking();
+            return ir('resultado');
+          }
         }
-        if (r.status === 'sem_cadastro') return ir('cadastro');
-        S.resultado = r;
-        await atualizarConta();
-        ir('resultado');
+        // 2) Sem a conferência automática: o valor vem da foto/câmera, o cliente confere e a equipe aprova.
+        S.qr = t;
+        S.valorNota = F.valorDoQr ? F.valorDoQr(t) : null;
+        S.ocr = S.valorNota ? 'qr' : 'lendo';
+        S.digitou = false;
+        ir('valor');
+        if (!S.valorNota) buscarValor(t, x && x.quadro);
       },
     });
   }
+
+  /* ---------- Valor da nota lido da imagem ---------- */
+  let pararCam = null;
+  function pararOcr() {
+    if (pararCam) pararCam();
+    pararCam = null;
+  }
+  const naTelaDoValor = (qr) => S.tela === 'valor' && S.qr === qr && $('#fidValorForm');
+  function mostrarOcr() {
+    if (!$('#fidValorForm')) return;
+    const f = document.createElement('div');
+    f.innerHTML = tValor();
+    const novo = f.firstElementChild;
+    ['.fid-ocr', '#fidOcrMsg'].forEach((sel) => {
+      const a = $(sel);
+      const b = novo.querySelector(sel);
+      a.hidden = b.hidden;
+      a.className = b.className;
+      if (sel === '#fidOcrMsg') a.innerHTML = b.innerHTML;
+    });
+    if (S.valorNota && !S.digitou) $('#fidValor').value = S.valorNota.toFixed(2).replace('.', ',');
+  }
+  async function buscarValor(qr, quadro) {
+    if (!window.OcrNota) { S.ocr = 'falhou'; return mostrarOcr(); }
+    // 1) a imagem em que o QR foi lido (na foto da nota inteira, o total costuma estar junto)
+    if (quadro) {
+      const w = quadro.naturalWidth || quadro.width;
+      const h = quadro.naturalHeight || quadro.height;
+      const v = await OcrNota.lerValor(quadro, w, h);
+      if (!naTelaDoValor(qr)) return;
+      if (v) { S.valorNota = v; S.ocr = 'achou'; return mostrarOcr(); }
+    }
+    // 2) câmera apontada para o "VALOR A PAGAR"
+    S.ocr = 'camera';
+    mostrarOcr();
+    pararOcr();
+    pararCam = OcrNota.camera($('#fidOcrVideo'), {
+      achou: (v) => {
+        if (!naTelaDoValor(qr)) return;
+        S.valorNota = v;
+        S.ocr = 'achou';
+        mostrarOcr();
+        navigator.vibrate && navigator.vibrate(40);
+      },
+      aviso: (a) => {
+        if (!naTelaDoValor(qr)) return;
+        if (a === 'sem-camera' || a === 'sem-ocr') { S.ocr = 'falhou'; mostrarOcr(); }
+      },
+    });
+  }
+
+  async function enviarNota(qr, valor) {
+    pararOcr();
+    corpo().innerHTML = '<div class="fid-carregando"><span class="dot"></span><p>Registrando a nota…</p></div>';
+    let r;
+    try {
+      r = await store.fidRegistrarNota({ cpf: S.cpf, qr, valor: valor || null });
+    } catch {
+      r = { status: 'erro', mensagem: 'Sem conexão. Confira a internet e leia a nota de novo.' };
+    }
+    S.qr = null;
+    if (r.status === 'sem_cadastro') return ir('cadastro');
+    S.resultado = r;
+    await atualizarConta();
+    ir('resultado');
+  }
+  const valorDe = (t) => {
+    const s = String(t || '').trim().replace(/[^\d,.]/g, '');
+    const v = /,\d{1,2}$/.test(s) ? +s.replace(/\./g, '').replace(',', '.') : +s.replace(/,/g, '');
+    return Number.isFinite(v) ? Math.round(v * 100) / 100 : NaN;
+  };
 
   function onClick(e) {
     const t = e.target;
@@ -405,6 +556,7 @@
       return ir(irPara.dataset.fidIr);
     }
     if (t.closest('[data-fid-nota]')) return lerNota();
+    if (t.closest('[data-fid-semvalor]') && S.qr) return enviarNota(S.qr, null);
     const r = t.closest('[data-fid-resgatar]');
     if (r) {
       S.premio = (prog.premios || []).find((p) => p.id === r.dataset.fidResgatar);
@@ -458,8 +610,14 @@
         }
         S.token = r.token;
         await atualizarConta();
+        carregarRanking();
         toast('Conta criada! Agora é só pedir CPF na nota e ler o QR Code aqui.', { tone: 'ok', ms: 5000 });
         ir('conta');
+      } else if (f.id === 'fidValorForm') {
+        const v = valorDe($('#fidValor').value);
+        if (!(v > 0 && v < 1e5)) return erro('Digite o valor total da nota. Ex.: 87,50');
+        if (!S.qr) return ir('conta');
+        await enviarNota(S.qr, v);
       } else if (f.id === 'fidPinForm') {
         const pin = $('#fidPin').value;
         if (!/^\d{4}$/.test(pin)) return erro('O PIN tem 4 números.');
@@ -467,6 +625,7 @@
         if (r.status !== 'ok') { $('#fidPin').value = ''; return erro(r.mensagem || 'Não foi possível entrar.'); }
         S.token = r.token;
         await atualizarConta();
+        carregarRanking();
         if (r.pin_novo) toast('PIN novo salvo.', { tone: 'ok' });
         const depois = S.depoisPin;
         S.depoisPin = null;
@@ -483,6 +642,7 @@
   function onInput(e) {
     const t = e.target;
     if (t.id === 'fidCpf') t.value = fmtCpf(t.value);
+    if (t.id === 'fidValor') S.digitou = true;
     if (t.id === 'fcTel') t.value = fmtTel(t.value);
     if (t.id === 'fcPin' || t.id === 'fidPin') t.value = t.value.replace(/\D/g, '').slice(0, 4);
   }
@@ -492,6 +652,7 @@
     S.tela = S.cpf ? 'conta' : 'inicio';
     render();
     openSheet('sh-fid');
+    carregarRanking();
     if (S.cpf) {
       await atualizarConta();
       if (!S.cpf) S.tela = 'inicio';
@@ -516,6 +677,7 @@
     sh.addEventListener('click', onClick);
     sh.addEventListener('submit', onSubmit);
     sh.addEventListener('input', onInput);
+    sh.addEventListener('sheet:close', pararOcr);
     document.addEventListener('click', (e) => e.target.closest('[data-fid-abrir]') && abrir());
     const p = new URLSearchParams(location.search);
     S.indicacao = (p.get('indicacao') || '').toUpperCase().replace(/[^A-Z0-9]/g, '');

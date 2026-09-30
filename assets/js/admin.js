@@ -50,8 +50,14 @@
   const temFid = () => !!(S.settings.modulos && S.settings.modulos.fidelidade && window.FidPainel);
   // Sem o serviço de chamar o garçom no plano, somem Chamados e Salão.
   const temServico = (k) => !S.settings.plano || !!S.settings.plano.servicos[k];
+  // Delivery aparece com o serviço no plano.
+  const temDel = () => temServico('delivery') && !!window.DelPainel;
   const views = () => {
-    const base = VIEWS.filter((v) => temServico('garcom') || !['chamados', 'salao'].includes(v.id));
+    let base = VIEWS.filter((v) => temServico('garcom') || !['chamados', 'salao'].includes(v.id));
+    if (temDel()) {
+      const i = base.findIndex((v) => v.id === 'comentarios');
+      base = [...base.slice(0, i), { id: 'delivery', label: 'Delivery', curto: 'Delivery', icon: 'receipt' }, ...base.slice(i)];
+    }
     if (!temFid()) return base;
     const i = base.findIndex((v) => v.id === 'plaquinhas');
     return [...base.slice(0, i), { id: 'fidelidade', label: 'Fidelidade', curto: 'Pontos', icon: 'gift' }, ...base.slice(i)];
@@ -78,30 +84,33 @@
   const nomeDaSessao = (id) => (id && (S.sessoes.find((s) => s.id === id) || {}).nome) || '';
 
   /* ============================== Entrada ============================== */
-  // Entrar: só o PIN. Criar conta: nome, PIN novo e a senha da equipe.
+  // Entrar: só o PIN. Criar conta (só a primeira, que vira administradora): nome, PIN novo e a senha da equipe.
+  // Depois disso, o administrador cadastra as outras pessoas em Ajustes → Restaurante → Equipe.
   let temSenhaEquipe = true;
+  let temEquipe = false;
   function showLogin(msg = '') {
     $('#shell').hidden = true;
     $('#login').hidden = false;
     $('#loginBrand').textContent = nomeRest();
-    const criar = S.loginModo === 'criar';
+    const criar = S.loginModo === 'criar' && !temEquipe;
     $('#loginForm').innerHTML = `${S.vincular ? `<p class="note">${icon('nfc')}<span>Entre para ligar a plaquinha <b class="mono">${esc(S.vincular)}</b> a uma mesa.</span></p>` : ''}
-      <div class="seg login-tabs" role="tablist" aria-label="Acesso da equipe">
+      ${temEquipe ? '' : `<div class="seg login-tabs" role="tablist" aria-label="Acesso da equipe">
         <button type="button" role="tab" aria-selected="${!criar}" data-login="entrar">Entrar</button>
         <button type="button" role="tab" aria-selected="${criar}" data-login="criar">Criar conta</button>
-      </div>
+      </div>`}
       ${criar
         ? `<label class="field"><span>Seu nome</span><input class="input" id="lgNome" autocomplete="name" maxlength="60" required placeholder="Como a mesa vai ver você"></label>
            <label class="field"><span>Crie seu PIN</span><input class="input pin-input" id="lgPinNovo" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="new-password" required>
              <small class="help">De 4 a 8 números. É com ele que você entra daqui para frente.</small></label>
+           <p class="note">${icon('lock')}<span>Esta é a conta do <b>administrador</b>. Depois, é ele quem cadastra o resto da equipe.</span></p>
            <label class="field"><span>${temSenhaEquipe ? 'Senha da equipe' : 'Crie a senha da equipe'}</span><input class="input" id="lgSenha" type="password" autocomplete="${temSenhaEquipe ? 'off' : 'new-password'}" minlength="6" required>
-             <small class="help">${temSenhaEquipe ? 'Peça para a gerência. É a mesma para toda a equipe.' : 'Demonstração: esta senha passa a ser a da equipe neste navegador.'}</small></label>
+             <small class="help">${temSenhaEquipe ? 'A senha enviada pela Vortex para este restaurante.' : 'Demonstração: esta senha passa a ser a da equipe neste navegador.'}</small></label>
            <p class="form-error" id="lgErr" role="alert">${esc(msg)}</p>
            <button class="btn btn-cobalt btn-block" type="submit">Criar conta e entrar</button>`
         : `<label class="field"><span>Seu PIN</span><input class="input pin-input" id="lgPin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="current-password" required></label>
            <p class="form-error" id="lgErr" role="alert">${esc(msg)}</p>
            <button class="btn btn-cobalt btn-block" type="submit">Entrar no painel</button>
-           <p class="login-hint">Primeira vez aqui? Toque em “Criar conta”.</p>`}`;
+           <p class="login-hint">${temEquipe ? 'Ainda não tem PIN? Peça para o administrador cadastrar você.' : 'Primeira vez aqui? Toque em “Criar conta”.'}</p>`}`;
     setTimeout(() => ($('#lgPin') || $('#lgNome')).focus(), 50);
   }
 
@@ -135,7 +144,7 @@
         btn.disabled = false;
         return falhar(ex.message, /PIN/.test(ex.message) ? $('#lgPinNovo') : /[Ss]enha/.test(ex.message) ? $('#lgSenha') : null);
       }
-      if (r.primeiraConta) toast('Conta criada. A senha que você digitou agora é a senha da equipe.', { tone: 'ok', ms: 5000 });
+      toast('Conta de administrador criada. Cadastre a equipe em Ajustes → Restaurante → Equipe.', { tone: 'ok', ms: 6000 });
     } else {
       const pin = $('#lgPin').value.trim();
       if (!/^\d{4,8}$/.test(pin)) return falhar('Digite seu PIN (4 a 8 números).', $('#lgPin'));
@@ -148,7 +157,7 @@
         return falhar(ex.message, $('#lgPin'));
       }
     }
-    S.user = { nome: r.nome };
+    S.user = { nome: r.nome, admin: !!r.admin };
     unlockAudio();
     startApp();
   });
@@ -216,6 +225,91 @@
   };
   if ('serviceWorker' in navigator) {
     addEventListener('load', () => navigator.serviceWorker.register('/admin/sw.js', { scope: '/admin/' }).catch(() => {}));
+  }
+
+  /* App instalado com o nome e a logo do restaurante ("Ciência Food · Painel", não só "Painel").
+     O manifesto e os ícones ficam no cache 'painel-marca' e o service worker entrega no endereço de sempre.
+     Mudou o nome ou a logo: o link do manifesto muda e o Android atualiza o app instalado ao abrir.
+     No iPhone, o nome e o ícone valem na hora de adicionar à tela de início. */
+  let marcaFeita = '';
+  const nomeCurto = (nome) => {
+    if (nome.length <= 12) return nome;
+    let r = '';
+    for (const w of nome.split(/\s+/)) {
+      if ((r ? `${r} ${w}` : w).length > 12) break;
+      r = r ? `${r} ${w}` : w;
+    }
+    return r || nome.slice(0, 12);
+  };
+  // Logo centralizada num quadrado branco (folga maior no ícone "maskable", que o Android recorta).
+  const iconeDaLogo = (img, lado, folga) => new Promise((ok) => {
+    const c = document.createElement('canvas');
+    c.width = c.height = lado;
+    const g = c.getContext('2d');
+    g.fillStyle = '#fff';
+    g.fillRect(0, 0, lado, lado);
+    const area = lado * (1 - 2 * folga);
+    const k = Math.min(area / img.naturalWidth, area / img.naturalHeight);
+    const w = img.naturalWidth * k;
+    const h = img.naturalHeight * k;
+    g.drawImage(img, (lado - w) / 2, (lado - h) / 2, w, h);
+    c.toBlob(ok, 'image/png');
+  });
+  const carregarImg = (src) => new Promise((ok, erro) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => ok(img);
+    img.onerror = erro;
+    img.src = src;
+  });
+  async function marcaDoApp(nome, logo) {
+    const chave = `${nome}|${logo}`;
+    if (chave === marcaFeita) return;
+    marcaFeita = chave;
+    const curto = nomeCurto(nome);
+    const meta = (n, v) => { const m = document.querySelector(`meta[name="${n}"]`); if (m) m.content = v; };
+    meta('apple-mobile-web-app-title', curto);
+    meta('application-name', curto);
+    if (!('caches' in window) || !('serviceWorker' in navigator)) return;
+    try {
+      const v = [...chave].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7).toString(36);
+      const cache = await caches.open('painel-marca');
+      let icons = [
+        { src: '/admin/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+        { src: '/admin/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+        { src: '/admin/icons/maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+      ];
+      if (logo) {
+        try {
+          const img = await carregarImg(logo);
+          const png = (b) => new Response(b, { headers: { 'Content-Type': 'image/png' } });
+          const [p192, p512, pm, p180] = await Promise.all([iconeDaLogo(img, 192, 0.08), iconeDaLogo(img, 512, 0.08), iconeDaLogo(img, 512, 0.2), iconeDaLogo(img, 180, 0.08)]);
+          await Promise.all([
+            cache.put(`/admin/icons/marca-192-${v}.png`, png(p192)),
+            cache.put(`/admin/icons/marca-512-${v}.png`, png(p512)),
+            cache.put(`/admin/icons/marca-maskable-${v}.png`, png(pm)),
+          ]);
+          icons = [
+            { src: `/admin/icons/marca-192-${v}.png`, sizes: '192x192', type: 'image/png', purpose: 'any' },
+            { src: `/admin/icons/marca-512-${v}.png`, sizes: '512x512', type: 'image/png', purpose: 'any' },
+            { src: `/admin/icons/marca-maskable-${v}.png`, sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          ];
+          // iPhone lê o ícone direto da página.
+          const touch = document.querySelector('link[rel="apple-touch-icon"]');
+          if (touch && p180) touch.href = await new Promise((ok) => { const f = new FileReader(); f.onload = () => ok(f.result); f.readAsDataURL(p180); });
+        } catch {} // Logo sem permissão de leitura (CORS) ou quebrada: fica o ícone da VTX, com o nome do restaurante.
+      }
+      const manifesto = {
+        id: '/admin/', name: `${nome} · Painel`, short_name: curto,
+        description: `Painel da equipe do ${nome}: chamados, salão, pedidos e ajustes.`,
+        lang: 'pt-BR', start_url: '/admin/', scope: '/admin/', display: 'standalone', orientation: 'any',
+        background_color: '#F4F2F9', theme_color: '#140B33', categories: ['business', 'food'], icons,
+      };
+      await cache.put('/admin/manifest.webmanifest', new Response(JSON.stringify(manifesto), { headers: { 'Content-Type': 'application/manifest+json' } }));
+      // Link novo: o navegador lê o manifesto de novo (e o Android atualiza o app instalado).
+      const link = document.querySelector('link[rel="manifest"]');
+      if (link) link.href = `/admin/manifest.webmanifest?m=${v}`;
+    } catch {}
   }
   addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
@@ -322,11 +416,13 @@
       S.online = false;
     }
     if (temFid()) await FidPainel.atualizar();
+    if (temDel()) await DelPainel.atualizar();
     detectNew();
     renderChrome();
     // Na fidelidade só redesenha sem formulário em edição (não apaga o que está sendo digitado).
     if (['chamados', 'salao', 'comentarios', 'plaquinhas'].includes(S.view)) renderView();
     else if (S.view === 'fidelidade' && !$('#main').contains(document.activeElement)) renderView();
+    else if (S.view === 'delivery' && !DelPainel.editando()) renderView();
     if (S.mesaAberta && !$('#sh-mesa').hidden) renderMesaSheet(S.mesaAberta);
   }
 
@@ -427,6 +523,7 @@
     if (id === 'chamados' && n.abertos) return `<span class="badge">${n.abertos}</span>`;
     if (id === 'comentarios' && n.naoLidos) return `<span class="badge badge--soft">${n.naoLidos}</span>`;
     if (id === 'fidelidade' && temFid() && FidPainel.badge()) return `<span class="badge">${FidPainel.badge()}</span>`;
+    if (id === 'delivery' && temDel() && DelPainel.badge()) return `<span class="badge">${DelPainel.badge()}</span>`;
     return '';
   };
 
@@ -438,6 +535,7 @@
     const mark = $('.side-mark');
     mark.classList.toggle('has-logo', !!logo);
     mark.innerHTML = logo ? `<img src="${esc(logo)}" alt="">` : esc(initials(nomeRest()));
+    marcaDoApp(nomeRest(), logo);
     const lista = views();
     $('#sideNav').innerHTML = lista.map(
       (v) => `<a class="nav-item" href="#${v.id}" ${S.view === v.id ? 'aria-current="page"' : ''}>${icon(v.icon)}<span>${v.label}</span>${badgeFor(v.id, n)}</a>`
@@ -572,7 +670,7 @@
   function renderView() {
     const main = $('#main');
     main.dataset.view = S.view;
-    main.innerHTML = avisoConfig() + { chamados: vChamados, salao: vSalao, comentarios: vComentarios, plaquinhas: vPlaquinhas, ajustes: vAjustes, fidelidade: () => FidPainel.html() }[S.view]();
+    main.innerHTML = avisoConfig() + { chamados: vChamados, salao: vSalao, comentarios: vComentarios, plaquinhas: vPlaquinhas, ajustes: vAjustes, fidelidade: () => FidPainel.html(), delivery: () => DelPainel.html() }[S.view]();
     if (S.view === 'ajustes' && S.ajTab === 'restaurante') carregarEquipe();
   }
 
@@ -1179,12 +1277,17 @@
         <section class="panel stack" aria-labelledby="hEquipe">
           <h2 id="hEquipe">Equipe</h2>
           <ul class="team-list" id="teamList"><li class="muted">Carregando…</li></ul>
-          <small class="help">Cada pessoa cria a própria conta na tela de entrada, usando a senha da equipe, e depois entra só com o PIN.</small>
-          <form class="team-pass" id="teamPassForm">
-            <label class="field"><span>Nova senha da equipe</span><input class="input" id="novaSenhaEquipe" type="password" minlength="6" autocomplete="new-password" required></label>
-            <button type="submit" class="btn btn-line btn-sm">Trocar senha</button>
+          ${S.user.admin ? `<form class="team-add stack" id="teamAddForm" novalidate>
+            <h3>Cadastrar pessoa</h3>
+            <div class="team-add-row">
+              <label class="field"><span>Nome</span><input class="input" name="nome" maxlength="60" autocomplete="off" required></label>
+              <label class="field"><span>PIN (4 a 8 números)</span><input class="input mono" name="pin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="new-password" required></label>
+            </div>
+            <label class="set-inline"><span>Também é administrador</span><span class="switch"><input type="checkbox" name="admin"><span></span></span></label>
+            <button type="submit" class="btn btn-cobalt btn-sm">${icon('plus')} Cadastrar</button>
           </form>
-          <small class="help">Quem já tem conta continua entrando com o PIN. A senha nova vale para as próximas contas.</small>
+          <small class="help">Só o administrador cadastra, remove e troca o PIN das pessoas. Passe o PIN para a pessoa: ela entra só com ele.</small>`
+          : '<small class="help">Quem cadastra e remove pessoas é o administrador do restaurante. Você pode trocar o seu PIN.</small>'}
         </section>
       </div>
 
@@ -1205,48 +1308,81 @@
     </div>`;
   }
 
-  /* Equipe: quem tem conta no painel */
+  /* Equipe: quem tem conta no painel. Só o administrador cadastra, remove e troca o PIN dos outros. */
   async function carregarEquipe() {
     const alvo = () => $('#teamList');
     if (!alvo()) return;
     try {
       const lista = await store.auth.membros();
       if (!alvo()) return;
+      const adm = !!S.user.admin;
       alvo().innerHTML = lista.length
         ? lista.map((m) => `<li class="team-row">
             <span class="avatar" aria-hidden="true">${esc((firstName(m.nome)[0] || '?').toUpperCase())}</span>
-            <div class="team-id"><b>${esc(m.nome)}</b><small>Desde ${new Date(m.criado_em).toLocaleDateString('pt-BR')}</small></div>
-            ${m.voce ? '<span class="state-tag">Você</span>' : `<button type="button" class="btn btn-line btn-sm" data-membro-del="${esc(m.id)}" data-nome="${esc(m.nome)}">Remover</button>`}
+            <div class="team-id"><b>${esc(m.nome)}</b><small>${m.admin ? 'Administrador · ' : ''}Desde ${new Date(m.criado_em).toLocaleDateString('pt-BR')}</small></div>
+            <div class="team-acts">
+              ${m.voce ? '<span class="state-tag">Você</span>' : ''}
+              ${m.voce || adm ? `<button type="button" class="btn btn-quiet btn-sm" data-membro-pin="${esc(m.id)}" data-nome="${esc(m.nome)}" data-voce="${m.voce ? 1 : ''}">Trocar PIN</button>` : ''}
+              ${adm && !m.voce ? `<button type="button" class="btn btn-quiet btn-sm" data-membro-adm="${esc(m.id)}" data-nome="${esc(m.nome)}" data-admin="${m.admin ? 1 : ''}">${m.admin ? 'Tirar admin' : 'Tornar admin'}</button>
+                <button type="button" class="btn btn-line btn-sm" data-membro-del="${esc(m.id)}" data-nome="${esc(m.nome)}">Remover</button>` : ''}
+            </div>
           </li>`).join('')
         : '<li class="muted">Ninguém cadastrado ainda.</li>';
     } catch (e) {
       if (alvo()) alvo().innerHTML = `<li class="form-error">${esc(e.message)}</li>`;
     }
   }
+  const pedirPin = (quem) => {
+    const pin = prompt(`Novo PIN ${quem} (4 a 8 números):`);
+    if (pin == null) return null;
+    if (!/^\d{4,8}$/.test(pin.trim())) { toast('O PIN precisa ter de 4 a 8 números.', { tone: 'error' }); return null; }
+    return pin.trim();
+  };
   document.addEventListener('click', async (e) => {
-    const b = e.target.closest('[data-membro-del]');
+    const del = e.target.closest('[data-membro-del]');
+    const pinB = e.target.closest('[data-membro-pin]');
+    const adm = e.target.closest('[data-membro-adm]');
+    const b = del || pinB || adm;
     if (!b) return;
-    if (!confirm(`Remover ${b.dataset.nome} da equipe? A pessoa perde o acesso ao painel na hora.`)) return;
-    b.disabled = true;
     try {
-      await store.auth.remover(b.dataset.membroDel);
-      toast(`${b.dataset.nome} foi removido da equipe.`, { tone: 'ok' });
+      if (del) {
+        if (!confirm(`Remover ${b.dataset.nome} da equipe? A pessoa perde o acesso ao painel na hora.`)) return;
+        b.disabled = true;
+        await store.auth.remover(b.dataset.membroDel);
+        toast(`${b.dataset.nome} foi removido da equipe.`, { tone: 'ok' });
+      } else if (pinB) {
+        const pin = pedirPin(pinB.dataset.voce ? 'para você' : `de ${b.dataset.nome}`);
+        if (!pin) return;
+        b.disabled = true;
+        await store.auth.trocarPin(pinB.dataset.voce ? null : pinB.dataset.membroPin, pin);
+        toast(pinB.dataset.voce ? 'Seu PIN foi trocado.' : `PIN de ${b.dataset.nome} trocado. Avise a pessoa.`, { tone: 'ok', ms: 4000 });
+      } else {
+        const vira = !adm.dataset.admin;
+        if (!confirm(vira ? `Tornar ${b.dataset.nome} administrador? Ele poderá cadastrar e remover pessoas e mudar o plano.` : `Tirar ${b.dataset.nome} de administrador?`)) return;
+        b.disabled = true;
+        await store.auth.definirAdmin(adm.dataset.membroAdm, vira);
+        toast(vira ? `${b.dataset.nome} agora é administrador.` : `${b.dataset.nome} deixou de ser administrador.`, { tone: 'ok' });
+      }
     } catch (ex) {
       toast(ex.message, { tone: 'error', ms: 4500 });
     }
     carregarEquipe();
   });
   document.addEventListener('submit', async (e) => {
-    if (e.target.id !== 'teamPassForm') return;
+    if (e.target.id !== 'teamAddForm') return;
     e.preventDefault();
-    const campo = $('#novaSenhaEquipe');
-    if (campo.value.length < 6) return toast('A senha da equipe precisa ter pelo menos 6 caracteres.', { tone: 'error' });
-    const btn = e.target.querySelector('[type=submit]');
+    const f = e.target;
+    const nome = f.elements.nome.value.trim();
+    const pin = f.elements.pin.value.trim();
+    if (!nome) return toast('Informe o nome da pessoa.', { tone: 'error' });
+    if (!/^\d{4,8}$/.test(pin)) return toast('O PIN precisa ter de 4 a 8 números.', { tone: 'error' });
+    const btn = f.querySelector('[type=submit]');
     btn.disabled = true;
     try {
-      await store.auth.trocarSenha(campo.value);
-      campo.value = '';
-      toast('Senha da equipe trocada. Avise quem ainda vai criar conta.', { tone: 'ok', ms: 4000 });
+      await store.auth.adicionar({ nome, pin, admin: f.elements.admin.checked });
+      f.reset();
+      toast(`${nome} foi cadastrado. Passe o PIN para a pessoa entrar.`, { tone: 'ok', ms: 4500 });
+      carregarEquipe();
     } catch (ex) {
       toast(ex.message, { tone: 'error', ms: 4500 });
     }
@@ -1314,6 +1450,7 @@
     const selos = (it) =>
       `${it.destaque ? '<span class="tag tag--casa">Da casa</span>' : ''}${(it.tags || []).map((t) => `<span class="tag">${esc(cfg.tags[t] || t)}</span>`).join('')}`;
     return `<div class="stack menu-edit">
+      ${planilhaPainel()}
       ${cats.length ? '' : `<div class="empty"><span class="empty-ico">${icon('book')}</span><h2>Cardápio vazio</h2><p>Crie uma categoria (Entradas, Pratos, Bebidas…) e adicione os pratos.</p></div>`}
       ${cats.map((c, ci) => `<section class="panel mc" data-ci="${ci}" aria-label="Categoria ${esc(c.nome)}">
         <div class="mc-head">
@@ -1327,8 +1464,8 @@
         </div>
         ${c.itens.length ? `<ul class="mc-items">${c.itens.map((it, ii) => `<li class="mc-item" data-ii="${ii}">
             <button type="button" class="mc-open" data-item-edit aria-label="Editar ${esc(it.nome)}">
-              <span class="mc-body"><b>${esc(it.nome)}</b>${it.desc ? `<small>${esc(it.desc)}</small>` : ''}<span class="tags">${selos(it)}</span></span>
-              <span class="price">${brl(it.preco)}</span>
+              <span class="mc-body"><b>${esc(it.nome)}</b>${it.desc ? `<small>${esc(it.desc)}</small>` : ''}<span class="tags">${selos(it)}${it.delivery ? `<span class="tag tag--delivery">${it.salao === false ? 'Só delivery' : 'Delivery'}</span>` : ''}${(it.grupos || []).length ? `<span class="tag">${it.grupos.length} ${it.grupos.length === 1 ? 'grupo' : 'grupos'} de opções</span>` : ''}</span></span>
+              <span class="price">${Store.opcoes.temVariacao(it) ? '<small>a partir de</small> ' : ''}${brl(Store.opcoes.aPartir(it))}</span>
               <span class="mc-edit">${icon('edit')}</span>
             </button>
             <span class="wrow-order">
@@ -1349,20 +1486,202 @@
     return Number.isFinite(n) ? Math.round(n * 100) / 100 : NaN;
   };
 
+  /* Cardápio por planilha: baixar o modelo, importar e conferir antes de gravar. */
+  function planilhaPainel() {
+    const imp = S.importacao;
+    if (!imp) return `<section class="panel planilha">
+        <div><h2>Cardápio por planilha</h2><p class="muted">Baixe o modelo, preencha no Excel ou no Google Planilhas (ou peça para uma IA preencher) e importe aqui.</p></div>
+        <div class="planilha-acts">
+          <button type="button" class="btn btn-line btn-sm" data-planilha-modelo>${icon('download')} Baixar modelo</button>
+          <label class="btn btn-cobalt btn-sm">${icon('upload')} Importar planilha<input type="file" accept=".xlsx,.xls,.csv,.ods" class="sr-only" data-planilha-arq></label>
+        </div>
+      </section>`;
+    const nItens = imp.categorias.reduce((t, c) => t + c.itens.length, 0);
+    const nDel = imp.categorias.reduce((t, c) => t + c.itens.filter((i) => i.delivery).length, 0);
+    return `<section class="panel planilha stack">
+        <h2>Conferir a importação</h2>
+        <p><b>${nItens}</b> ${nItens === 1 ? 'item' : 'itens'} em <b>${imp.categorias.length}</b> ${imp.categorias.length === 1 ? 'categoria' : 'categorias'}${nDel ? ` · ${nDel} no delivery` : ''} · arquivo ${esc(imp.arquivo)}</p>
+        <ul class="planilha-cats">${imp.categorias.map((c) => `<li><b>${esc(c.nome)}</b> <span class="muted">${c.itens.length} ${c.itens.length === 1 ? 'item' : 'itens'}: ${esc(c.itens.slice(0, 4).map((i) => i.nome).join(', '))}${c.itens.length > 4 ? '…' : ''}</span></li>`).join('')}</ul>
+        ${imp.erros.length ? `<div class="planilha-erros"><b>${imp.erros.length} ${imp.erros.length === 1 ? 'linha ficou' : 'linhas ficaram'} de fora:</b><ul>${imp.erros.slice(0, 8).map((e) => `<li>${esc(e)}</li>`).join('')}${imp.erros.length > 8 ? `<li>e mais ${imp.erros.length - 8}…</li>` : ''}</ul></div>` : ''}
+        <div class="seg planilha-modo" role="radiogroup" aria-label="Como importar">
+          <button type="button" role="radio" aria-checked="${imp.modo === 'somar'}" data-planilha-modo="somar">Somar ao cardápio atual</button>
+          <button type="button" role="radio" aria-checked="${imp.modo === 'trocar'}" data-planilha-modo="trocar">Trocar o cardápio todo</button>
+        </div>
+        <small class="help">${imp.modo === 'somar' ? 'Itens com o mesmo nome na mesma categoria são atualizados; os novos entram no fim.' : 'O cardápio atual é apagado e fica só o que está na planilha.'}</small>
+        <div class="vhead-actions">
+          <button type="button" class="btn btn-cobalt" data-planilha-ok ${nItens ? '' : 'disabled'}>${icon('check')} Importar ${nItens} ${nItens === 1 ? 'item' : 'itens'}</button>
+          <button type="button" class="btn btn-quiet" data-planilha-cancelar>Cancelar</button>
+        </div>
+      </section>`;
+  }
+  const chaveNome = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+  function aplicarImportacao(imp) {
+    const novo = (it) => ({ id: uid(), ...it });
+    if (imp.modo === 'trocar') return imp.categorias.map((c) => ({ id: uid(), nome: c.nome, itens: c.itens.map(novo) }));
+    const cats = cloneMenu();
+    for (const c of imp.categorias) {
+      let alvo = cats.find((x) => chaveNome(x.nome) === chaveNome(c.nome));
+      if (!alvo) cats.push((alvo = { id: uid(), nome: c.nome, itens: [] }));
+      for (const it of c.itens) {
+        const i = alvo.itens.findIndex((x) => chaveNome(x.nome) === chaveNome(it.nome));
+        if (i >= 0) alvo.itens[i] = { ...alvo.itens[i], ...it };
+        else alvo.itens.push(novo(it));
+      }
+    }
+    return cats;
+  }
+  document.addEventListener('click', async (e) => {
+    const t = e.target;
+    if (t.closest('[data-planilha-modelo]')) {
+      try {
+        await Planilha.baixarModelo();
+      } catch (ex) {
+        toast(ex.message, { tone: 'error' });
+      }
+      return;
+    }
+    const modo = t.closest('[data-planilha-modo]');
+    if (modo && S.importacao) {
+      S.importacao.modo = modo.dataset.planilhaModo;
+      return renderView();
+    }
+    if (t.closest('[data-planilha-cancelar]')) {
+      S.importacao = null;
+      return renderView();
+    }
+    const ok = t.closest('[data-planilha-ok]');
+    if (ok && S.importacao) {
+      const imp = S.importacao;
+      if (imp.modo === 'trocar' && S.settings.cardapio.length && !confirm('Trocar o cardápio todo pelo da planilha? O cardápio atual será apagado.')) return;
+      ok.disabled = true;
+      const n = imp.categorias.reduce((t2, c) => t2 + c.itens.length, 0);
+      if (await saveCardapio(aplicarImportacao(imp))) {
+        S.importacao = null;
+        toast(`${n} ${n === 1 ? 'item importado' : 'itens importados'} para o cardápio.`, { tone: 'ok', ms: 4000 });
+      } else ok.disabled = false;
+      renderView();
+    }
+  });
+  document.addEventListener('change', async (e) => {
+    if (!e.target.matches('[data-planilha-arq]')) return;
+    const f = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!f) return;
+    try {
+      const r = await Planilha.ler(f, cfg.tags);
+      if (!r.total) return toast(r.erros[0] || 'A planilha não tem itens. Preencha a partir da segunda linha.', { tone: 'error', ms: 5000 });
+      S.importacao = { ...r, arquivo: f.name, modo: S.settings.cardapio.length ? 'somar' : 'trocar' };
+      renderView();
+    } catch (ex) {
+      console.error(ex);
+      toast(ex.message || 'Não foi possível ler a planilha.', { tone: 'error', ms: 5000 });
+    }
+  });
+
+  /* Opções do item: grupos "escolha uma" (tamanho, carne…) e "adicionais" (com quantidade). */
+  const fmtPreco = (v) => (+v ? String(Number(v).toFixed(2)).replace('.', ',') : '');
+  function gruposHtml() {
+    return S.itemGrupos.map((g, i) => `<fieldset class="it-grupo" data-gi="${i}">
+      <div class="it-grupo-top">
+        <input class="input" data-gk="nome" maxlength="40" value="${esc(g.nome || '')}" placeholder="Ex.: Tamanho" aria-label="Nome do grupo">
+        <select class="input" data-gk="tipo" aria-label="Tipo do grupo"><option value="escolha" ${g.tipo !== 'extras' ? 'selected' : ''}>Escolha uma</option><option value="extras" ${g.tipo === 'extras' ? 'selected' : ''}>Adicionais</option></select>
+        <button type="button" class="icon-btn" data-g-del="${i}" aria-label="Tirar o grupo">${icon('trash')}</button>
+      </div>
+      ${g.tipo === 'extras'
+        ? `<div class="it-grupo-lim"><label class="field"><span>Mínimo</span><input class="input mono" data-gk="min" type="number" min="0" max="20" value="${+g.min || 0}"></label>
+            <label class="field"><span>Máximo (0 = sem limite)</span><input class="input mono" data-gk="max" type="number" min="0" max="50" value="${+g.max || 0}"></label></div>`
+        : `<label class="check"><input type="checkbox" data-gk="obrig" ${+g.min >= 1 ? 'checked' : ''}> <span>Obrigatório escolher</span></label>`}
+      <textarea class="textarea mono" data-gk="opcoes" rows="${Math.min(8, Math.max(3, (g.opcoes || []).length + 1))}" placeholder="${g.tipo === 'extras' ? 'Ovo frito = 3,00&#10;Bacon = 5,00' : 'Pequeno&#10;Grande = 3,00'}">${esc((g.opcoes || []).map((o) => `${o.nome}${+o.preco ? ` = ${fmtPreco(o.preco)}` : ''}`).join('\n'))}</textarea>
+      <small class="help">Uma opção por linha. Depois do "=", quanto soma ao preço do item (sem "=" não muda o preço).</small>
+    </fieldset>`).join('') || '<p class="muted" style="font-size:13.5px">Sem opções: o cliente pede o item como está.</p>';
+  }
+  // Lê os grupos da tela, mantendo os códigos das opções que já existiam (o carrinho dos clientes usa esses códigos).
+  function lerGrupos() {
+    const box = $('#itGrupos');
+    if (!box) return S.itemGrupos;
+    return [...box.querySelectorAll('.it-grupo')].map((fs) => {
+      const antigo = S.itemGrupos[+fs.dataset.gi] || {};
+      const v = (k) => fs.querySelector(`[data-gk="${k}"]`);
+      const tipo = v('tipo').value === 'extras' ? 'extras' : 'escolha';
+      const opcoes = v('opcoes').value.split('\n').map((l) => l.trim()).filter(Boolean).slice(0, 40).map((l) => {
+        const [nome, preco] = l.split('=');
+        const n = nome.trim().slice(0, 60);
+        const velho = (antigo.opcoes || []).find((o) => o.nome === n);
+        return { id: velho ? velho.id : uid(), nome: n, preco: Math.max(0, parsePreco(preco || '0') || 0) };
+      }).filter((o) => o.nome);
+      // Ao trocar o tipo, os campos do outro tipo ainda não existem na tela: usa o valor antigo.
+      const num = (k, pad) => (v(k) ? Math.max(0, +v(k).value || 0) : +antigo[k] || pad);
+      return { id: antigo.id || uid(), nome: v('nome').value.trim().slice(0, 40), tipo,
+        min: tipo === 'extras' ? (v('min') ? num('min', 0) : 0) : v('obrig') ? (v('obrig').checked ? 1 : 0) : 1,
+        max: tipo === 'extras' ? (v('max') ? num('max', 0) : 0) : 1, opcoes };
+    });
+  }
+  const redesenharGrupos = () => { S.itemGrupos = lerGrupos(); $('#itGrupos').innerHTML = gruposHtml(); };
+  function fotoItemHtml() {
+    return `${S.itemFoto ? `<img src="${esc(S.itemFoto)}" alt="">` : ''}
+      <label class="btn btn-line btn-sm">${icon('upload')} ${S.itemFoto ? 'Trocar foto' : 'Enviar foto'}<input type="file" accept="image/*" class="sr-only" data-item-foto></label>
+      ${S.itemFoto ? `<button type="button" class="btn btn-quiet btn-sm" data-item-foto-del>Tirar foto</button>` : ''}`;
+  }
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#itemForm')) return;
+    if (e.target.closest('[data-g-add]')) {
+      S.itemGrupos = lerGrupos();
+      S.itemGrupos.push({ id: uid(), nome: '', tipo: 'escolha', min: 1, max: 1, opcoes: [] });
+      $('#itGrupos').innerHTML = gruposHtml();
+      const n = $$('#itGrupos [data-gk="nome"]').pop();
+      return n && n.focus();
+    }
+    const del = e.target.closest('[data-g-del]');
+    if (del) {
+      S.itemGrupos = lerGrupos();
+      S.itemGrupos.splice(+del.dataset.gDel, 1);
+      return ($('#itGrupos').innerHTML = gruposHtml());
+    }
+    if (e.target.closest('[data-item-foto-del]')) {
+      S.itemFoto = '';
+      $('#itFotoBox').innerHTML = fotoItemHtml();
+    }
+  });
+  document.addEventListener('change', async (e) => {
+    if (e.target.matches('#itemForm [data-gk="tipo"]')) return redesenharGrupos();
+    if (!e.target.matches('[data-item-foto]')) return;
+    const f = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!f) return;
+    const box = $('#itFotoBox');
+    box.classList.add('is-busy');
+    try {
+      S.itemFoto = await store.uploadImage(await prepararImagem(f, 'premio'), 'item');
+    } catch (ex) {
+      toast(ex.message && !/fetch|network/i.test(ex.message) ? ex.message : 'Não foi possível enviar a foto.', { tone: 'error' });
+    }
+    box.classList.remove('is-busy');
+    box.innerHTML = fotoItemHtml();
+  });
+
   function openItem(ci, ii) {
     S.itemEdit = { ci, ii };
     const editing = ii != null;
     const it = editing ? S.settings.cardapio[ci].itens[ii] : { nome: '', desc: '', preco: '', tags: [], destaque: false };
+    S.itemGrupos = JSON.parse(JSON.stringify(it.grupos || []));
+    S.itemFoto = it.foto || '';
     $('#itemTitle').textContent = editing ? 'Editar prato' : 'Novo prato';
     $('#itemBody').innerHTML = `<form class="stack" id="itemForm" novalidate>
       <label class="field"><span>Nome</span><input class="input" id="itNome" required maxlength="60" value="${esc(it.nome)}" placeholder="Ex.: Mandioca na brasa"></label>
-      <label class="field"><span>Descrição (opcional)</span><textarea class="textarea" id="itDesc" maxlength="160" rows="3" placeholder="Ingredientes, porção, acompanhamentos">${esc(it.desc || '')}</textarea></label>
+      <label class="field"><span>Descrição (opcional)</span><textarea class="textarea" id="itDesc" maxlength="320" rows="3" placeholder="Ingredientes, porção, acompanhamentos">${esc(it.desc || '')}</textarea></label>
       <div class="item-row">
         <label class="field"><span>Preço</span><div class="money"><span>R$</span><input class="input mono" id="itPreco" inputmode="decimal" required value="${it.preco === '' ? '' : String(Number(it.preco).toFixed(2)).replace('.', ',')}" placeholder="0,00"></div></label>
         <label class="field"><span>Categoria</span><select class="input" id="itCat">${S.settings.cardapio.map((c, i) => `<option value="${i}" ${i === ci ? 'selected' : ''}>${esc(c.nome)}</option>`).join('')}</select></label>
       </div>
       <div class="field"><span>Selos</span><div class="chips-wrap">${Object.entries(cfg.tags).map(([k, l]) => `<button type="button" class="chip" data-selo="${k}" aria-pressed="${(it.tags || []).includes(k)}">${esc(l)}</button>`).join('')}</div></div>
       <label class="set-inline"><span>Destaque da casa<small>Mostra o selo “Da casa” no prato.</small></span><span class="switch"><input type="checkbox" id="itDestaque" ${it.destaque ? 'checked' : ''}><span></span></span></label>
+      <label class="set-inline"><span>Disponível no delivery<small>O item também aparece no cardápio de entrega.</small></span><span class="switch"><input type="checkbox" id="itDelivery" ${it.delivery ? 'checked' : ''}><span></span></span></label>
+      <label class="set-inline"><span>Só no delivery<small>Não aparece no cardápio da mesa (ex.: bebidas com preço de entrega).</small></span><span class="switch"><input type="checkbox" id="itSoDelivery" ${it.salao === false ? 'checked' : ''}><span></span></span></label>
+      <div class="field"><span>Foto (opcional)</span><div class="it-foto" id="itFotoBox">${fotoItemHtml()}</div></div>
+      <div class="field"><span>Opções do item</span>
+        <p class="help">Tamanhos, sabores, ponto da carne, adicionais… O cliente escolhe na hora de pedir.</p>
+        <div id="itGrupos" class="stack">${gruposHtml()}</div>
+        <button type="button" class="btn btn-quiet btn-sm" data-g-add>${icon('plus')} Adicionar grupo de opções</button></div>
       <p class="form-error" id="itErr" role="alert"></p>
       <div class="vhead-actions">
         <button type="submit" class="btn btn-cobalt">${editing ? 'Salvar prato' : 'Adicionar prato'}</button>
@@ -1376,11 +1695,7 @@
   /* Este aparelho */
   const temaAtual = () => get('nfc-tema-painel') || 'light';
   /* Plano: upsell e downsell pelo próprio restaurante */
-  const SERVICOS = [
-    ['pagina', 'Página da mesa e cardápio', 99, 'Cardápio, Wi-Fi, avaliação no Google, comentários e informações do restaurante.'],
-    ['garcom', 'Chamar o garçom', 99, 'O sino na página da mesa e as abas Chamados e Salão do painel.'],
-    ['fidelidade', 'Programa de fidelidade', 199, 'Pontos pela nota fiscal, prêmios, níveis e indicação.'],
-  ];
+  const SERVICOS = Precos.SERVICOS.map((x) => [x.id, x.nome, x.preco, x.desc]);
   const reais = (v) => 'R$ ' + Number(v || 0).toLocaleString('pt-BR');
   const planoTxt = (p) => (p ? SERVICOS.filter(([k]) => p.servicos[k]).map(([, n]) => n).join(', ') + ` · ${p.mesas} mesas` : '—');
   async function carregarPlano() {
@@ -1392,6 +1707,20 @@
       toast('Não foi possível carregar o plano.', { tone: 'error' });
     }
     if (S.view === 'ajustes' && S.ajTab === 'plano') renderView();
+  }
+  // Conferência automática na SEFAZ: cobrada por nota, à parte da mensalidade.
+  function sefazPlano() {
+    const u = S.plano.sefaz;
+    if (!u || (!u.ativo && !u.meses.some((m) => m.notas))) return '';
+    const nomeMes = (iso) => new Date(`${iso}T12:00:00`).toLocaleDateString('pt-BR', { month: 'long' });
+    const [este, ant] = u.meses;
+    return `<section class="panel stack">
+      <h2>Conferência na SEFAZ</h2>
+      <p class="muted">${u.ativo ? 'Ligada' : 'Desligada'} · ${brl(u.preco)} por nota conferida, somado à mensalidade. Liga e desliga em Fidelidade → Regras.</p>
+      <div class="plano-resumo"><span>Em ${nomeMes(este.mes)} até agora</span><b>${brl(este.valor)}<small> · ${este.notas} ${este.notas === 1 ? 'nota' : 'notas'}</small></b>
+        <small>Mensalidade + conferência: ${brl(S.plano.mensal + este.valor)} até agora.</small></div>
+      ${ant ? `<p class="help">Em ${nomeMes(ant.mes)}: ${ant.notas} ${ant.notas === 1 ? 'nota' : 'notas'} · ${brl(ant.valor)}.</p>` : ''}
+    </section>`;
   }
   function ajPlano() {
     if (!S.plano) {
@@ -1418,7 +1747,11 @@
         <p class="plano-valor"><b>${reais(S.plano.mensal)}</b> por mês</p>
         <p class="help">Endereço (domínio) e tempo de contrato: fale com a VTX.</p>
       </section>
-      <section class="panel stack">
+      ${sefazPlano()}
+      ${!S.user.admin ? `<section class="panel stack">
+        <h2>Mudar o plano</h2>
+        <p class="note">${icon('lock')}<span>Só o administrador do restaurante muda o plano.</span></p>
+      </section>` : `<section class="panel stack">
         <h2>Mudar o plano</h2>
         <div class="plano-ops">${SERVICOS.map(([k, n, v, d]) => `<label class="plano-op ${ed.servicos[k] ? 'is-on' : ''}">
             <span><b>${n}</b><small>${d}</small></span>
@@ -1431,12 +1764,12 @@
           <button type="button" class="icon-btn" data-plano-mesas="1" aria-label="Mais mesas">${icon('plus')}</button></span></label>
         <div class="plano-resumo ${dif > 0 ? 'is-up' : dif < 0 ? 'is-down' : ''}">
           <span>Nova mensalidade</span><b>${reais(novoPreco)}<small> por mês</small></b>
-          ${mudou ? `<small>${dif > 0 ? `+${reais(dif)} por mês` : dif < 0 ? `−${reais(-dif)} por mês` : 'mesmo valor'} (hoje ${reais(S.plano.mensal)})${ed.servicos.pagina && ed.servicos.garcom && ed.servicos.fidelidade ? ' · combo dos três aplicado' : ''}</small>` : '<small>Mude os serviços ou as mesas acima.</small>'}
+          ${mudou ? `<small>${dif > 0 ? `+${reais(dif)} por mês` : dif < 0 ? `−${reais(-dif)} por mês` : 'mesmo valor'} (hoje ${reais(S.plano.mensal)})${Precos.combo(ed.servicos).economia ? ` · desconto de combo: −${reais(Precos.combo(ed.servicos).economia)}` : ''}</small>` : '<small>Mude os serviços ou as mesas acima.</small>'}
         </div>
         ${avisos.length ? `<ul class="plano-avisos">${avisos.map((a) => `<li>${icon('alert')} <span>${esc(a)}</span></li>`).join('')}</ul>` : ''}
         <button type="button" class="btn btn-cobalt" data-plano-confirmar ${mudou ? '' : 'disabled'}>${icon('check')} Confirmar mudança</button>
         <small class="help">A mudança vale na hora. A nova mensalidade entra na próxima cobrança.</small>
-      </section>
+      </section>`}
       <section class="panel stack">
         <h2>Histórico</h2>
         ${S.plano.historico.length ? `<ul class="plano-hist">${S.plano.historico.map((h) => `<li>
@@ -1526,12 +1859,22 @@
       const i = S.settings.widgets.findIndex((w) => w.tipo === 'cardapio');
       S.settings.widgets.splice(i + 1, 0, { id: 'fidelidade', tipo: 'fidelidade', label: 'Programa de fidelidade', ativo: true, embutido: true });
     }
-    return `<div class="panel stack" id="widgetsCfg">
+    return `${temServico('garcom') ? `<div class="panel stack">
+        <div class="set-row"><div><h3>Sino de chamar o garçom</h3><p>Mostra o sino na página da mesa. Desligado, o cliente vê só o cardápio e os widgets.</p></div>
+          <label class="switch"><input type="checkbox" data-sino ${S.settings.mesas.sino !== false ? 'checked' : ''} aria-label="Mostrar o sino na página da mesa"><span></span></label></div>
+      </div>` : ''}
+      <div class="panel stack" id="widgetsCfg">
         <p class="muted" style="font-size:13px">Desligue o que o restaurante não usa e use as setas para mudar a ordem. Os dados de Wi-Fi, Google e cardápio ficam nas abas Restaurante e Cardápio.</p>
         <ul class="wlist">${S.settings.widgets.map((w, i) => (w.tipo === 'fidelidade' && !temFid() ? '' : widgetRow(w, i, S.settings.widgets.length))).join('')}</ul>
         ${widgetForm()}
       </div>`;
   }
+
+  document.addEventListener('change', (e) => {
+    if (!e.target.matches('[data-sino]')) return;
+    const on = e.target.checked;
+    saveSettings({ mesas: { ...S.settings.mesas, sino: on } }).then((ok) => ok && toast(on ? 'Sino ligado na página da mesa.' : 'Sino desligado: a página da mesa fica sem o botão de chamar.', { tone: 'ok' }));
+  });
 
   /* Eventos dos ajustes */
   document.addEventListener('click', async (e) => {
@@ -1719,7 +2062,18 @@
       preco,
       tags: $$('[data-selo]').filter((b) => b.getAttribute('aria-pressed') === 'true').map((b) => b.dataset.selo),
       destaque: $('#itDestaque').checked,
+      delivery: $('#itDelivery').checked,
+      salao: !$('#itSoDelivery').checked,
+      foto: S.itemFoto || '',
+      grupos: lerGrupos().filter((g) => g.nome && g.opcoes.length),
     };
+    if (item.salao) delete item.salao;
+    if (!item.foto) delete item.foto;
+    if (!item.grupos.length) delete item.grupos;
+    if (item.salao === false && !item.delivery) {
+      err.textContent = 'Um item "só no delivery" precisa estar disponível no delivery.';
+      return;
+    }
     if (antigo && destino === ci) cats[ci].itens[ii] = item;
     else {
       if (antigo) cats[ci].itens.splice(ii, 1);
@@ -1948,6 +2302,7 @@
     if (started) return;
     started = true;
     if (window.FidPainel) FidPainel.iniciar({ store, S, rerender: renderView, chrome: renderChrome, ding, isDemo, prepararImagem });
+    if (window.DelPainel) DelPainel.iniciar({ store, S, rerender: renderView, chrome: renderChrome, ding });
     route();
     window.addEventListener('hashchange', route);
     store.subscribe(queueRefresh);
@@ -1971,11 +2326,13 @@
       try { S.settings = await store.getSettings(); } catch (e) { console.error(e); }
       const sess = await store.auth.sessao().catch(() => null);
       if (sess) {
-        S.user = { nome: sess.nome };
+        S.user = { nome: sess.nome, admin: !!sess.admin };
         return startApp();
       }
       try {
-        temSenhaEquipe = (await store.auth.estado()).temSenha;
+        const est = await store.auth.estado();
+        temSenhaEquipe = est.temSenha;
+        temEquipe = !!est.temEquipe;
       } catch {}
       // Demonstração: a primeira conta define a senha. Produção: a senha vem da central.
       if (!temSenhaEquipe && isDemo) S.loginModo = 'criar';

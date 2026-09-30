@@ -7,6 +7,8 @@
  *   listCalls({ desde })         → chamados criados depois de `desde` (Date)
  *   getCall(id) / updateCall(id, patch)          (equipe)
  *
+ *   Delivery: deliveryPedir(pedido) / deliveryAcompanhar(token)   (cliente)
+ *             deliveryPedidos({ desde }) / deliveryMudar(id, status, entregador, motivo)   (equipe)
  *   Plaquinhas e sino liberado pela equipe:
  *   mesaDaEtiqueta(codigo)       → nº da mesa ligada à plaquinha, ou null
  *   sessaoAbrir({ mesa, nome, codigo }) → { token, status, mesa, nome, codigo }
@@ -22,18 +24,19 @@
  *   uploadImage(blob, nome)      → URL pública da imagem (logo, capa)
  *   auth.estado()                → { temSenha } — se a senha da equipe já foi criada
  *   auth.entrar(pin) / auth.cadastrar({ nome, pin, senhaEquipe }) / auth.sessao() / auth.sair()
- *   auth.membros() / auth.remover(id) / auth.trocarSenha(senha)
+ *   auth.membros() / auth.remover(id) / auth.trocarSenha(senha)   (só administrador)
+ *   auth.adicionar({ nome, pin, admin }) / auth.definirAdmin(id, admin) (só administrador) / auth.trocarPin(id|null, pin)
  *
  *   Programa de fidelidade (módulo liberado pela Vortex; regras em settings.fidelidade):
  *   cliente: fidPrograma() / fidConsultar(cpf) / fidIndicador(codigo) / fidCadastrar(dados) /
  *            fidEntrar(cpf, pin) / fidConta(token) / fidSair(token) /
- *            fidRegistrarNota({ cpf, qr, valor }) / fidResgatar(token, premioId)
+ *            fidRegistrarNota({ cpf, qr, valor }) / fidSefaz({ cpf, qr }) / fidRanking(token) / fidResgatar(token, premioId)
  *            → sempre { status, ... } (status 'erro' traz a mensagem)
  *   equipe:  fidResumo() / fidPendencias() / fidClientes(busca) / fidCliente(cpf) / fidRecentes() /
  *            fidAprovarNota(chave, valor, emitidaIso) / fidRecusarNota(chave, motivo) /
  *            fidImportarXml(notas) / fidResgateDecidir(id, entregar) / fidLancar(cpf, valor, descricao) /
  *            fidRedefinirPin(cpf) / fidExcluirCliente(cpf) / fidEditarCliente(cpf, dados) /
- *            fidPremios() / fidSalvarPremio(p) / fidExcluirPremio(id) / fidExportar()
+ *            fidPremios() / fidSalvarPremio(p) / fidExcluirPremio(id) / fidExportar() / fidTopProdutos(cpf, dias)
  *            → erros viram exceção com a mensagem
  */
 (function () {
@@ -46,8 +49,8 @@
   /* ---------- Fidelidade: regras puras (as mesmas de public.fid_* no schema.sql) ---------- */
   const FID_PADRAO = {
     ativo: false, nome: 'Clube de pontos', pontosPorReal: 1, boosts: [], cnpjs: [], prazoDias: 7, inicio: null,
-    manual: false, regulamento: '', fuso: 'America/Sao_Paulo', indicacao: { ativo: true, indicador: 50, indicado: 20 },
-    niveis: { ativo: false, base: 'sempre', meses: 12, lista: [] },
+    manual: false, regulamento: '', fuso: 'America/Sao_Paulo', indicacao: { ativo: true, indicador: 50, indicado: 20, quando: 'cadastro' },
+    niveis: { ativo: false, base: 'sempre', meses: 12, lista: [] }, ranking: { ativo: true },
   };
   const soDigitos = (s) => String(s || '').replace(/\D/g, '');
   function cpfValido(c) {
@@ -75,6 +78,18 @@
   }
   // Chave de acesso dentro do texto do QR (URL da SEFAZ) ou digitada com espaços.
   const chaveDoTexto = (t) => (String(t || '').replace(/[\s.-]/g, '').match(/\d{44}/) || [])[0] || null;
+  // Valor total da nota, quando o QR traz (QR antigo com vNF=, ou NFC-e em contingência: chave|versão|amb|dia|vNF|...).
+  // A NFC-e emitida online não traz o valor no QR.
+  const valorDoQr = (t) => {
+    const v1 = String(t || '').match(/[?&]vNF=(\d+(?:\.\d{1,2})?)(?:&|$)/i);
+    if (v1 && +v1[1] > 0 && +v1[1] < 1e5) return +v1[1];
+    const m = String(t || '').match(/[?&]p=([^&#]+)/);
+    if (!m) return null;
+    const p = decodeURIComponent(m[1]).split('|');
+    if (p.length < 8 || !/^\d+(\.\d{1,2})?$/.test(p[4] || '')) return null;
+    const v = +p[4];
+    return v > 0 && v < 1e5 ? v : null;
+  };
   const minutos = (hhmm) => (/^\d{1,2}:\d{2}$/.test(hhmm || '') ? +hhmm.split(':')[0] * 60 + +hhmm.split(':')[1] : null);
   const diaIso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   // Maior multiplicador que vale no momento (hora local do aparelho).
@@ -158,11 +173,62 @@
     niveis: { ...FID_PADRAO.niveis, ...((f && f.niveis) || {}) },
   });
 
-  // Mensalidade do plano (a mesma tabela de public.plano_preco).
-  const precoPlano = (p) => {
-    const sv = (p && p.servicos) || {};
-    const base = sv.pagina && sv.garcom && sv.fidelidade ? 329 : (sv.pagina ? 99 : 0) + (sv.garcom ? 99 : 0) + (sv.fidelidade ? 199 : 0);
-    return base + (p && ['proprio', 'registro'].includes(p.dominio) ? 19 : 0);
+  // Mensalidade do plano (assets/js/precos.js, a mesma tabela de public.plano_preco).
+  const precoPlano = (p) => window.Precos.plano(p);
+  /* Opções dos itens do cardápio (as mesmas regras de public.delivery_pedir):
+     item.grupos = [{ id, nome, tipo: 'escolha' | 'extras', min, max, opcoes: [{ id, nome, preco }] }]
+     'escolha': a pessoa escolhe uma (tamanho, carne…); o preço da opção soma ao preço do item.
+     'extras': adicionais com quantidade; min/max contam o total do grupo (max 0 = sem limite).
+     sel = [{ g: grupoId, o: opcaoId, q: quantidade }] */
+  const gruposDe = (it) => (it && Array.isArray(it.grupos) ? it.grupos : []).filter((g) => g && Array.isArray(g.opcoes) && g.opcoes.length);
+  const opcoes = {
+    grupos: gruposDe,
+    // Menor preço possível (para mostrar "a partir de").
+    aPartir(it) {
+      return (+it.preco || 0) + gruposDe(it).filter((g) => g.tipo === 'escolha' && +g.min >= 1)
+        .reduce((t, g) => t + Math.min(...g.opcoes.map((o) => +o.preco || 0)), 0);
+    },
+    temVariacao: (it) => gruposDe(it).some((g) => g.opcoes.some((o) => +o.preco > 0)) ,
+    calcular(it, sel = []) {
+      let preco = +it.preco || 0;
+      const rotulos = [];
+      for (const g of gruposDe(it)) {
+        const meus = sel.filter((x) => x.g === g.id);
+        if (g.tipo === 'escolha') {
+          if (meus.length > 1) return { erro: `Escolha só uma opção em "${g.nome}".` };
+          if (!meus.length) { if (+g.min >= 1) return { erro: `Escolha: ${g.nome}.` }; continue; }
+          const o = g.opcoes.find((x) => x.id === meus[0].o);
+          if (!o) return { erro: 'Opção indisponível. Atualize a página.' };
+          preco += +o.preco || 0;
+          rotulos.push(o.nome);
+        } else {
+          let total = 0;
+          for (const m of meus) {
+            const o = g.opcoes.find((x) => x.id === m.o);
+            const q = Math.min(Math.max(Math.round(+m.q || 0), 0), 20);
+            if (!o) return { erro: 'Opção indisponível. Atualize a página.' };
+            if (!q) continue;
+            total += q;
+            preco += (+o.preco || 0) * q;
+            rotulos.push(q > 1 ? `${q}× ${o.nome}` : o.nome);
+          }
+          if (+g.max > 0 && total > +g.max) return { erro: `Em "${g.nome}", escolha até ${g.max}.` };
+          if (total < (+g.min || 0)) return { erro: `Em "${g.nome}", escolha pelo menos ${g.min}.` };
+        }
+      }
+      return { preco: Math.round(preco * 100) / 100, rotulos };
+    },
+  };
+  // Distância em linha reta (km), a mesma conta de public.distancia_km.
+  const distanciaKm = (a, b) => {
+    const r = (x) => (x * Math.PI) / 180;
+    const h = Math.sin(r(b.lat - a.lat) / 2) ** 2 + Math.cos(r(a.lat)) * Math.cos(r(b.lat)) * Math.sin(r(b.lng - a.lng) / 2) ** 2;
+    return Math.round(6371 * 2 * Math.asin(Math.sqrt(h)) * 100) / 100;
+  };
+  // Taxa de entrega pela distância: a primeira faixa que cobre. null = fora da área.
+  const taxaEntrega = (dcfg, km) => {
+    const f = (dcfg.faixas || []).filter((x) => +x.ate > 0).sort((x, y) => x.ate - y.ate).find((x) => +x.ate >= km);
+    return f ? +f.taxa || 0 : null;
   };
   // Valores iniciais, usados enquanto a equipe ainda não salvou nada pelo painel.
   // Demonstração: o restaurante de exemplo (Quintal Bistrô). Restaurante de verdade:
@@ -171,12 +237,19 @@
     nome: '', descricao: '', endereco: '', telefone: '', instagram: '', googleUrl: '', logo: '', capa: '', cor: '',
     taxaServico: 10, horarios: [],
   };
+  // Delivery: taxa por distância (faixas até X km), pedido mínimo, tempo e formas de pagamento.
+  const DELIVERY_PADRAO = {
+    ativo: false, local: null, faixas: [{ ate: 3, taxa: 5 }, { ate: 6, taxa: 8 }, { ate: 10, taxa: 12 }],
+    minimo: 0, tempo: '40 a 60', pagamentos: { pix: true, cartao: true, dinheiro: true }, pix: '', whatsapp: '',
+  };
   const seed = (demo = true) => (demo ? {
     restaurante: cfg.restaurante,
     wifi: cfg.wifi,
-    cardapio: cfg.cardapio,
+    // Demonstração: o cardápio de exemplo também vende no delivery.
+    cardapio: cfg.cardapio.map((c) => ({ ...c, itens: c.itens.map((i) => ({ delivery: true, ...i })) })),
     mesas: cfg.mesasPadrao,
     widgets: cfg.widgetsPadrao,
+    delivery: { ...DELIVERY_PADRAO, ativo: true, local: { lat: -23.5667, lng: -46.6849, endereco: 'Rua dos Pinheiros, 412 - Pinheiros, São Paulo' }, pix: 'pix@quintalbistro.com.br' },
   } : {
     restaurante: RESTAURANTE_VAZIO,
     wifi: { rede: '', senha: '', seguranca: 'WPA' },
@@ -184,6 +257,7 @@
     mesas: { total: 20, areas: [{ nome: 'Salão', de: 1, ate: 20 }] },
     // As informações (endereço, telefone, horários, Instagram) começam desligadas.
     widgets: cfg.widgetsPadrao.map((w) => (w.tipo === 'info' ? { ...w, ativo: false } : w)),
+    delivery: DELIVERY_PADRAO,
   });
   // Completa o que foi salvo com os valores iniciais (campos novos em versões futuras).
   // Módulos: na demonstração vêm todos liberados; no servidor, a central libera.
@@ -201,7 +275,7 @@
     // Plano contratado: serviços e mesas. Sem plano definido = tudo liberado.
     const pl = saved && saved.plano;
     out.plano = {
-      servicos: { pagina: true, garcom: true, fidelidade: !!out.modulos.fidelidade, ...((pl && pl.servicos) || {}) },
+      servicos: { pagina: true, garcom: true, fidelidade: !!out.modulos.fidelidade, delivery: !!demo, ...((pl && pl.servicos) || {}) },
       mesas: Math.min(Math.max(+((pl && pl.mesas) || 500), 1), 500),
     };
     out.modulos.fidelidade = !!out.plano.servicos.fidelidade;
@@ -315,6 +389,31 @@
         .reduce((t, m) => t + m.pontos, 0), 0);
     }
     const nivelDe = (db, cpf) => fidNivelDe(fidNiveis(regras(db)), pontosNivel(db, cpf));
+    // Produtos das notas (do XML), para os mais pedidos.
+    function salvarItens(db, chave, cpf, emitida, itens) {
+      if (!Array.isArray(itens)) return;
+      const f = F(db);
+      f.itens = (f.itens || []).filter((i) => i.chave !== chave);
+      itens.slice(0, 300).forEach((i, n) => i.descricao && f.itens.push({ chave, n: n + 1, cpf: cpf || null, descricao: String(i.descricao).trim().slice(0, 120),
+        quantidade: +i.quantidade || 1, unidade: i.unidade || '', valor: i.valor == null ? null : +i.valor, emitida_em: emitida || null }));
+    }
+    function topProdutos(db, cpf, dias = 90, limite = 20) {
+      const desde = Date.now() - dias * DIA;
+      const g = new Map();
+      for (const i of F(db).itens || []) {
+        if ((cpf && i.cpf !== cpf) || (i.emitida_em && new Date(i.emitida_em) < desde)) continue;
+        const k = i.descricao.toLowerCase();
+        const x = g.get(k) || { descricao: i.descricao, quantidade: 0, notas: new Set(), clientes: new Set(), valor: 0 };
+        x.quantidade += i.quantidade; x.notas.add(i.chave); if (i.cpf) x.clientes.add(i.cpf); x.valor += i.valor || 0;
+        g.set(k, x);
+      }
+      return [...g.values()].map((x) => ({ ...x, notas: x.notas.size, clientes: x.clientes.size }))
+        .sort((a, b) => b.quantidade - a.quantidade || b.notas - a.notas).slice(0, limite);
+    }
+    const nomeCurto = (nome) => {
+      const p = String(nome || '').trim().split(/\s+/);
+      return p[0] + (p.length > 1 ? ` ${p[p.length - 1][0]}.` : '');
+    };
     function atualizarNivel(db, cpf, bonus = true) {
       const c = cliDe(db, cpf);
       const nv = nivelDe(db, cpf);
@@ -338,7 +437,7 @@
       c.bonus_indicacao = true;
       if (+r.indicado > 0) mover(db, cpf, 'boas_vindas', +r.indicado, { descricao: 'Bônus de boas-vindas (indicação)' });
       if (+r.indicador > 0 && cliDe(db, c.indicado_por)) {
-        mover(db, c.indicado_por, 'indicacao', +r.indicador, { descricao: `Indicação: ${c.nome.split(' ')[0]} fez a primeira compra` });
+        mover(db, c.indicado_por, 'indicacao', +r.indicador, { descricao: `Indicação: ${c.nome.split(' ')[0]} ${r.quando === 'compra' ? 'fez a primeira compra' : 'entrou no clube'}` });
       }
     }
     function creditar(db, n, valor, emitida, por) {
@@ -598,14 +697,19 @@
         const db = read();
         const p = mergeSettings(db.configuracao, true).plano;
         const plano = { ...p, dominio: 'sub', contrato: 6, definido: !!(db.planoHistorico || []).length };
-        return { plano, mensal: precoPlano(plano), historico: db.planoHistorico || [] };
+        // Demonstração: sem consulta real na SEFAZ, o uso fica zerado.
+        const r = regras(db);
+        const mes = (k) => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - k); return diaIso(d); };
+        const sefaz = { ativo: !!(r.sefaz && r.sefaz.ativo), preco: window.Precos ? Precos.SEFAZ_NOTA : 0.25, meses: [0, 1].map((k) => ({ mes: mes(k), notas: 0, valor: 0 })) };
+        return { plano, mensal: precoPlano(plano), sefaz, historico: db.planoHistorico || [] };
       },
       async alterarPlano(p) {
         const db = read();
         const sv = (p && p.servicos) || {};
-        if (!sv.pagina && !sv.garcom && !sv.fidelidade) throw new Error('Escolha pelo menos um serviço.');
+        const ids = window.Precos.SERVICOS.map((x) => x.id);
+        if (!ids.some((k) => sv[k])) throw new Error('Escolha pelo menos um serviço.');
         const antes = (await this.meuPlano()).plano;
-        const novo = { servicos: { pagina: !!sv.pagina, garcom: !!sv.garcom, fidelidade: !!sv.fidelidade }, mesas: Math.min(Math.max(Math.round(+p.mesas || 20), 1), 500), dominio: 'sub', contrato: 6, definido: true };
+        const novo = { servicos: Object.fromEntries(ids.map((k) => [k, !!sv[k]])), mesas: Math.min(Math.max(Math.round(+p.mesas || 20), 1), 500), dominio: 'sub', contrato: 6, definido: true };
         const cfgAtual = mergeSettings(db.configuracao, true);
         const mesas = cfgAtual.mesas.total > novo.mesas
           ? { total: novo.mesas, areas: cfgAtual.mesas.areas.filter((a) => a.de <= novo.mesas).map((a) => ({ ...a, ate: Math.min(a.ate, novo.mesas) })) }
@@ -625,7 +729,8 @@
         const hoje = diaIso(new Date());
         return {
           ativo: true, nome: r.nome || 'Clube de pontos', pontosPorReal: +r.pontosPorReal || 0, prazoDias: prazo(db), regulamento: r.regulamento || '',
-          indicacao: r.indicacao && r.indicacao.ativo ? { ativo: true, indicador: +r.indicacao.indicador || 0, indicado: +r.indicacao.indicado || 0 } : { ativo: false },
+          sefaz: !!(r.sefaz && r.sefaz.ativo),
+          indicacao: r.indicacao && r.indicacao.ativo ? { ativo: true, indicador: +r.indicacao.indicador || 0, indicado: +r.indicacao.indicado || 0, quando: r.indicacao.quando === 'compra' ? 'compra' : 'cadastro' } : { ativo: false },
           boosts: (r.boosts || []).filter((b) => b.ativo !== false && +b.mult > 1 && !(b.fim && b.fim < hoje))
             .map(({ nome, mult, dias, de, ate, inicio: ini, fim }) => ({ nome, mult: +mult, dias: dias || [], de: de || '', ate: ate || '', inicio: ini || '', fim: fim || '' })),
           niveis: fidNiveis(r).length ? { ativo: true, base: r.niveis.base === 'meses' ? 'meses' : 'sempre', meses: Math.min(Math.max(+r.niveis.meses || 12, 1), 60), lista: fidNiveis(r) } : { ativo: false },
@@ -675,6 +780,7 @@
         while (f.clientes.some((x) => x.codigo === codigo));
         f.clientes.push({ cpf, nome, email, telefone, pontos: 0, codigo, indicado_por, bonus_indicacao: false, marketing: !!marketing, criado_em: nowIso() });
         f.pins[cpf] = await hashTxt(cpf + ':' + pin);
+        if (regras(db).indicacao.quando !== 'compra') bonusIndicacao(db, cpf);
         f.xml.filter((x) => x.cpf === cpf).forEach((x) => autoCreditar(db, x.chave));
         const token = uid();
         f.sessoes[token] = cpf;
@@ -741,6 +847,97 @@
         const r = f.xml.some((x) => x.chave === chave) ? conferirXml(db, chave) : { status: 'pendente' };
         write(db);
         return r;
+      },
+      /* ---------- Delivery ---------- */
+      async deliveryPedir(p) {
+        const db = read();
+        const conf = mergeSettings(db.configuracao, true);
+        const d = conf.delivery;
+        const erro = (mensagem) => ({ status: 'erro', mensagem });
+        if (!conf.plano.servicos.delivery) return erro('Este restaurante não faz delivery por aqui.');
+        if (!d.ativo) return erro('O delivery está fechado agora.');
+        const nome = String(p.cliente && p.cliente.nome || '').trim().slice(0, 60);
+        const tel = soDigitos(p.cliente && p.cliente.telefone);
+        const e = p.endereco || {};
+        if (nome.length < 2) return erro('Informe seu nome.');
+        if (!/^[1-9]\d{9,10}$/.test(tel)) return erro('Informe um celular com DDD.');
+        if (!String(e.rua || '').trim() || !String(e.numero || '').trim() || !String(e.bairro || '').trim()) return erro('Complete o endereço: rua, número e bairro.');
+        if (!Array.isArray(p.itens) || !p.itens.length) return erro('O carrinho está vazio.');
+        const todos = conf.cardapio.flatMap((c) => c.itens);
+        const itens = [];
+        for (const x of p.itens) {
+          const it = todos.find((i) => i.id === x.id && i.delivery);
+          if (!it) return erro('Um item do carrinho não está mais disponível. Atualize a página.');
+          const c = opcoes.calcular(it, Array.isArray(x.opcoes) ? x.opcoes : []);
+          if (c.erro) return erro(`${it.nome}: ${c.erro}`);
+          itens.push({ id: it.id, nome: it.nome, preco: c.preco, qtd: Math.min(Math.max(Math.round(+x.qtd || 1), 1), 50), obs: String(x.obs || '').trim().slice(0, 140) || null, opcoes: c.rotulos });
+        }
+        const subtotal = Math.round(itens.reduce((t, i) => t + i.preco * i.qtd, 0) * 100) / 100;
+        if (subtotal < (+d.minimo || 0)) return erro(`O pedido mínimo é ${brlTxt(+d.minimo)}.`);
+        if (!(e.lat && e.lng) || !d.local) return erro('Não conseguimos localizar o endereço. Confira o CEP e o número.');
+        const km = distanciaKm(d.local, e);
+        const taxa = taxaEntrega(d, km);
+        if (taxa == null) return erro(`Seu endereço está fora da área de entrega (${String(km).replace('.', ',')} km).`);
+        const pg = p.pagamento || {};
+        if (!['pix', 'cartao', 'dinheiro'].includes(pg.forma) || !d.pagamentos[pg.forma]) return erro('Escolha uma forma de pagamento.');
+        const total = Math.round((subtotal + taxa) * 100) / 100;
+        if (pg.forma === 'dinheiro' && pg.troco && +pg.troco < total) return erro('O troco precisa ser para um valor maior que o total.');
+        const hoje = new Date().toDateString();
+        db.pedidos = db.pedidos || [];
+        const numero = db.pedidos.filter((x) => new Date(x.criado_em).toDateString() === hoje).reduce((m, x) => Math.max(m, x.numero), 0) + 1;
+        const token = uid();
+        db.pedidos.push({ id: uid(), token, numero, status: 'recebido', cliente: { nome, telefone: tel },
+          endereco: { cep: soDigitos(e.cep).slice(0, 8), rua: e.rua, numero: e.numero, complemento: e.complemento || '', bairro: e.bairro, cidade: e.cidade || '', referencia: e.referencia || '', lat: +e.lat, lng: +e.lng },
+          itens, subtotal, taxa, total, pagamento: { forma: pg.forma, troco: pg.forma === 'dinheiro' && pg.troco ? +pg.troco : null },
+          obs: String(p.obs || '').trim().slice(0, 300) || null, distancia_km: km, entregador: null, motivo: null,
+          historico: [{ status: 'recebido', em: nowIso() }], criado_em: nowIso(), atualizado_em: nowIso() });
+        write(db);
+        return { status: 'ok', token, numero, total };
+      },
+      async deliveryAcompanhar(token) {
+        const db = read();
+        const p = (db.pedidos || []).find((x) => x.token === token);
+        if (!p) return null;
+        const conf = mergeSettings(db.configuracao, true);
+        const { lat, lng, ...endereco } = p.endereco;
+        return { status: 'ok', pedido: { ...p, endereco, token: undefined, cliente: undefined },
+          restaurante: { nome: conf.restaurante.nome, telefone: conf.restaurante.telefone, whatsapp: conf.delivery.whatsapp, pix: p.pagamento.forma === 'pix' ? conf.delivery.pix : null, tempo: conf.delivery.tempo } };
+      },
+      async deliveryPedidos({ desde } = {}) {
+        const d = desde ? new Date(desde) : new Date(Date.now() - 24 * 3600e3);
+        return (read().pedidos || []).filter((x) => new Date(x.criado_em) >= d).sort((a, b) => new Date(b.criado_em) - new Date(a.criado_em));
+      },
+      async deliveryMudar(id, status, entregador, motivo) {
+        const db = read();
+        const p = (db.pedidos || []).find((x) => x.id === id);
+        if (!p) throw new Error('Pedido não encontrado.');
+        if (['entregue', 'cancelado'].includes(p.status) && status !== p.status) throw new Error('Este pedido já foi finalizado.');
+        Object.assign(p, { status, entregador: (entregador || '').trim().slice(0, 60) || p.entregador, motivo: status === 'cancelado' ? (motivo || '').trim().slice(0, 160) || null : p.motivo, atualizado_em: nowIso() });
+        p.historico.push({ status, em: nowIso(), por: quem(db) });
+        write(db);
+      },
+      async fidSefaz() {
+        return { status: 'indisponivel' };
+      },
+      async fidRanking(token) {
+        const db = read();
+        if (!noAr(db) || (regras(db).ranking || {}).ativo === false) return { ativo: false };
+        const f = F(db);
+        const ganhos = new Map();
+        for (const m of f.movimentos) {
+          if (m.tipo === 'resgate' || (m.tipo === 'estorno' && m.resgate_id)) continue;
+          ganhos.set(m.cpf, (ganhos.get(m.cpf) || 0) + m.pontos);
+        }
+        const lista = [...ganhos].filter(([, p]) => p > 0).map(([cpf, pontos]) => ({ cpf, pontos, nome: nomeCurto((cliDe(db, cpf) || {}).nome) }))
+          .sort((a, b) => b.pontos - a.pontos || a.nome.localeCompare(b.nome));
+        lista.forEach((x, i) => (x.pos = i && lista[i - 1].pontos === x.pontos ? lista[i - 1].pos : i + 1));
+        const eu = token && f.sessoes[token];
+        return {
+          ativo: true,
+          top: lista.slice(0, 10).map((x) => ({ pos: x.pos, nome: x.nome, pontos: x.pontos, voce: x.cpf === eu })),
+          eu: eu ? { pos: (lista.find((x) => x.cpf === eu) || {}).pos || null, pontos: (lista.find((x) => x.cpf === eu) || {}).pontos || 0,
+            favoritos: topProdutos(db, eu, 3650, 3).map((x) => x.descricao) } : null,
+        };
       },
       async fidResgatar(token, premioId) {
         const db = read();
@@ -812,6 +1009,9 @@
           resgates: f.resgates.filter((x) => x.cpf === cpf).sort((a, b) => (a.criado_em < b.criado_em ? 1 : -1)).slice(0, 30),
         };
       },
+      async fidTopProdutos(cpf, dias) {
+        return topProdutos(read(), cpf ? soDigitos(cpf) : null, dias || 90);
+      },
       async fidRecentes() {
         const db = read();
         return F(db).movimentos.slice(-40).reverse().map((m) => comNome(db, m));
@@ -865,6 +1065,7 @@
           if (!(valor >= 0) || !it.emitida_em || isNaN(new Date(it.emitida_em))) { k.invalidas++; continue; }
           if (x) Object.assign(x, { cpf, valor, emitida_em: it.emitida_em, importada_em: nowIso() });
           else f.xml.push((x = { chave: it.chave, cpf, valor: Math.round(valor * 100) / 100, emitida_em: it.emitida_em, cancelada: false, importada_em: nowIso(), importada_por: quem(db) }));
+          salvarItens(db, it.chave, cpf, it.emitida_em, it.itens);
           if (!cpf) k.sem_cpf++;
           const n = f.notas.find((y) => y.chave === it.chave);
           if (n && n.status === 'pendente') {
@@ -995,57 +1196,97 @@
       for (const c of txt) h = (h * 31 + c.charCodeAt(0)) | 0;
       return String(h);
     };
-    const equipe = () => read().equipe || { senhaHash: null, membros: [] };
+    const equipe = () => {
+      const eq = read().equipe || { senhaHash: null, membros: [] };
+      // Equipes salvas antes dos administradores: a primeira conta vira administradora.
+      if (eq.membros.length && !eq.membros.some((m) => m.admin)) eq.membros = eq.membros.map((m, i) => (i ? m : { ...m, admin: true }));
+      return eq;
+    };
     const salvar = (eq) => write({ ...read(), equipe: eq });
     const falha = (msg) => { throw new Error(msg); };
     const getSess = () => { try { return JSON.parse(localStorage.getItem(SESSAO)); } catch { return null; } };
     const abrir = (m) => { try { localStorage.setItem(SESSAO, JSON.stringify({ id: m.id })); } catch {} };
 
+    const eu = () => { const x = getSess(); return x && equipe().membros.find((m) => m.id === x.id); };
+    const soAdmin = () => { const m = eu(); if (!m) falha('Entre com seu PIN para continuar.'); if (!m.admin) falha('Só o administrador do restaurante pode fazer isso.'); return m; };
+    const pinLivre = async (pin, menos) => {
+      const h = await hash('pin:' + pin);
+      if (equipe().membros.some((x) => x.pinHash === h && x.id !== menos)) falha('Esse PIN já está em uso. Escolha outro.');
+      return h;
+    };
+
     return {
       async estado() {
-        return { temSenha: !!equipe().senhaHash };
+        return { temSenha: !!equipe().senhaHash, temEquipe: equipe().membros.length > 0 };
       },
       async entrar(pin) {
         if (!/^\d{4,8}$/.test(pin)) falha('O PIN tem de 4 a 8 números.');
         const h = await hash('pin:' + pin);
         const m = equipe().membros.find((x) => x.pinHash === h);
-        if (!m) falha('PIN não encontrado. Confira ou crie sua conta.');
+        if (!m) falha('PIN não encontrado. Confira o número ou peça ao administrador.');
         abrir(m);
-        return { nome: m.nome };
+        return { nome: m.nome, admin: !!m.admin };
       },
+      // Só a primeira conta se cadastra sozinha e vira administradora; as outras o administrador adiciona.
       async cadastrar({ nome, pin, senhaEquipe }) {
         nome = String(nome || '').trim().slice(0, 60);
         if (!nome) falha('Informe seu nome.');
         if (!/^\d{4,8}$/.test(pin)) falha('O PIN precisa ter de 4 a 8 números.');
         if (String(senhaEquipe || '').length < 6) falha('A senha da equipe tem pelo menos 6 caracteres.');
         const eq = equipe();
-        const pinHash = await hash('pin:' + pin);
-        if (eq.membros.some((x) => x.pinHash === pinHash)) falha('Esse PIN já está em uso. Escolha outro.');
+        if (eq.membros.length) falha('Este restaurante já tem administrador. Peça para ele cadastrar você no painel.');
+        const pinHash = await pinLivre(pin);
         const senhaHash = await hash('senha:' + senhaEquipe);
-        const primeiraConta = !eq.senhaHash;
-        if (!primeiraConta && eq.senhaHash !== senhaHash) falha('Senha da equipe incorreta. Peça a senha para a gerência.');
-        const m = { id: uid(), nome, pinHash, criado_em: nowIso() };
-        salvar({ senhaHash: eq.senhaHash || senhaHash, membros: [...eq.membros, m] });
+        if (eq.senhaHash && eq.senhaHash !== senhaHash) falha('Senha da equipe incorreta. Ela foi enviada pela Vortex.');
+        const m = { id: uid(), nome, pinHash, admin: true, criado_em: nowIso() };
+        salvar({ senhaHash: eq.senhaHash || senhaHash, membros: [m] });
         abrir(m);
-        return { nome, primeiraConta };
+        return { nome, admin: true, primeiraConta: true };
       },
       async sessao() {
-        const s = getSess();
-        const m = s && equipe().membros.find((x) => x.id === s.id);
-        return m ? { nome: m.nome, id: m.id } : null;
+        const m = eu();
+        return m ? { nome: m.nome, id: m.id, admin: !!m.admin } : null;
       },
       async sair() {
         try { localStorage.removeItem(SESSAO); } catch {}
       },
       async membros() {
-        const s = getSess();
-        return equipe().membros.map((m) => ({ id: m.id, nome: m.nome, criado_em: m.criado_em, voce: !!s && s.id === m.id }));
+        const x = eu();
+        return equipe().membros.map((m) => ({ id: m.id, nome: m.nome, criado_em: m.criado_em, admin: !!m.admin, voce: !!x && x.id === m.id }));
+      },
+      async adicionar({ nome, pin, admin }) {
+        soAdmin();
+        nome = String(nome || '').trim().slice(0, 60);
+        if (!nome) falha('Informe o nome da pessoa.');
+        if (!/^\d{4,8}$/.test(pin)) falha('O PIN precisa ter de 4 a 8 números.');
+        const pinHash = await pinLivre(pin);
+        const eq = equipe();
+        salvar({ ...eq, membros: [...eq.membros, { id: uid(), nome, pinHash, admin: !!admin, criado_em: nowIso() }] });
+      },
+      async trocarPin(id, pin) {
+        const x = eu();
+        if (!x) falha('Entre com seu PIN para continuar.');
+        id = id || x.id;
+        if (id !== x.id && !x.admin) falha('Só o administrador troca o PIN de outra pessoa.');
+        if (!/^\d{4,8}$/.test(pin)) falha('O PIN precisa ter de 4 a 8 números.');
+        const pinHash = await pinLivre(pin, id);
+        const eq = equipe();
+        salvar({ ...eq, membros: eq.membros.map((m) => (m.id === id ? { ...m, pinHash } : m)) });
+      },
+      async definirAdmin(id, admin) {
+        soAdmin();
+        const eq = equipe();
+        if (!admin && eq.membros.filter((m) => m.admin && m.id !== id).length === 0) falha('O restaurante precisa de pelo menos um administrador.');
+        salvar({ ...eq, membros: eq.membros.map((m) => (m.id === id ? { ...m, admin: !!admin } : m)) });
       },
       async remover(id) {
+        const x = soAdmin();
+        if (id === x.id) falha('Você não pode remover a si mesmo.');
         const eq = equipe();
         salvar({ ...eq, membros: eq.membros.filter((m) => m.id !== id) });
       },
       async trocarSenha(senha) {
+        soAdmin();
         if (String(senha || '').length < 6) falha('A senha da equipe precisa ter pelo menos 6 caracteres.');
         salvar({ ...equipe(), senhaHash: await hash('senha:' + senha) });
       },
@@ -1086,7 +1327,7 @@
         this.restaurante = { id: r.id, slug: r.slug, nome: r.nome };
         if (realtimeAll) {
           const ch = sb.channel('painel-' + rid);
-          for (const table of ['chamados', 'comentarios', 'sessoes', 'mesas_abertas', 'etiquetas', 'fid_notas', 'fid_resgates']) {
+          for (const table of ['chamados', 'comentarios', 'sessoes', 'mesas_abertas', 'etiquetas', 'fid_notas', 'fid_resgates', 'pedidos']) {
             ch.on('postgres_changes', { event: '*', schema: 'public', table, filter: 'restaurante_id=eq.' + rid }, () => listeners.forEach((f) => f()));
           }
           ch.subscribe();
@@ -1230,6 +1471,43 @@
       async fidRegistrarNota({ cpf, qr, valor }) {
         return must(await sb.rpc('fid_registrar_nota', { p_restaurante: rid, p_cpf: soDigitos(cpf), p_qr: qr, p_valor: valor || null }));
       },
+      // Conferência automática na SEFAZ (função "nfce"). 'indisponivel' / 'falhou' / 'limite' / 'xml': segue o fluxo com a equipe.
+      async fidSefaz({ cpf, qr }) {
+        if (!rid) return { status: 'indisponivel' };
+        try {
+          const r = await fetch(`${supabaseUrl}/functions/v1/nfce`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', apikey: supabaseAnonKey, Authorization: `Bearer ${supabaseAnonKey}` },
+            body: JSON.stringify({ restaurante: rid, cpf: soDigitos(cpf), qr }),
+            signal: AbortSignal.timeout ? AbortSignal.timeout(75000) : undefined,
+          });
+          if (!r.ok) return { status: 'indisponivel' };
+          return await r.json();
+        } catch {
+          return { status: 'falhou' };
+        }
+      },
+      async fidRanking(token) {
+        return must(await sb.rpc('fid_ranking', { p_restaurante: rid, p_token: token || null }));
+      },
+      async fidTopProdutos(cpf, dias) {
+        return must(await sb.rpc('fid_top_produtos', { p_cpf: cpf || null, p_dias: dias || 90 }));
+      },
+
+      /* ---------- Delivery ---------- */
+      async deliveryPedir(pedido) {
+        return must(await sb.rpc('delivery_pedir', { p_restaurante: rid, p_pedido: pedido }));
+      },
+      async deliveryAcompanhar(token) {
+        return must(await sb.rpc('delivery_acompanhar', { p_token: token }));
+      },
+      async deliveryPedidos({ desde } = {}) {
+        const d = desde ? new Date(desde) : new Date(Date.now() - 24 * 3600e3);
+        return must(await sb.from('pedidos').select('*').eq('restaurante_id', rid).gte('criado_em', d.toISOString()).order('criado_em', { ascending: false }).limit(300));
+      },
+      async deliveryMudar(id, status, entregador, motivo) {
+        must(await sb.rpc('delivery_mudar', { p_id: id, p_status: status, p_entregador: entregador || null, p_motivo: motivo || null }));
+      },
       async fidResgatar(token, premioId) {
         return must(await sb.rpc('fid_resgatar', { p_token: token, p_premio: premioId }));
       },
@@ -1355,12 +1633,12 @@
         async entrar(pin) {
           const r = await this.chamar('entrar', { pin });
           must(await sb.auth.setSession(r.sessao));
-          return { nome: r.nome };
+          return { nome: r.nome, admin: !!r.admin };
         },
         async cadastrar({ nome, pin, senhaEquipe }) {
           const r = await this.chamar('cadastrar', { nome, pin, senhaEquipe });
           must(await sb.auth.setSession(r.sessao));
-          return { nome: r.nome, primeiraConta: r.primeiraConta };
+          return { nome: r.nome, admin: !!r.admin, primeiraConta: r.primeiraConta };
         },
         async sessao() {
           const { data } = await sb.auth.getSession();
@@ -1371,7 +1649,12 @@
             await sb.auth.signOut();
             return null;
           }
-          return { nome: (u.user.user_metadata && u.user.user_metadata.nome) || 'Equipe', id: u.user.id };
+          const { data: m } = await sb.from('equipe_membros').select('nome, admin').eq('user_id', u.user.id).maybeSingle();
+          if (!m) {
+            await sb.auth.signOut();
+            return null;
+          }
+          return { nome: m.nome || 'Equipe', id: u.user.id, admin: !!m.admin };
         },
         async sair() {
           await sb.auth.signOut();
@@ -1381,6 +1664,15 @@
         },
         async remover(id) {
           await this.chamar('remover', { id }, true);
+        },
+        async adicionar({ nome, pin, admin }) {
+          await this.chamar('adicionar', { nome, pin, admin: !!admin }, true);
+        },
+        async trocarPin(id, pin) {
+          await this.chamar('trocar_pin', { id: id || undefined, pin }, true);
+        },
+        async definirAdmin(id, admin) {
+          await this.chamar('admin', { id, admin: !!admin }, true);
         },
         async trocarSenha(senha) {
           await this.chamar('trocar_senha', { senha }, true);
@@ -1394,7 +1686,9 @@
     padrao: (demo) => mergeSettings(null, demo),
     precoPlano,
     // Regras do programa de fidelidade usadas também pelas telas (validação e simulação).
-    fid: { PADRAO: FID_PADRAO, cpfValido, chaveValida, chaveDoTexto, boost: fidBoost, calcular: fidCalcular, niveis: fidNiveis, nivelDe: fidNivelDe, soDigitos },
+    delivery: { PADRAO: DELIVERY_PADRAO, distanciaKm, taxa: taxaEntrega },
+    opcoes,
+    fid: { PADRAO: FID_PADRAO, cpfValido, chaveValida, chaveDoTexto, valorDoQr, boost: fidBoost, calcular: fidCalcular, niveis: fidNiveis, nivelDe: fidNivelDe, soDigitos },
     create() {
       const b = cfg.backend || {};
       if (b.tipo === 'supabase' && b.supabaseUrl && b.supabaseAnonKey) return SupabaseAdapter();

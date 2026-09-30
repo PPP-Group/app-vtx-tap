@@ -1,8 +1,8 @@
 /*
  * Lê no navegador os XML das NFC-e (e o ZIP que o sistema do caixa exporta)
  * para a conferência do programa de fidelidade. Devolve só o que o programa
- * usa: chave de acesso, CPF do consumidor, valor total, data/hora da emissão e
- * se a nota foi cancelada. Aceita NFC-e (modelo 65), CF-e SAT e os eventos de
+ * usa: chave de acesso, CPF do consumidor, valor total, data/hora da emissão,
+ * os produtos (para os mais pedidos) e se a nota foi cancelada. Aceita NFC-e (modelo 65), CF-e SAT e os eventos de
  * cancelamento; ignora o resto.
  *
  *   Nfce.lerArquivos(files) → { notas: [{ chave, cpf, valor, emitida_em } | { chave, cancelada }], resumo }
@@ -29,6 +29,13 @@
     return e ? e.textContent.trim() : '';
   };
   const digitos = (s) => String(s || '').replace(/\D/g, '');
+
+  // Produtos da nota (det/prod): descrição, quantidade, unidade e valor.
+  const itensDe = (inf) =>
+    [...inf.getElementsByTagName('det')].slice(0, 300).map((d) => {
+      const p = tag(d, 'prod');
+      return { descricao: txt(p, 'xProd'), quantidade: parseFloat(txt(p, 'qCom')) || 1, unidade: txt(p, 'uCom'), valor: parseFloat(txt(p, 'vProd')) || null };
+    }).filter((i) => i.descricao);
 
   function lerXml(texto) {
     const doc = new DOMParser().parseFromString(texto, 'application/xml');
@@ -65,6 +72,7 @@
         cpf: dest ? digitos(txt(dest, 'CPF')) : '',
         valor: parseFloat(txt(tag(inf, 'ICMSTot'), 'vNF')),
         emitida_em: txt(ide, 'dhEmi'),
+        itens: itensDe(inf),
       };
     }
 
@@ -79,6 +87,7 @@
         cpf: digitos(txt(tag(cfe, 'dest'), 'CPF')),
         valor: parseFloat(txt(tag(cfe, 'total'), 'vCFe')),
         emitida_em: d.length === 8 ? `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}T${h.slice(0, 2)}:${h.slice(2, 4)}:${h.slice(4, 6)}-03:00` : '',
+        itens: itensDe(cfe),
       };
     }
     return { ignorado: true };

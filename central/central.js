@@ -41,11 +41,21 @@
   const paraSlug = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
   const restDe = (id) => S.rests.find((r) => r.id === id);
   const nomeArq = (t) => String(t || 'plaquinhas').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9-]+/g, '-').replace(/^-|-$/g, '').toLowerCase() || 'plaquinhas';
-  // PDF para a gráfica: uma plaquinha de 12 × 6 cm por página (central/placa.js).
+  // PDF para a gráfica: uma plaquinha do tamanho de um cartão de crédito por página (central/placa.js).
+  // Modelo 'padrao' (logo da VTX no QR) ou 'personalizado' (logo do restaurante da plaquinha no QR).
+  let modeloPlaca = 'padrao';
+  try { modeloPlaca = localStorage.getItem('central-modelo-placa') === 'personalizado' ? 'personalizado' : 'padrao'; } catch {}
   async function pdfPlaquinhas(codigos, titulo) {
     const lista = [...codigos].sort();
-    toast(`Gerando PDF com ${lista.length} ${lista.length === 1 ? 'plaquinha' : 'plaquinhas'}…`);
-    await Placa.baixarPdf(lista.map((c) => ({ codigo: c, url: tagUrl(c) })), `${nomeArq(titulo)}.pdf`);
+    const restDaPlaca = (c) => {
+      const t = S.tags.find((x) => x.codigo === c);
+      return (t && restDe(t.restaurante_id) && restDe(t.restaurante_id).restaurante) || {};
+    };
+    const logoDe = (c) => restDaPlaca(c).logo || '';
+    if (modeloPlaca === 'personalizado' && !lista.some(logoDe)) {
+      toast('Nenhuma dessas plaquinhas é de restaurante com logo: saem com a logo da VTX no QR. Atribua a um restaurante com logo antes.', { ms: 6000 });
+    } else toast(`Gerando PDF com ${lista.length} ${lista.length === 1 ? 'plaquinha' : 'plaquinhas'}…`);
+    await Placa.baixarPdf(lista.map((c) => ({ codigo: c, url: tagUrl(c), logo: logoDe(c), cor: restDaPlaca(c).cor || '' })), `${nomeArq(titulo)}.pdf`, { modelo: modeloPlaca });
   }
   // Painel da equipe do restaurante.
   const painelDe = (r) => (BASE ? `https://${r.slug}.${BASE}/admin/` : new URL(`/admin/?r=${r.slug}`, location.origin).href);
@@ -88,14 +98,15 @@
     openSheet('sh');
   }
   /* ---------- Planos: serviços, mesas e mensalidade (a mesma tabela de public.plano_preco) ---------- */
-  const SERVICOS = [['pagina', 'Página e cardápio', 99], ['garcom', 'Chamar o garçom', 99], ['fidelidade', 'Fidelidade', 199]];
+  // Tabela em assets/js/precos.js (a mesma do banco): 2 serviços −10%, 3 −15%, os quatro por R$ 399.
+  const SERVICOS = Precos.SERVICOS.map((s) => [s.id, s.nome, s.preco]);
   const reais = (v) => 'R$ ' + Number(v || 0).toLocaleString('pt-BR');
-  function planoPreco(p) {
-    if (!p) return 0;
-    const sv = p.servicos || {};
-    const base = sv.pagina && sv.garcom && sv.fidelidade ? 329 : SERVICOS.reduce((t, [k, , v]) => t + (sv[k] ? v : 0), 0);
-    return base + (['proprio', 'registro'].includes(p.dominio) ? 19 : 0);
-  }
+  const brl = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  // Conferência na SEFAZ (cobrada por nota): uso do mês atual.
+  const mesAtual = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`; };
+  const sefazLigada = (r) => !!(r.fidelidade && r.fidelidade.sefaz && r.fidelidade.sefaz.ativo);
+  const sefazDoMes = (rid) => ((S.sefaz && S.sefaz.uso) || []).find((u) => u.restaurante_id === rid && u.mes === mesAtual()) || { notas: 0, valor: 0 };
+  const planoPreco = (p) => (p ? Precos.plano(p) : 0);
   const planoServicos = (p) => SERVICOS.filter(([k]) => p && p.servicos && p.servicos[k]).map(([, n]) => n);
   const planoResumo = (p) => (p ? `${planoServicos(p).join(' · ')} · ${p.mesas} mesas · ${reais(planoPreco(p))}/mês` : 'Plano não definido');
   // Plano para o formulário: o salvo ou, sem plano, o que o restaurante usa hoje.
@@ -121,13 +132,14 @@
       async entrar() {},
       async sair() {},
       async listRestaurantes() { return read().restaurantes; },
+      async sefazUso() { return { uso: [], meses: [] }; },
       async alterarPlano(rid, plano) {
         const db = read();
         const r = db.restaurantes.find((x) => x.id === rid);
         if (!r) throw new Error('Restaurante não encontrado.');
         const sv = plano.servicos || {};
-        if (!sv.pagina && !sv.garcom && !sv.fidelidade) throw new Error('Escolha pelo menos um serviço.');
-        const novo = { servicos: { pagina: !!sv.pagina, garcom: !!sv.garcom, fidelidade: !!sv.fidelidade }, mesas: Math.min(Math.max(Math.round(+plano.mesas || 20), 1), 500),
+        if (!SERVICOS.some(([k]) => sv[k])) throw new Error('Escolha pelo menos um serviço.');
+        const novo = { servicos: Object.fromEntries(SERVICOS.map(([k]) => [k, !!sv[k]])), mesas: Math.min(Math.max(Math.round(+plano.mesas || 20), 1), 500),
           dominio: ['proprio', 'registro'].includes(plano.dominio) ? plano.dominio : 'sub', contrato: +plano.contrato === 12 ? 12 : 6, definido: true };
         (db.mudancas = db.mudancas || []).unshift({ id: id(), restaurante_id: rid, antes: r.plano || null, depois: novo, mensal_antes: r.plano ? planoPreco(r.plano) : null,
           mensal_depois: planoPreco(novo), origem: 'central', por: 'demonstração', visto: false, criado_em: new Date().toISOString() });
@@ -261,6 +273,10 @@
       async listRestaurantes() {
         return must(await sb.from('restaurantes').select('*').order('nome'));
       },
+      // Conferência na SEFAZ: notas por restaurante e total do mês (cobrado e custo estimado).
+      async sefazUso() {
+        return must(await sb.rpc('central_sefaz_uso', { p_meses: 3 }));
+      },
       async alterarPlano(rid, plano) {
         return must(await sb.rpc('plano_alterar_central', { p_restaurante: rid, p_plano: plano }));
       },
@@ -314,8 +330,9 @@
 
   async function carregar() {
     try {
-      const [rests, tags, met, mud] = await Promise.all([api.listRestaurantes(), api.listEtiquetas(), api.metricas(S.dias), api.listMudancas().catch(() => [])]);
+      const [rests, tags, met, mud, sefaz] = await Promise.all([api.listRestaurantes(), api.listEtiquetas(), api.metricas(S.dias), api.listMudancas().catch(() => []), api.sefazUso().catch(() => null)]);
       S.rests = rests || [];
+      S.sefaz = sefaz || { uso: [], meses: [] };
       S.mudancas = mud || [];
       S.tags = tags || [];
       S.met = met;
@@ -499,6 +516,7 @@
         <div><dt>Restaurantes com leitura</dt><dd>${ativos}<small>/${rs.length}</small></dd></div>
         <div><dt>Ativadas nunca lidas</dt><dd>${nunca}<small>/${entregues.length}</small></dd></div>
         <div><dt>Receita mensal (planos)</dt><dd>${reais(S.rests.filter((r) => r.ativo !== false && r.plano).reduce((t, r) => t + planoPreco(r.plano), 0))}</dd></div>
+        ${sefazStrip()}
       </dl>
       ${mudancasHtml()}
       <section class="card-sec"><h2>Leituras por dia</h2>${grafico(m.por_dia)}
@@ -572,7 +590,10 @@
           <button type="button" class="btn btn-line btn-sm" data-acao="mesa">Tirar da mesa</button>
           <button type="button" class="btn btn-line btn-sm" data-acao="estoque">Devolver ao estoque</button>
           <button type="button" class="btn btn-line btn-sm" data-acao="zerar">Zerar tudo</button>
-          <button type="button" class="btn btn-line btn-sm" data-acao="pdf">${icon('download')} PDF das plaquinhas</button>
+          <span class="selmodelo"><select class="input" id="modeloPlaca" aria-label="Modelo da plaquinha">
+            <option value="padrao" ${modeloPlaca === 'padrao' ? 'selected' : ''}>Modelo padrão</option>
+            <option value="personalizado" ${modeloPlaca === 'personalizado' ? 'selected' : ''}>Personalizado básico (logo do restaurante)</option></select>
+          <button type="button" class="btn btn-line btn-sm" data-acao="pdf">${icon('download')} PDF das plaquinhas</button></span>
           <button type="button" class="btn btn-line btn-sm" data-acao="imprimir">${icon('printer')} Imprimir QR</button>
           <button type="button" class="btn btn-line btn-sm" data-acao="etiquetas">${icon('printer')} Etiquetas de código</button>
           <button type="button" class="btn btn-line btn-sm" data-acao="csv">${icon('download')} Exportar CSV</button>
@@ -588,6 +609,13 @@
   }
 
   // Mudanças de plano (upsell e downsell), da central ou pedidas pelo restaurante no painel.
+  // Total do mês na conferência da SEFAZ: o que os restaurantes pagam e o custo estimado da API (só a central vê).
+  function sefazStrip() {
+    const m = ((S.sefaz && S.sefaz.meses) || []).find((x) => x.mes === mesAtual());
+    if (!m && !S.rests.some(sefazLigada)) return '';
+    const x = m || { notas: 0, cobrado: 0, custo: 0 };
+    return `<div><dt>SEFAZ no mês (${S.rests.filter(sefazLigada).length} ligados)</dt><dd>${brl(x.cobrado)}<small> · ${num(x.notas)} notas · custo ~${brl(x.custo)}</small></dd></div>`;
+  }
   function mudancasHtml() {
     const lista = (S.mudancas || []).slice(0, 12);
     if (!lista.length) return '';
@@ -617,7 +645,8 @@
             <p class="rcard-links"><a href="${esc(siteDe(r))}" target="_blank" rel="noopener" class="mono">${esc(siteCurto(r))}</a>
               <a href="${esc(painelDe(r))}" target="_blank" rel="noopener" class="mono">painel</a></p>
             ${r.observacao ? `<p>${esc(r.observacao)}</p>` : ''}
-            <p class="rcard-plano ${r.plano ? '' : 'is-sem'}">${esc(planoResumo(r.plano))}</p></div>
+            <p class="rcard-plano ${r.plano ? '' : 'is-sem'}">${esc(planoResumo(r.plano))}</p>
+            ${sefazLigada(r) || sefazDoMes(r.id).notas ? `<p class="rcard-plano">SEFAZ ${sefazLigada(r) ? 'ligada' : 'desligada'} · ${sefazDoMes(r.id).notas} notas este mês · ${brl(sefazDoMes(r.id).valor)}</p>` : ''}</div>
           <div class="rcard-foot"><span>${cont(r.id)} ${cont(r.id) === 1 ? 'plaquinha' : 'plaquinhas'}${r.ativo === false ? ' · <b>desativado</b>' : ''}</span>
             <span class="rcard-acts"><button type="button" class="btn btn-quiet btn-sm" data-ver-rest="${r.id}">Ver plaquinhas</button>
             <button type="button" class="btn btn-quiet btn-sm" data-acesso="${r.id}">${icon('share')} Acesso</button>
@@ -633,7 +662,7 @@
     $('#shBody').innerHTML = `<form class="stack" id="fGerar" novalidate>
       <label class="field"><span>Quantidade</span><input class="input mono" id="gQtd" type="number" min="1" max="2000" value="50" required></label>
       <label class="field"><span>Nome do lote</span><input class="input" id="gLote" maxlength="40" value="Lote ${hoje}"><small class="help">Ajuda a achar as plaquinhas depois (ex.: pedido da gráfica).</small></label>
-      <p class="help">Ao gerar, baixa na hora o PDF para a gráfica: uma plaquinha de 12 × 6 cm por página, cada uma com o QR e o código dela.</p>
+      <p class="help">Ao gerar, baixa na hora o PDF para a gráfica: uma plaquinha por página no tamanho de um cartão de crédito (85,6 × 54 mm), com o QR e o código dela, no modelo escolhido na seleção (padrão ou personalizado básico).</p>
       <button type="submit" class="btn btn-cobalt btn-block">${icon('plus')} Gerar e baixar PDF</button>
     </form>`;
     openSheet('sh');
@@ -663,7 +692,7 @@
         <label class="field"><span>Contrato</span><select class="input" id="rContrato">
           <option value="6" ${+p.contrato !== 12 ? 'selected' : ''}>6 meses</option><option value="12" ${+p.contrato === 12 ? 'selected' : ''}>12 meses</option></select></label>
       </div>
-      <p class="plano-preco">Mensalidade: <b id="rPreco">${reais(planoPreco(p))}</b> <span class="muted">(combo dos três: R$ 329)</span></p>
+      <p class="plano-preco">Mensalidade: <b id="rPreco">${reais(planoPreco(p))}</b> <span class="muted">(2 serviços −10%, 3 −15%, os quatro: R$ ${Precos.TODOS})</span></p>
     </fieldset>`;
   }
   const planoDoForm = () => ({
@@ -1231,6 +1260,11 @@
 
   document.addEventListener('change', (e) => {
     const t = e.target;
+    if (t.id === 'modeloPlaca') {
+      modeloPlaca = t.value === 'personalizado' ? 'personalizado' : 'padrao';
+      try { localStorage.setItem('central-modelo-placa', modeloPlaca); } catch {}
+      return;
+    }
     if (t.matches('[data-sel]')) {
       t.checked ? S.sel.add(t.dataset.sel) : S.sel.delete(t.dataset.sel);
       return render();

@@ -16,6 +16,7 @@
     { id: 'hoje', label: 'Hoje' },
     { id: 'clientes', label: 'Clientes' },
     { id: 'premios', label: 'Prêmios' },
+    { id: 'ranking', label: 'Ranking' },
     { id: 'regras', label: 'Regras' },
   ];
   const TIPO = { nivel: 'Bônus de nível', compra: 'Compra', indicacao: 'Indicação', boas_vindas: 'Boas-vindas', manual: 'Lançamento', resgate: 'Troca', estorno: 'Estorno', ajuste: 'Ajuste' };
@@ -25,6 +26,7 @@
   const P = {
     tab: 'hoje', resumo: null, pend: { notas: [], resgates: [] }, recentes: null, clientes: null, busca: '',
     premios: null, premioEdit: null, regras: null, vistos: new Set(), pronto: false, ficha: null, importando: false,
+    ranking: null, dias: 90,
   };
 
   const num = (n) => Number(n || 0).toLocaleString('pt-BR');
@@ -105,7 +107,10 @@
       if (P.tab === 'hoje' && !P.recentes) P.recentes = await store.fidRecentes();
       else if (P.tab === 'clientes' && !P.clientes) P.clientes = await store.fidClientes(P.busca);
       else if (P.tab === 'premios' && !P.premios) P.premios = await store.fidPremios();
-      else return;
+      else if (P.tab === 'ranking' && !P.ranking) {
+        const [rk, top] = await Promise.all([store.fidRanking ? store.fidRanking(null) : null, store.fidTopProdutos(null, P.dias)]);
+        P.ranking = { rk, top };
+      } else return;
     } catch (e) {
       console.error(e);
       return toast(erroMsg(e), { tone: 'error' });
@@ -124,6 +129,7 @@
       hoje: 'Prêmios para entregar, notas para conferir e o arquivo de notas do caixa.',
       clientes: 'Quem participa do programa, com o saldo e o extrato de cada um.',
       premios: 'O que o cliente pode trocar pelos pontos. Aparece na página da mesa na hora.',
+      ranking: 'Os 10 clientes que mais ganharam pontos e os produtos mais pedidos nas notas.',
       regras: 'Quanto vale cada real, dias com pontos em dobro e o regulamento.',
     }[tab];
     setTimeout(carregarAba, 0);
@@ -132,7 +138,7 @@
       <div class="aj-tabs" role="tablist" aria-label="Seções da fidelidade">
         ${TABS.map((t) => `<button type="button" role="tab" aria-selected="${t.id === tab}" data-fp-tab="${t.id}">${t.label}${t.id === 'hoje' && badge() ? ` <span class="badge">${badge()}</span>` : ''}</button>`).join('')}
       </div>
-      ${{ hoje: tHoje, clientes: tClientes, premios: tPremios, regras: tRegras }[tab]()}`;
+      ${{ hoje: tHoje, clientes: tClientes, premios: tPremios, ranking: tRanking, regras: tRegras }[tab]()}`;
   }
 
   /* ---------- Hoje ---------- */
@@ -207,7 +213,7 @@
         <small>Lida ${dataHora(n.lida_em)}${n.lida_por && n.lida_por !== 'Cliente' ? ` por ${esc(n.lida_por)}` : ''} · nota nº ${num(+n.chave.slice(25, 34))}${n.valor_informado ? ` · cliente disse ${brl(n.valor_informado)}` : ''}</small>
         ${url ? `<a class="link fp-sefaz" href="${esc(url)}" target="_blank" rel="noopener">${icon('external')} Abrir na SEFAZ</a>` : '<small class="muted">Chave digitada: confira pela chave no portal da SEFAZ.</small>'}</div>
       <form class="fp-aprovar" data-fp-aprovar="${esc(n.chave)}" novalidate>
-        <label class="field"><span>Valor total</span><input class="input mono" name="valor" inputmode="decimal" placeholder="0,00" value="${n.valor_informado ? String(n.valor_informado).replace('.', ',') : ''}" required></label>
+        <label class="field"><span>Valor total</span><input class="input mono" name="valor" inputmode="decimal" placeholder="0,00" value="${n.valor_informado ? Number(n.valor_informado).toFixed(2).replace('.', ',') : ''}" required></label>
         ${campoData('data', mesDaChave(n.chave), 'Data da compra')}
         <button type="submit" class="btn btn-cobalt btn-sm">${icon('check')} Aprovar</button>
         <button type="button" class="btn btn-quiet btn-sm" data-fp-recusar="${esc(n.chave)}">Recusar</button>
@@ -242,12 +248,53 @@
           </div>${lista.length >= 300 ? '<p class="help">Mostrando os 300 mais recentes. Use a busca para achar os outros.</p>' : ''}`}`;
   }
 
+  /* ---------- Ranking e produtos mais pedidos ---------- */
+  const PERIODOS = [[30, '30 dias'], [90, '90 dias'], [365, '12 meses']];
+  function tabelaProdutos(top, vazio) {
+    if (!top || !top.length) return `<p class="muted">${vazio}</p>`;
+    const max = Math.max(...top.map((x) => +x.quantidade || 0), 1);
+    return `<ol class="fp-top">${top.map((x, i) => `<li>
+        <span class="fp-top-pos">${i + 1}º</span>
+        <span class="fp-top-nome"><b>${esc(x.descricao)}</b><span class="fp-top-barra"><i style="width:${Math.max(4, Math.round((+x.quantidade / max) * 100))}%"></i></span></span>
+        <span class="fp-top-num"><b>${num(Math.round(+x.quantidade))}</b><small>${num(x.notas)} ${+x.notas === 1 ? 'nota' : 'notas'}${x.clientes != null ? ` · ${num(x.clientes)} ${+x.clientes === 1 ? 'cliente' : 'clientes'}` : ''}</small></span>
+      </li>`).join('')}</ol>`;
+  }
+  function tRanking() {
+    const d = P.ranking;
+    if (!d) return '<p class="muted">Carregando…</p>';
+    const rk = d.rk;
+    const top = (rk && rk.top) || [];
+    return `<div class="fp-grid">
+      <section class="panel stack">
+        <h2>Top 10 do clube</h2>
+        ${rk && rk.ativo === false && regras().ativo ? `<p class="note">${icon('alert')}<span>O ranking está escondido dos clientes. Ligue em <button type="button" class="link" data-fp-tab="regras">Regras</button>.</span></p>` : ''}
+        ${top.length ? `${podioHtml(top)}
+          ${top.length > 3 ? `<ol class="rk-lista">${top.slice(3).map((x) => `<li><span class="rk-pos">${x.pos}º</span><span class="pd-av">${esc((x.nome || '?')[0])}</span><b>${esc(x.nome)}</b><span class="rk-pts">${num(x.pontos)} pts</span></li>`).join('')}</ol>` : ''}
+          <small class="help">É assim que o cliente vê: primeiro nome e a inicial do sobrenome. Trocas não tiram pontos do ranking.</small>`
+        : '<p class="muted">O ranking aparece quando os clientes começarem a ganhar pontos.</p>'}
+      </section>
+      <section class="panel stack">
+        <div class="fp-top-head"><h2>Produtos mais pedidos</h2>
+          <div class="seg" role="radiogroup" aria-label="Período">${PERIODOS.map(([v, l]) => `<button type="button" role="radio" aria-checked="${P.dias === v}" data-fp-dias="${v}">${l}</button>`).join('')}</div></div>
+        ${tabelaProdutos(d.top, 'Os produtos vêm das notas conferidas na SEFAZ ou do XML importado em Hoje. Assim que as primeiras chegarem, eles aparecem aqui.')}
+      </section>
+    </div>`;
+  }
+  function podioHtml(top) {
+    return `<ol class="podio podio--grande">${[1, 0, 2].map((i) => {
+      const x = top[i];
+      if (!x) return `<li class="pd pd--${i + 1} is-vazio"><span class="pd-av">?</span><b>—</b><span class="pd-degrau">${i + 1}º</span></li>`;
+      return `<li class="pd pd--${i + 1}">${i === 0 ? `<span class="pd-coroa">${icon('trophy')}</span>` : ''}<span class="pd-av">${esc((x.nome || '?')[0])}</span><b>${esc(x.nome)}</b><small>${num(x.pontos)} pts</small><span class="pd-degrau">${x.pos}º</span></li>`;
+    }).join('')}</ol>`;
+  }
+
   async function abrirCliente(cpf) {
     $('#fpTitle').textContent = 'Cliente';
     $('#fpBody').innerHTML = '<p class="muted">Carregando…</p>';
     openSheet('sh-fp');
     try {
       P.ficha = await ctx.store.fidCliente(cpf);
+      if (P.ficha) P.ficha.top = await ctx.store.fidTopProdutos(cpf, 3650).catch(() => []);
     } catch (e) {
       $('#fpBody').innerHTML = `<p class="form-error">${esc(erroMsg(e))}</p>`;
       return;
@@ -295,6 +342,7 @@
             <label class="field"><span>Motivo</span><input class="input" name="descricao" maxlength="100" placeholder="Ex.: pedido do delivery"></label>
             <button type="submit" class="btn btn-cobalt btn-sm">Lançar</button>
           </div></form>` : ''}
+      ${f.top && f.top.length ? `<section class="stack"><h3 class="fp-h3">Mais pedidos por ${esc(c.nome.split(' ')[0])}</h3>${tabelaProdutos(f.top.slice(0, 5), '')}</section>` : ''}
       ${f.resgates.length ? `<section class="stack"><h3 class="fp-h3">Trocas</h3><ul class="fp-mov">${f.resgates.map((x) => `<li>
           <span><b>${esc(x.premio_nome)}</b></span><span class="muted">código ${esc(x.codigo)} · ${dataHora(x.criado_em)}</span>
           <b class="fp-st fp-st--${x.status}">${STATUS[x.status]}</b></li>`).join('')}</ul></section>` : ''}
@@ -382,13 +430,22 @@
       </div>
       <div class="aj-col">
         <section class="panel stack">
-          <div class="set-row fp-row"><div><h3>Indicação</h3><p>O cliente convida alguém com o código dele. Os pontos entram na primeira compra de quem foi indicado.</p></div>
+          <div class="set-row fp-row"><div><h3>Ranking do clube</h3><p>Mostra aos clientes o top 10 de quem mais ganhou pontos (primeiro nome e inicial).</p></div>
+            <label class="switch"><input type="checkbox" name="rankAtivo" ${!r.ranking || r.ranking.ativo !== false ? 'checked' : ''} aria-label="Ranking do clube"><span></span></label></div>
+        </section>
+        <section class="panel stack">
+          <div class="set-row fp-row"><div><h3>Indicação</h3><p>O cliente convida alguém com o código dele e os dois ganham pontos.</p></div>
             <label class="switch"><input type="checkbox" name="indAtivo" ${ind.ativo ? 'checked' : ''} aria-label="Indicação"><span></span></label></div>
           <div class="fp-manual-row">
             <label class="field"><span>Quem indica ganha</span><input class="input mono" name="indIndicador" type="number" min="0" max="100000" value="${esc(ind.indicador || 0)}"></label>
             <label class="field"><span>Quem foi indicado ganha</span><input class="input mono" name="indIndicado" type="number" min="0" max="100000" value="${esc(ind.indicado || 0)}"></label>
           </div>
+          <label class="field"><span>Os pontos entram</span><select class="input" name="indQuando">
+            <option value="cadastro" ${ind.quando !== 'compra' ? 'selected' : ''}>Assim que o indicado se cadastra</option>
+            <option value="compra" ${ind.quando === 'compra' ? 'selected' : ''}>Na primeira compra do indicado (mais seguro)</option>
+          </select></label>
         </section>
+        ${sefazForm(r)}
         <section class="panel stack">
           <div class="set-row fp-row"><div><h3>Lançamento manual</h3><p>Deixa a equipe lançar compras sem nota (ex.: delivery) na ficha do cliente. Fica registrado quem lançou.</p></div>
             <label class="switch"><input type="checkbox" name="manual" ${r.manual ? 'checked' : ''} aria-label="Lançamento manual"><span></span></label></div>
@@ -407,6 +464,19 @@
       <div class="fp-salvar" ${P.regrasSujas ? '' : 'hidden'}><span class="fp-salvar-txt">Mudanças não salvas</span><button type="submit" class="btn btn-cobalt">${icon('check')} Salvar regras</button>
         <button type="button" class="btn btn-quiet" data-fp-regras="desfazer">Desfazer</button></div>
     </form>`;
+  }
+  // Conferência automática na SEFAZ: opcional, cobrada por nota conferida junto com a mensalidade.
+  function sefazForm(r) {
+    const on = !!(r.sefaz && r.sefaz.ativo);
+    const adm = !!(ctx.S.user && ctx.S.user.admin);
+    const preco = window.Precos ? Precos.SEFAZ_NOTA : 0.25;
+    return `<section class="panel stack fp-sefaz">
+      <div class="set-row fp-row"><div><h3>Conferência automática na SEFAZ</h3>
+        <p>Cada nota lida é conferida na hora no site da SEFAZ: valor oficial, CPF e produtos. Os pontos entram sem a equipe aprovar e os produtos alimentam o ranking de mais pedidos.</p></div>
+        <label class="switch"><input type="checkbox" name="sefazAtivo" ${on ? 'checked' : ''} ${adm ? '' : 'disabled'} aria-label="Conferência automática na SEFAZ"><span></span></label></div>
+      <p class="note">${icon('receipt')}<span><b>${brl(preco)} por nota conferida</b>, somado à mensalidade no fim do mês. Sem limite: não para no meio do mês. O uso aparece em Ajustes → Plano.</span></p>
+      <p class="help">${on ? '' : 'Desligada: o cliente confirma o valor da nota e a equipe aprova em Fidelidade → Hoje (sem custo). '}${adm ? '' : 'Só o administrador liga ou desliga.'}${on && r.sefaz.em ? ` Ligada em ${new Date(r.sefaz.em).toLocaleDateString('pt-BR')}${r.sefaz.por ? ` por ${esc(r.sefaz.por)}` : ''}.` : ''}</p>
+    </section>`;
   }
   function niveisForm(r) {
     const n = r.niveis || { ativo: false, base: 'sempre', meses: 12, lista: [] };
@@ -486,7 +556,9 @@
       return x || '';
     };
     r.inicio = di(v('inicio').value, 'Vale para compras desde') || null;
-    r.indicacao = { ativo: v('indAtivo').checked, indicador: Math.round(+v('indIndicador').value || 0), indicado: Math.round(+v('indIndicado').value || 0) };
+    r.ranking = { ativo: v('rankAtivo').checked };
+    if (v('sefazAtivo').checked !== !!(r.sefaz && r.sefaz.ativo)) r.sefaz = { ativo: v('sefazAtivo').checked, em: new Date().toISOString(), por: (ctx.S.user && ctx.S.user.nome) || '' };
+    r.indicacao = { ativo: v('indAtivo').checked, indicador: Math.round(+v('indIndicador').value || 0), indicado: Math.round(+v('indIndicado').value || 0), quando: v('indQuando').value === 'compra' ? 'compra' : 'cadastro' };
     r.manual = v('manual').checked;
     r.regulamento = v('regulamento').value.trim();
     r.boosts = [...f.querySelectorAll('.fp-boost')].map((el, i) => {
@@ -557,6 +629,7 @@
     ctx.rerender();
   };
   const recarregar = async () => {
+    P.ranking = null;
     await atualizar();
     if (ctx.S.view === 'fidelidade') ctx.rerender();
     ctx.chrome();
@@ -608,18 +681,52 @@
     </form>`;
     openSheet('sh-fp');
   }
-  function depoisDoQr(cpf, qr) {
+  // Valor da nota lido da imagem: primeiro o quadro em que o QR foi achado, depois a câmera no total.
+  let pararCam = null;
+  const pararOcr = () => { if (pararCam) pararCam(); pararCam = null; };
+  function ocrMsg(html, camera) {
+    const m = $('#fpOcrMsg');
+    const box = $('#fpLancar2 .fid-ocr');
+    if (m) m.innerHTML = html;
+    if (box) box.hidden = !camera;
+  }
+  function ocrAchou(qr, v) {
+    const f = $('#fpLancar2');
+    if (!f || f.dataset.qr !== qr) return;
+    pararOcr();
+    if (!f.dataset.digitou) f.elements.valor.value = v.toFixed(2).replace('.', ',');
+    ocrMsg(`Valor lido da nota: <b>${brl(v)}</b>. Confira antes de creditar.`, false);
+  }
+  async function ocrValor(qr, quadro) {
+    if (!window.OcrNota) return ocrMsg('Digite o valor total da nota.', false);
+    if (quadro) {
+      const v = await OcrNota.lerValor(quadro, quadro.naturalWidth || quadro.width, quadro.naturalHeight || quadro.height);
+      if (v) return ocrAchou(qr, v);
+    }
+    const f = $('#fpLancar2');
+    if (!f || f.dataset.qr !== qr) return;
+    ocrMsg('Aponte a câmera para o <b>VALOR A PAGAR</b> da nota, ou digite o valor.', true);
+    pararOcr();
+    pararCam = OcrNota.camera(f.querySelector('video'), {
+      achou: (v) => ocrAchou(qr, v),
+      aviso: (a) => { if (a === 'sem-camera' || a === 'sem-ocr') ocrMsg('Digite o valor total da nota.', false); },
+    });
+  }
+  function depoisDoQr(cpf, qr, quadro) {
     const chave = F.chaveDoTexto(qr);
+    const doQr = F.valorDoQr ? F.valorDoQr(qr) : null;
     $('#fpTitle').textContent = 'Lançar nota';
     $('#fpBody').innerHTML = `<form class="stack" id="fpLancar2" novalidate data-cpf="${esc(cpf)}" data-qr="${esc(qr)}">
       <p>Nota nº <b>${num(+chave.slice(25, 34))}</b> para o CPF <b class="mono">${fmtCpf(cpf)}</b>.</p>
       ${/^https?:/i.test(qr) ? `<a class="link" href="${esc(qr)}" target="_blank" rel="noopener">${icon('external')} Conferir na SEFAZ</a>` : ''}
-      <label class="field"><span>Valor total da nota</span><input class="input mono" name="valor" inputmode="decimal" placeholder="0,00" required></label>
+      <div class="fid-ocr" hidden><video playsinline muted></video><span class="fid-ocr-mira" aria-hidden="true"></span></div>
+      <p class="fid-ocr-msg" id="fpOcrMsg" aria-live="polite">${doQr ? `Valor lido do QR: <b>${brl(doQr)}</b>. Confira antes de creditar.` : 'Procurando o valor na nota…'}</p>
+      <label class="field"><span>Valor total da nota</span><input class="input mono" name="valor" inputmode="decimal" placeholder="0,00" value="${doQr ? doQr.toFixed(2).replace('.', ',') : ''}" required></label>
       <p class="form-error" id="fpLancarErro" role="alert"></p>
       <button type="submit" class="btn btn-cobalt btn-block">${icon('check')} Creditar pontos</button>
     </form>`;
     openSheet('sh-fp');
-    setTimeout(() => $('#fpLancar2 [name=valor]').focus(), 80);
+    if (!doQr) ocrValor(qr, quadro);
   }
 
   async function onClick(e) {
@@ -628,6 +735,12 @@
     if (tab) {
       if (P.tab === 'regras') lerRegras();
       P.tab = tab.dataset.fpTab;
+      return ctx.rerender();
+    }
+    const dias = t.closest('[data-fp-dias]');
+    if (dias) {
+      P.dias = +dias.dataset.fpDias;
+      P.ranking = null;
       return ctx.rerender();
     }
     const cli = t.closest('[data-fp-cliente]');
@@ -828,6 +941,7 @@
   let buscaT = 0;
   function onInput(e) {
     const t = e.target;
+    if (t.name === 'valor' && t.form && t.form.id === 'fpLancar2') t.form.dataset.digitou = '1';
     if (t.dataset.fpMask && !(e.inputType || '').startsWith('delete')) mascara(t);
     if (t.closest('#fpRegras')) {
       marcarSujo();
@@ -926,11 +1040,34 @@
           titulo: 'Nota do cliente',
           dica: 'Aponte a câmera para o QR Code no fim da nota.',
           aceitar: (tx) => { const k = F.chaveDoTexto(tx); return k && F.chaveValida(k) ? null : 'Este QR não é de uma nota fiscal (NFC-e).'; },
-          pronto: (tx) => depoisDoQr(cpf, tx),
+          valor: true,
+          pronto: async (tx, x) => {
+            // Primeiro a conferência automática na SEFAZ; sem ela, o valor vem da foto e a equipe confere.
+            if (ctx.store.fidSefaz) {
+              $('#fpTitle').textContent = 'Lançar nota';
+              $('#fpBody').innerHTML = '<div class="fid-carregando"><span class="dot"></span><p>Conferindo a nota na SEFAZ…</p></div>';
+              openSheet('sh-fp');
+              const r = await ctx.store.fidSefaz({ cpf, qr: tx });
+              if (r.status === 'creditada') {
+                closeSheet();
+                toast(`+${pts(r.pontos || 0)} creditados. Nota conferida na SEFAZ${r.itens ? ` (${r.itens} ${r.itens === 1 ? 'produto' : 'produtos'})` : ''}.`, { tone: 'ok', ms: 5000 });
+                return recarregar();
+              }
+              if (['repetida', 'recusada', 'erro', 'sem_cadastro', 'inativo'].includes(r.status)) {
+                const msg = r.status === 'repetida' ? `Esta nota já foi registrada (${STATUS[r.nota] || r.nota}).`
+                  : r.status === 'sem_cadastro' ? 'Este CPF não tem cadastro no programa.'
+                  : r.status === 'inativo' ? 'O programa está pausado.' : r.motivo || r.mensagem || 'Esta nota não vale pontos.';
+                $('#fpBody').innerHTML = `<div class="stack"><p class="form-error">${esc(msg)}</p><button type="button" class="btn btn-quiet btn-block" data-close>Fechar</button></div>`;
+                return;
+              }
+            }
+            depoisDoQr(cpf, tx, x && x.quadro);
+          },
         }), 350);
         return;
       }
       if (id === 'fpLancar2') {
+        pararOcr();
         const valor = valorDe(f.elements.valor.value);
         if (!(valor > 0)) throw new Error('Informe o valor total da nota.');
         const r = await ctx.store.fidRegistrarNota({ cpf: f.dataset.cpf, qr: f.dataset.qr, valor });
@@ -981,6 +1118,8 @@
     document.addEventListener('change', (e) => { if (e.target.closest('#main[data-view="fidelidade"], #sh-fp')) onChange(e); });
     document.addEventListener('input', (e) => { if (e.target.closest('#main[data-view="fidelidade"], #sh-fp')) onInput(e); });
     document.addEventListener('submit', (e) => { if (e.target.closest('#main[data-view="fidelidade"], #sh-fp')) onSubmit(e); });
+    const sh = document.getElementById('sh-fp');
+    if (sh) sh.addEventListener('sheet:close', pararOcr);
   }
 
   window.FidPainel = { iniciar, atualizar, html, badge };

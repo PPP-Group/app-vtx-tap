@@ -195,9 +195,12 @@
       </form>`;
   }
 
+  // Sino: precisa do serviço no plano e de estar ligado nos ajustes (Widgets → Sino).
+  const sinoLigado = () => temServico('garcom') && live.mesas.sino !== false;
+
   function renderGate() {
     const gate = $('#callGate');
-    $('#call').hidden = !mesa || !temServico('garcom');
+    $('#call').hidden = !mesa || !sinoLigado();
     if (!mesa) return;
     const pend = sess && sess.status === 'pendente';
     gate.hidden = liberado();
@@ -535,7 +538,9 @@
   });
 
   /* ---------------- Atalhos ---------------- */
-  const menuCount = () => live.cardapio.reduce((n, c) => n + c.itens.length, 0);
+  // Cardápio da mesa: sem os itens "só no delivery".
+  const menuMesa = () => live.cardapio.map((c) => ({ ...c, itens: c.itens.filter((i) => i.salao !== false) })).filter((c) => c.itens.length);
+  const menuCount = () => menuMesa().reduce((n, c) => n + c.itens.length, 0);
   // Informações do restaurante (endereço, telefone, horários, Instagram): atalho que o restaurante liga nos ajustes.
   // Serviços do plano contratado: sem "pagina", só o que não depende dela (fidelidade).
   const temServico = (k) => !live.plano || !!live.plano.servicos[k];
@@ -554,7 +559,7 @@
     switch (w.tipo) {
       case 'cardapio': {
         if (!menuCount()) return '';
-        const cats = live.cardapio.map((c) => c.nome).join(' · ');
+        const cats = menuMesa().map((c) => c.nome).join(' · ');
         return `<button type="button" class="tile tile--menu" data-open="sh-menu">
           <span class="tile-menu-count">${icon('book')} ${menuCount()} itens</span>
           <div><h3>Cardápio</h3><p>${esc(cats)}</p></div>
@@ -661,7 +666,7 @@
   const allItems = () => live.cardapio.flatMap((c) => c.itens);
   const itemById = (id) => allItems().find((i) => i.id === id);
   const selLines = () => Object.entries(sel).filter(([, q]) => q > 0).map(([id, q]) => ({ item: itemById(id), q })).filter((l) => l.item);
-  const selTotal = () => selLines().reduce((s, l) => s + l.item.preco * l.q, 0);
+  const selTotal = () => selLines().reduce((s, l) => s + Store.opcoes.aPartir(l.item) * l.q, 0);
   const selCount = () => selLines().reduce((s, l) => s + l.q, 0);
 
   const qtyHtml = (id) => {
@@ -674,8 +679,9 @@
 
   function renderMenu() {
     const q = norm($('#menuSearch').value.trim());
+    // Itens "só no delivery" não aparecem na mesa.
     const cats = live.cardapio
-      .map((c) => ({ ...c, itens: c.itens.filter((i) => !q || norm(`${i.nome} ${i.desc || ''}`).includes(q)) }))
+      .map((c) => ({ ...c, itens: c.itens.filter((i) => i.salao !== false && (!q || norm(`${i.nome} ${i.desc || ''}`).includes(q))) }))
       .filter((c) => c.itens.length);
 
     $('#catTabs').innerHTML = cats
@@ -693,9 +699,16 @@
           <h3 class="cat-title" id="h-${c.id}">${esc(c.nome)} <small>${c.itens.length} ${c.itens.length === 1 ? 'item' : 'itens'}</small></h3>
           ${c.itens
             .map(
-              (i) => `<article class="dish">
-                <div class="dish-top"><h4 class="dish-name">${esc(i.nome)}</h4><span class="leader" aria-hidden="true"></span><span class="price">${brl(i.preco)}</span></div>
+              (i) => `<article class="dish ${i.foto ? 'has-foto' : ''}">
+                ${i.foto ? `<img class="dish-foto" src="${esc(i.foto)}" alt="" loading="lazy">` : ''}
+                <div class="dish-top"><h4 class="dish-name">${esc(i.nome)}</h4><span class="leader" aria-hidden="true"></span><span class="price">${Store.opcoes.temVariacao(i) ? `<small>a partir de</small> ` : ''}${brl(Store.opcoes.aPartir(i))}</span></div>
                 ${i.desc ? `<p class="dish-desc">${esc(i.desc)}</p>` : ''}
+                ${Store.opcoes.grupos(i).filter((g) => g.tipo !== 'extras' || g.opcoes.some((o) => +o.preco > 0)).map((g) => `<p class="dish-op"><b>${esc(g.nome)}:</b> ${g.opcoes.map((o) => {
+                  // Escolha com preços diferentes (ex.: tamanho): mostra o preço de cada; adicional: o acréscimo.
+                  const varia = g.tipo === 'escolha' && g.opcoes.some((x) => +x.preco !== +g.opcoes[0].preco);
+                  const p = g.tipo === 'escolha' ? (varia ? brl(Store.opcoes.aPartir(i) - Math.min(...g.opcoes.map((x) => +x.preco || 0)) + (+o.preco || 0)) : '') : (+o.preco ? `+ ${brl(+o.preco)}` : '');
+                  return `${esc(o.nome)}${p ? ` <span>${p}</span>` : ''}`;
+                }).join(' · ')}</p>`).join('')}
                 <div class="dish-foot">
                   <div class="tags">${i.destaque ? '<span class="tag tag--casa">Da casa</span>' : ''}${(i.tags || []).map((t) => `<span class="tag tag--${t}">${esc(cfg.tags[t] || t)}</span>`).join('')}</div>
                   ${qtyHtml(i.id)}
@@ -778,7 +791,7 @@
       return;
     }
     body.innerHTML = `<div class="stack">
-      <ul class="sel-list">${lines.map((l) => `<li><strong>${esc(l.item.nome)}</strong><span class="price">${brl(l.item.preco * l.q)}</span>${qtyHtml(l.item.id)}</li>`).join('')}</ul>
+      <ul class="sel-list">${lines.map((l) => `<li><strong>${esc(l.item.nome)}</strong><span class="price">${brl(Store.opcoes.aPartir(l.item) * l.q)}</span>${qtyHtml(l.item.id)}</li>`).join('')}</ul>
       <div class="sel-total"><span>Total estimado</span><span class="price">${brl(selTotal())}</span></div>
       <p class="note">${icon('msg')}<span>A lista é um lembrete: o garçom vem até a mesa e confirma o pedido com você.</span></p>
       ${liberado()
@@ -800,7 +813,7 @@
     const send = e.target.closest('#sendList');
     if (send) {
       send.disabled = true;
-      const itens = selLines().map((l) => ({ id: l.item.id, nome: l.item.nome, qtd: l.q, preco: l.item.preco }));
+      const itens = selLines().map((l) => ({ id: l.item.id, nome: l.item.nome, qtd: l.q, preco: Store.opcoes.aPartir(l.item) }));
       const ok = await sendCall({ tipo: 'pedido', itens });
       if (ok) {
         sel = {};
@@ -1005,7 +1018,7 @@
   function boot() {
     if (mesa && !(mesa >= 1 && mesa <= live.mesas.total)) mesa = null;
     // Chamar o garçom fora do plano: some o sino e a escolha da mesa.
-    const semGarcom = !temServico('garcom');
+    const semGarcom = !sinoLigado();
     $('#call').hidden = semGarcom;
     document.querySelector('.plate-stage').hidden = semGarcom;
     renderTop();

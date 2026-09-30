@@ -3,8 +3,11 @@
  * Páginas e arquivos do site: busca na rede primeiro e guarda uma cópia para abrir sem internet.
  * Fontes e bibliotecas externas: usa a cópia guardada e atualiza em segundo plano.
  * Dados do servidor (Supabase) nunca passam pelo cache.
+ * Manifesto e ícones do app com o nome e a logo do restaurante: vêm do cache 'painel-marca',
+ * que o painel preenche (assets/js/admin.js, marcaDoApp).
  */
-const VERSAO = 'painel-v5';
+const VERSAO = 'painel-v6';
+const MARCA = 'painel-marca';
 const BASE = [
   '/admin/',
   '/assets/css/base.css',
@@ -23,7 +26,7 @@ self.addEventListener('install', (e) => {
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys()
-      .then((ks) => Promise.all(ks.filter((k) => k !== VERSAO).map((k) => caches.delete(k))))
+      .then((ks) => Promise.all(ks.filter((k) => k !== VERSAO && k !== MARCA).map((k) => caches.delete(k))))
       .then(() => self.clients.claim()),
   );
 });
@@ -34,6 +37,11 @@ self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
+
+  if (url.origin === location.origin && (url.pathname === '/admin/manifest.webmanifest' || url.pathname.startsWith('/admin/icons/marca-'))) {
+    e.respondWith(caches.open(MARCA).then((c) => c.match(url.pathname)).then((r) => r || fetch(req)));
+    return;
+  }
 
   if (url.origin === location.origin) {
     e.respondWith(

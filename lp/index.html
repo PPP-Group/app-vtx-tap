@@ -114,6 +114,24 @@
   .op-top { display: flex; justify-content: space-between; align-items: baseline; gap: 4px 12px; flex-wrap: wrap; }
   .op b { font-weight: 600; }
   .op small { color: var(--muted); font-size: 13.5px; overflow-wrap: anywhere; }
+  .placas { display: grid; gap: 10px; grid-template-columns: minmax(0, 1fr); }
+  /* Padrão e personalizada básica lado a lado; sob demanda embaixo, na largura toda (foto à esquerda, texto à direita). */
+  @media (min-width: 560px) {
+    .placas { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .placa-op--larga { grid-column: 1 / -1; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 14px; align-items: center; }
+    .placa-op--larga img { grid-row: 1 / span 2; margin-bottom: 0; }
+    .placa-op--larga .op-top { align-self: end; }
+    .placa-op--larga small { align-self: start; }
+  }
+  .placa-op { position: relative; display: grid; gap: 6px; align-content: start; padding: 12px; border-radius: 16px; border: 1.5px solid var(--line); cursor: pointer; min-width: 0; transition: border-color .15s, background-color .15s; }
+  .placa-op:hover { border-color: var(--roxo); }
+  .placa-op:has(input:checked) { border-color: var(--roxo); background: var(--roxo-soft); }
+  .placa-op:has(input:focus-visible) { outline: 3px solid var(--roxo); outline-offset: 2px; }
+  .placa-op input { position: absolute; top: 10px; right: 10px; width: 20px; height: 20px; margin: 0; accent-color: var(--roxo); z-index: 1; }
+  .placa-op img { width: 100%; height: auto; margin-bottom: 4px; border-radius: 5px; box-shadow: 0 6px 18px rgba(20, 11, 51, .18); }
+  .placa-op b { font-weight: 600; }
+  .placa-op small { color: var(--muted); font-size: 13px; }
+  .placa-op .preco { font-family: var(--mono); font-weight: 600; font-size: 14px; color: var(--roxo-ink); white-space: nowrap; }
   .op .preco { font-family: var(--mono); font-weight: 600; font-size: 14px; color: var(--roxo-ink); white-space: nowrap; }
   code { font-family: var(--mono); font-size: .92em; overflow-wrap: anywhere; }
 
@@ -222,23 +240,33 @@
         <div class="bloco">
           <h3>Serviços <span class="tipo tipo--mensal">Todo mês</span></h3>
           <div class="opcoes">
-            <label class="op"><input type="checkbox" id="svPagina" checked><span class="op-txt"><span class="op-top"><b>Página da mesa e cardápio</b><span class="preco">R$ 99 por mês</span></span>
+            <label class="op"><input type="checkbox" id="svPagina" checked><span class="op-txt"><span class="op-top"><b>Página da mesa e cardápio</b><span class="preco" data-preco="pagina"></span></span>
               <small>Cardápio com fotos e filtros, Wi-Fi, avaliação no Google, comentário anônimo e Instagram.</small></span></label>
-            <label class="op"><input type="checkbox" id="svGarcom" checked><span class="op-txt"><span class="op-top"><b>Chamar o garçom</b><span class="preco">R$ 99 por mês</span></span>
+            <label class="op"><input type="checkbox" id="svGarcom" checked><span class="op-txt"><span class="op-top"><b>Chamar o garçom</b><span class="preco" data-preco="garcom"></span></span>
               <small>O cliente chama pelo celular e a equipe recebe na hora no painel, com som e mapa do salão.</small></span></label>
-            <label class="op"><input type="checkbox" id="svFid" checked><span class="op-txt"><span class="op-top"><b>Programa de fidelidade</b><span class="preco">R$ 199 por mês</span></span>
-              <small>Pontos pela nota fiscal, prêmios, níveis do clube, indicação de amigos e dias com pontos em dobro.</small></span></label>
+            <label class="op"><input type="checkbox" id="svFid" checked><span class="op-txt"><span class="op-top"><b>Programa de fidelidade</b><span class="preco" data-preco="fidelidade"></span></span>
+              <small>Pontos pela nota fiscal, prêmios, níveis do clube, ranking, indicação de amigos e dias com pontos em dobro.</small></span></label>
+            <label class="op"><input type="checkbox" id="svDel"><span class="op-txt"><span class="op-top"><b>Delivery</b><span class="preco" data-preco="delivery"></span></span>
+              <small>Pedido para entrega com endereço, taxa por distância, comanda na cozinha e acompanhamento do pedido.</small></span></label>
           </div>
           <p class="dica" id="comboDica"></p>
         </div>
 
         <div class="bloco">
           <div class="bloco-h"><h3>Plaquinhas <span class="tipo tipo--unico">Pagamento único</span></h3></div>
-          <div class="opcoes">
-            <label class="op"><input type="radio" name="placa" id="plPadrao" value="padrao" checked><span class="op-txt"><span class="op-top"><b>Padrão</b><span class="preco" id="precoPadrao"></span></span>
-              <small>Arte VTX Tap com o número da mesa, NFC e QR Code. Quanto mais plaquinhas, menor o preço de cada uma.</small></span></label>
-            <label class="op"><input type="radio" name="placa" id="plPerso" value="personalizada"><span class="op-txt"><span class="op-top"><b>Personalizada</b><span class="preco">Sob consulta</span></span>
-              <small>Com a logo e as cores do restaurante. O valor depende da arte, do material e da quantidade.</small></span></label>
+          <div class="placas" role="radiogroup" aria-label="Modelo da plaquinha">
+            <label class="placa-op"><input type="radio" name="placa" id="plPadrao" value="padrao" checked>
+              <img src="/assets/img/placas/placa-padrao.webp" width="1200" height="757" alt="Plaquinha padrão: QR Code com a logo da VTX Tap à esquerda e, à direita, o ícone de NFC com Aproxime o celular">
+              <span class="op-top"><b>Padrão</b><span class="preco" id="precoPadrao"></span></span>
+              <small>Tamanho de cartão de crédito, com NFC e QR Code. Logo da VTX Tap no meio do QR.</small></label>
+            <label class="placa-op"><input type="radio" name="placa" id="plBasica" value="basica">
+              <img src="/assets/img/placas/placa-personalizada-basica.webp" width="1200" height="757" alt="Plaquinha personalizada básica: a logo do restaurante no meio do QR e os detalhes na cor do restaurante">
+              <span class="op-top"><b>Personalizada básica</b><span class="preco" id="precoBasica"></span></span>
+              <small>Você envia a logo: ela vai no meio do QR, e os detalhes saem na cor do restaurante. R$ 20 a mais por plaquinha.</small></label>
+            <label class="placa-op placa-op--larga"><input type="radio" name="placa" id="plDemanda" value="demanda">
+              <img src="/assets/img/placas/placa-sob-demanda.webp" width="1200" height="757" alt="Exemplo de plaquinha sob demanda, com arte própria do restaurante em fundo verde e dourado">
+              <span class="op-top"><b>Personalizada sob demanda</b><span class="preco">Sob consulta</span></span>
+              <small>Você manda a arte ou conta como quer. Nosso time avalia e faz o orçamento. Imagem ilustrativa.</small></label>
           </div>
           <div class="bloco-h"><label for="placasNum" class="dica">Quantidade de plaquinhas (uma por mesa, ou mais se quiser duas em mesas grandes)</label></div>
           <div class="qtd">
@@ -300,16 +328,18 @@
     </div>
 
     <div class="grupo-tab">
-      <header><span class="tipo tipo--mensal">Todo mês</span><p>Mensalidade de cada serviço. Escolha um, dois ou os três.</p></header>
+      <header><span class="tipo tipo--mensal">Todo mês</span><p>Mensalidade de cada serviço. Dois juntos: 10% de desconto. Três: 15%. Os quatro: preço fechado.</p></header>
       <div class="cards">
-        <article class="card"><h3>Página da mesa e cardápio</h3><p class="valor num">R$ 99<span>por mês</span></p>
+        <article class="card"><h3>Página da mesa e cardápio</h3><p class="valor num"><i data-preco-n="pagina"></i><span>por mês</span></p>
           <ul><li>Cardápio digital com fotos e filtros</li><li>Wi-Fi, Instagram e endereço</li><li>Avaliação no Google em um toque</li><li>Comentário anônimo para a gerência</li></ul></article>
-        <article class="card"><h3>Chamar o garçom</h3><p class="valor num">R$ 99<span>por mês</span></p>
+        <article class="card"><h3>Chamar o garçom</h3><p class="valor num"><i data-preco-n="garcom"></i><span>por mês</span></p>
           <ul><li>Chamado pelo celular, sem botão na mesa</li><li>Painel da equipe com som e alerta de atraso</li><li>Mapa do salão e fechamento da mesa</li><li>Proteção contra trote</li></ul></article>
-        <article class="card"><h3>Programa de fidelidade</h3><p class="valor num">R$ 199<span>por mês</span></p>
-          <ul><li>Pontos pela nota fiscal (QR da NFC-e)</li><li>Prêmios com foto e código para o garçom</li><li>Níveis do clube e dias com pontos em dobro</li><li>Indicação de amigos</li></ul></article>
-        <article class="card destaque"><div class="card-top"><h3>Os três juntos</h3><span class="tipo tipo--mensal">Combo</span></div><p class="valor num">R$ 329<span>por mês</span></p>
-          <ul><li>Tudo dos três serviços</li><li>R$ 68 a menos por mês que separados</li></ul></article>
+        <article class="card"><h3>Programa de fidelidade</h3><p class="valor num"><i data-preco-n="fidelidade"></i><span>por mês</span></p>
+          <ul><li>Pontos pela nota fiscal (QR da NFC-e)</li><li>Prêmios com foto e código para o garçom</li><li>Níveis do clube, ranking e pontos em dobro</li><li>Indicação de amigos</li></ul></article>
+        <article class="card"><h3>Delivery</h3><p class="valor num"><i data-preco-n="delivery"></i><span>por mês</span></p>
+          <ul><li>Pedido com endereço e taxa por distância</li><li>Comanda na cozinha</li><li>Entregador e acompanhamento do pedido</li><li>Mesmo cardápio da página da mesa</li></ul></article>
+        <article class="card destaque"><div class="card-top"><h3>Os quatro juntos</h3><span class="tipo tipo--mensal">Combo</span></div><p class="valor num"><i id="precoTodos"></i><span>por mês</span></p>
+          <ul><li>Tudo dos quatro serviços</li><li id="economiaTodos"></li></ul></article>
       </div>
     </div>
 
@@ -328,11 +358,11 @@
       </div>
       <div class="tabela-wrap">
         <table>
-          <thead><tr><th>Plaquinha padrão (NFC + QR Code)</th><th class="v">Valor único por plaquinha</th></tr></thead>
+          <thead><tr><th>Plaquinhas (valor único, por unidade)</th><th class="v">Padrão</th><th class="v">Personalizada básica</th></tr></thead>
           <tbody id="tabPlacas"></tbody>
         </table>
       </div>
-      <p class="muted">A implantação inclui o cadastro do restaurante, o cardápio montado, as mesas e áreas, a instalação das plaquinhas no local e 1 hora de treinamento da equipe. Plaquinha personalizada, com a logo do restaurante: sob consulta.</p>
+      <p class="muted">A implantação inclui o cadastro do restaurante, o cardápio montado, as mesas e áreas, a instalação das plaquinhas no local e 1 hora de treinamento da equipe. A personalizada básica usa a logo e a cor do restaurante; a sob demanda segue a arte que você mandar.</p>
     </div>
 
     <div class="grupo-tab">
@@ -367,12 +397,21 @@
   </footer>
 </div>
 
+<script src="/assets/js/precos.js"></script>
 <script>
   (function () {
     const INTERNO = false;
     const $ = (s) => document.getElementById(s);
     const brl = (v) => 'R$ ' + Math.round(v).toLocaleString('pt-BR');
-    const PRECO = { pagina: 99, garcom: 99, fid: 199, combo: 329, fidSetup: 490, domSetup: 190, domMes: 19, domAno: 90 };
+    // Mensalidades vêm de /assets/js/precos.js (a mesma tabela do painel e do banco).
+    const PRECO = { fidSetup: 490, domSetup: 190, domMes: Precos.DOMINIO_MES, domAno: 90 };
+    Precos.SERVICOS.forEach((s) => {
+      document.querySelectorAll(`[data-preco="${s.id}"]`).forEach((el) => (el.textContent = `${brl(s.preco)} por mês`));
+      document.querySelectorAll(`[data-preco-n="${s.id}"]`).forEach((el) => (el.textContent = brl(s.preco)));
+    });
+    const todos = Precos.combo(Object.fromEntries(Precos.SERVICOS.map((s) => [s.id, true])));
+    $('precoTodos').textContent = brl(todos.total);
+    $('economiaTodos').textContent = `${brl(todos.economia)} a menos por mês que separados`;
     // Plaquinha padrão: preço por unidade conforme a quantidade.
     const FAIXAS = [
       { de: 1, ate: 19, valor: 59 },
@@ -381,6 +420,8 @@
       { de: 100, ate: Infinity, valor: 42 },
     ];
     const precoPlaca = (q) => FAIXAS.find((f) => q >= f.de && q <= f.ate).valor;
+    // Personalizada básica: o preço da padrão + R$ 20 por plaquinha. Sob demanda: orçamento.
+    const PLACA_BASICA = 20;
     function implantacao(m) {
       if (m <= 20) return { valor: 590, porte: 'até 20 mesas' };
       if (m <= 50) return { valor: 890, porte: '21 a 50 mesas' };
@@ -389,14 +430,14 @@
     const linha = (dt, dd, cls = '') => `<div class="linha ${cls}"><dt>${dt}</dt><dd>${dd}</dd></div>`;
     const faixaTxt = (f) => (f.ate === Infinity ? `${f.de} ou mais` : `${f.de} a ${f.ate}`);
 
-    $('tabPlacas').innerHTML = FAIXAS.map((f) => `<tr><td>${faixaTxt(f)} plaquinhas</td><td class="v">${brl(f.valor)} cada</td></tr>`).join('')
-      + '<tr><td>Personalizada, com a logo do restaurante</td><td class="v">Sob consulta</td></tr>';
+    $('tabPlacas').innerHTML = FAIXAS.map((f) => `<tr><td>${faixaTxt(f)} plaquinhas</td><td class="v">${brl(f.valor)}</td><td class="v">${brl(f.valor + PLACA_BASICA)}</td></tr>`).join('')
+      + '<tr><td>Personalizada sob demanda<small>Arte do restaurante, avaliada pelo nosso time.</small></td><td class="v" colspan="2">Sob consulta</td></tr>';
 
     let placasManual = false;
     function calcular() {
       const m = Math.min(Math.max(Math.round(+$('mesasNum').value || 1), 1), 500);
       const q = Math.min(Math.max(Math.round(+$('placasNum').value || 1), 1), 1000);
-      const sv = { pagina: $('svPagina').checked, garcom: $('svGarcom').checked, fid: $('svFid').checked };
+      const sv = { pagina: $('svPagina').checked, garcom: $('svGarcom').checked, fidelidade: $('svFid').checked, delivery: $('svDel').checked };
       const qtd = Object.values(sv).filter(Boolean).length;
       const dom = document.querySelector('input[name="dom"]:checked').value;
       const meses = +document.querySelector('input[name="contrato"]:checked').value;
@@ -405,6 +446,8 @@
       const pu = precoPlaca(q);
       $('porte').textContent = `Implantação: ${imp.porte}`;
       $('precoPadrao').textContent = `${brl(pu)} cada`;
+      $('precoBasica').textContent = `${brl(pu + PLACA_BASICA)} cada`;
+      const puPlaca = placa === 'basica' ? pu + PLACA_BASICA : pu;
 
       // Pagamento único
       const u = [];
@@ -413,34 +456,29 @@
       if (qtd) {
         u.push(linha(`Implantação (${imp.porte})`, brl(imp.valor)));
         impTotal += imp.valor;
-        if (sv.fid) { u.push(linha('Implantação da fidelidade', brl(PRECO.fidSetup))); impTotal += PRECO.fidSetup; }
+        if (sv.fidelidade) { u.push(linha('Implantação da fidelidade', brl(PRECO.fidSetup))); impTotal += PRECO.fidSetup; }
         if (meses === 12) { u.push(linha('Desconto do contrato de 12 meses', '− ' + brl(impTotal / 2), 'desc')); impTotal /= 2; }
         totU += impTotal;
       }
       let totPlacas = 0;
-      if (placa === 'padrao') {
-        totPlacas = q * pu;
-        u.push(linha(`${q} plaquinhas padrão × ${brl(pu)}`, brl(totPlacas)));
+      if (placa !== 'demanda') {
+        totPlacas = q * puPlaca;
+        u.push(linha(`${q} plaquinhas ${placa === 'basica' ? 'personalizadas básicas' : 'padrão'} × ${brl(puPlaca)}`, brl(totPlacas)));
         totU += totPlacas;
       } else {
-        u.push(linha(`${q} plaquinhas personalizadas`, '<span class="consulta">sob consulta</span>'));
+        u.push(linha(`${q} plaquinhas sob demanda`, '<span class="consulta">sob consulta</span>'));
       }
       if (dom !== 'sub') { u.push(linha('Configuração do domínio próprio', brl(PRECO.domSetup))); totU += PRECO.domSetup; }
       $('lnUnico').innerHTML = u.join('');
-      $('totUnico').textContent = brl(totU) + (placa === 'padrao' ? '' : ' + plaquinhas');
+      $('totUnico').textContent = brl(totU) + (placa !== 'demanda' ? '' : ' + plaquinhas');
 
       // Todo mês
       const mm = [];
       let totM = 0;
-      if (qtd === 3) {
-        mm.push(linha('Página, garçom e fidelidade (separados)', brl(PRECO.pagina + PRECO.garcom + PRECO.fid)));
-        mm.push(linha('Desconto do combo', '− ' + brl(PRECO.pagina + PRECO.garcom + PRECO.fid - PRECO.combo), 'desc'));
-        totM += PRECO.combo;
-      } else {
-        if (sv.pagina) { mm.push(linha('Página da mesa e cardápio', brl(PRECO.pagina))); totM += PRECO.pagina; }
-        if (sv.garcom) { mm.push(linha('Chamar o garçom', brl(PRECO.garcom))); totM += PRECO.garcom; }
-        if (sv.fid) { mm.push(linha('Programa de fidelidade', brl(PRECO.fid))); totM += PRECO.fid; }
-      }
+      const cb = Precos.combo(sv);
+      Precos.SERVICOS.forEach((s) => { if (sv[s.id]) mm.push(linha(s.nome, brl(s.preco))); });
+      if (cb.economia) mm.push(linha(cb.qtd === Precos.SERVICOS.length ? 'Desconto do combo (os quatro)' : `Desconto de ${Math.round(cb.desconto * 100)}% (${cb.qtd} serviços)`, '− ' + brl(cb.economia), 'desc'));
+      totM += cb.total;
       if (dom !== 'sub') { mm.push(linha('Domínio próprio', brl(PRECO.domMes))); totM += PRECO.domMes; }
       if (!mm.length) mm.push(linha('Escolha pelo menos um serviço', '—'));
       $('lnMensal').innerHTML = mm.join('');
@@ -451,25 +489,26 @@
       $('lnAnual').innerHTML = linha('Registro e renovação do domínio', brl(PRECO.domAno));
       $('totAnual').textContent = brl(PRECO.domAno);
 
-      $('comboDica').textContent = qtd === 3 ? 'Combo aplicado: R$ 329 por mês, R$ 68 a menos que separados.'
-        : qtd ? 'Com os três serviços juntos, a mensalidade fica em R$ 329 (combo).' : 'Escolha pelo menos um serviço.';
+      $('comboDica').textContent = !qtd ? 'Escolha pelo menos um serviço.'
+        : cb.economia ? `Desconto aplicado: ${brl(cb.economia)} a menos por mês.`
+        : 'Dois serviços juntos têm 10% de desconto; três, 15%; os quatro saem por ' + brl(Precos.TODOS) + '.';
 
-      if (INTERNO) interno({ q, pu, placa, totPlacas, impTotal, totM, dom, meses });
+      if (INTERNO) interno({ q, pu: puPlaca, placa, totPlacas, impTotal, totM, dom, meses });
     }
 
     // Visão interna: custo e lucro.
     function interno({ q, pu, placa, totPlacas, impTotal, totM, dom, meses }) {
       const custo = Math.max(+$('custoPlaca').value || 0, 0);
       const infra = Math.max(+$('custoInfra').value || 0, 0);
-      const custoPlacas = placa === 'padrao' ? q * custo : 0;
+      const custoPlacas = placa !== 'demanda' ? q * custo : 0;
       const lucroPlacas = totPlacas - custoPlacas;
       const regDom = dom === 'registro' ? 40 : 0;
       const lucroMes = totM - infra;
       const lucroEntrada = lucroPlacas + impTotal + (dom !== 'sub' ? PRECO.domSetup : 0);
       $('lnInterno').innerHTML = [
-        placa === 'padrao' ? linha(`Plaquinhas: custo ${q} × ${brl(custo)}`, brl(custoPlacas)) : linha('Plaquinhas personalizadas', 'orçar: custo × 2,5'),
-        placa === 'padrao' ? linha(`Margem da plaquinha (${brl(pu)} ÷ ${brl(custo)})`, custo ? (pu / custo).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + 'x' : '—') : '',
-        placa === 'padrao' ? linha('Lucro nas plaquinhas', brl(lucroPlacas)) : '',
+        placa !== 'demanda' ? linha(`Plaquinhas: custo ${q} × ${brl(custo)}`, brl(custoPlacas)) : linha('Plaquinhas sob demanda', 'orçar: custo × 2,5'),
+        placa !== 'demanda' ? linha(`Margem da plaquinha (${brl(pu)} ÷ ${brl(custo)})`, custo ? (pu / custo).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + 'x' : '—') : '',
+        placa !== 'demanda' ? linha('Lucro nas plaquinhas', brl(lucroPlacas)) : '',
         linha('Implantação (tempo, sem custo direto)', brl(impTotal)),
         linha('Lucro no pagamento único', brl(lucroEntrada), 'forte'),
         linha(`Lucro por mês (mensalidade − ${brl(infra)} de servidor)`, brl(lucroMes), 'forte'),

@@ -1,6 +1,7 @@
 // Cadastro e login da equipe por PIN, por restaurante.
-// Todo pedido traz o restaurante (id). Criar conta exige a senha da equipe
-// daquele restaurante (definida pela central); entrar exige só o PIN.
+// Todo pedido traz o restaurante (id). A senha da equipe (definida pela central)
+// só cria a PRIMEIRA conta, que vira a administradora. Depois disso, só quem é
+// administrador adiciona, remove e troca o PIN das pessoas. Entrar exige só o PIN.
 // A sessão devolvida é uma sessão normal do Supabase Auth, então as regras
 // de acesso do banco (public.meu_restaurante()) valem para tudo o que vem depois.
 import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2';
@@ -47,9 +48,30 @@ async function membroDaChamada(sb: SupabaseClient, req: Request, restaurante: st
   if (!token) return null;
   const { data } = await sb.auth.getUser(token);
   if (!data.user) return null;
-  const { data: m } = await sb.from('equipe_membros').select('id, nome, user_id')
+  const { data: m } = await sb.from('equipe_membros').select('id, nome, user_id, admin')
     .eq('user_id', data.user.id).eq('restaurante_id', restaurante).maybeSingle();
   return m;
+}
+
+async function criarMembro(sb: SupabaseClient, rest: string, nome: string, pin: string, admin: boolean) {
+  const hmac = await rpc<string>(sb, 'equipe_pin_hmac', { p_restaurante: rest, p_pin: pin });
+  const { data: existe } = await sb.from('equipe_membros').select('id').eq('restaurante_id', rest).eq('pin_hmac', hmac).maybeSingle();
+  if (existe) return { erro: 'Esse PIN já está em uso. Escolha outro.' };
+  const email = `m-${crypto.randomUUID()}@equipe.vtxtap.app`;
+  const { data: novo, error } = await sb.auth.admin.createUser({ email, email_confirm: true, user_metadata: { nome } });
+  if (error || !novo.user) throw error || new Error('Conta não criada');
+  const { error: e2 } = await sb.from('equipe_membros').insert({ restaurante_id: rest, user_id: novo.user.id, nome, pin_hmac: hmac, admin });
+  if (e2) {
+    await sb.auth.admin.deleteUser(novo.user.id);
+    if (e2.code === '23505') return { erro: 'Esse PIN já está em uso. Escolha outro.' };
+    throw e2;
+  }
+  return { email, id: novo.user.id };
+}
+
+async function qtdAdmins(sb: SupabaseClient, rest: string) {
+  const { count } = await sb.from('equipe_membros').select('id', { count: 'exact', head: true }).eq('restaurante_id', rest).eq('admin', true);
+  return count || 0;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -76,7 +98,8 @@ Deno.serve(async (req) => {
 
     if (acao === 'estado') {
       const conf = await rpc<string>(sb, 'equipe_conferir_senha', { p_restaurante: rest, p_senha: '' });
-      return json({ temSenha: conf !== 'sem_senha' });
+      const { count } = await sb.from('equipe_membros').select('id', { count: 'exact', head: true }).eq('restaurante_id', rest);
+      return json({ temSenha: conf !== 'sem_senha', temEquipe: (count || 0) > 0 });
     }
 
     if (acao === 'entrar') {
@@ -85,14 +108,15 @@ Deno.serve(async (req) => {
       const livre = (await podeTentar(sb, `entrar:${ip}`, 10, 15)) && (await podeTentar(sb, `entrar:${rest}`, 60, 15));
       if (!livre) return erro('Muitas tentativas. Aguarde 15 minutos e tente de novo.', 429);
       const hmac = await rpc<string>(sb, 'equipe_pin_hmac', { p_restaurante: rest, p_pin: pin });
-      const { data: m } = await sb.from('equipe_membros').select('nome, user_id').eq('restaurante_id', rest).eq('pin_hmac', hmac).maybeSingle();
-      if (!m) return erro('PIN não encontrado. Confira ou crie sua conta.', 401);
+      const { data: m } = await sb.from('equipe_membros').select('nome, user_id, admin').eq('restaurante_id', rest).eq('pin_hmac', hmac).maybeSingle();
+      if (!m) return erro('PIN não encontrado. Confira o número ou peça ao administrador.', 401);
       const { data: u, error } = await sb.auth.admin.getUserById(m.user_id);
       if (error || !u.user?.email) throw error || new Error('Usuário sem e-mail');
       await rpc(sb, 'equipe_limpar_tentativas', { p_chave: `entrar:${ip}` });
-      return json({ nome: m.nome, sessao: await abrirSessao(sb, u.user.email) });
+      return json({ nome: m.nome, admin: !!m.admin, sessao: await abrirSessao(sb, u.user.email) });
     }
 
+    // Só a primeira conta do restaurante se cadastra sozinha (com a senha da equipe) e vira administradora.
     if (acao === 'cadastrar') {
       const nome = String(body.nome || '').trim().slice(0, 60);
       const pin = String(body.pin || '');
@@ -102,24 +126,16 @@ Deno.serve(async (req) => {
       if (senha.length < 6) return erro('A senha da equipe tem pelo menos 6 caracteres.');
       if (!(await podeTentar(sb, `cadastrar:${ip}`, 6, 15))) return erro('Muitas tentativas. Aguarde 15 minutos e tente de novo.', 429);
 
+      const { count } = await sb.from('equipe_membros').select('id', { count: 'exact', head: true }).eq('restaurante_id', rest);
+      if ((count || 0) > 0) return erro('Este restaurante já tem administrador. Peça para ele cadastrar você no painel.', 403);
+
       const conf = await rpc<string>(sb, 'equipe_conferir_senha', { p_restaurante: rest, p_senha: senha });
       if (conf === 'sem_senha') return erro('A senha da equipe ainda não foi definida. Fale com a Vortex.', 403);
-      if (conf === 'errada') return erro('Senha da equipe incorreta. Peça a senha para a gerência.', 403);
+      if (conf === 'errada') return erro('Senha da equipe incorreta. Ela foi enviada pela Vortex.', 403);
 
-      const hmac = await rpc<string>(sb, 'equipe_pin_hmac', { p_restaurante: rest, p_pin: pin });
-      const { data: existe } = await sb.from('equipe_membros').select('id').eq('restaurante_id', rest).eq('pin_hmac', hmac).maybeSingle();
-      if (existe) return erro('Esse PIN já está em uso. Escolha outro.', 409);
-
-      const email = `m-${crypto.randomUUID()}@equipe.vtxtap.app`;
-      const { data: novo, error } = await sb.auth.admin.createUser({ email, email_confirm: true, user_metadata: { nome } });
-      if (error || !novo.user) throw error || new Error('Conta não criada');
-      const { error: e2 } = await sb.from('equipe_membros').insert({ restaurante_id: rest, user_id: novo.user.id, nome, pin_hmac: hmac });
-      if (e2) {
-        await sb.auth.admin.deleteUser(novo.user.id);
-        if (e2.code === '23505') return erro('Esse PIN já está em uso. Escolha outro.', 409);
-        throw e2;
-      }
-      return json({ nome, primeiraConta: false, sessao: await abrirSessao(sb, email) });
+      const r = await criarMembro(sb, rest, nome, pin, true);
+      if (r.erro) return erro(r.erro, 409);
+      return json({ nome, admin: true, primeiraConta: true, sessao: await abrirSessao(sb, r.email!) });
     }
 
     // A partir daqui, só quem já é da equipe.
@@ -127,15 +143,57 @@ Deno.serve(async (req) => {
     if (!eu) return erro('Entre com seu PIN para continuar.', 401);
 
     if (acao === 'membros') {
-      const { data, error } = await sb.from('equipe_membros').select('id, nome, criado_em, user_id').eq('restaurante_id', rest).order('criado_em');
+      const { data, error } = await sb.from('equipe_membros').select('id, nome, criado_em, user_id, admin').eq('restaurante_id', rest).order('criado_em');
       if (error) throw error;
-      return json({ membros: data.map((m) => ({ id: m.id, nome: m.nome, criado_em: m.criado_em, voce: m.user_id === eu.user_id })) });
+      return json({
+        euAdmin: !!eu.admin,
+        membros: data.map((m) => ({ id: m.id, nome: m.nome, criado_em: m.criado_em, admin: !!m.admin, voce: m.user_id === eu.user_id })),
+      });
+    }
+
+    // Trocar o próprio PIN: qualquer pessoa. O de outra pessoa: só administrador.
+    if (acao === 'trocar_pin') {
+      const pin = String(body.pin || '');
+      if (!PIN_OK.test(pin)) return erro('O PIN precisa ter de 4 a 8 números.');
+      const id = String(body.id || eu.id);
+      if (id !== eu.id && !eu.admin) return erro('Só o administrador troca o PIN de outra pessoa.', 403);
+      const hmac = await rpc<string>(sb, 'equipe_pin_hmac', { p_restaurante: rest, p_pin: pin });
+      const { data: dono } = await sb.from('equipe_membros').select('id').eq('restaurante_id', rest).eq('pin_hmac', hmac).maybeSingle();
+      if (dono && dono.id !== id) return erro('Esse PIN já está em uso. Escolha outro.', 409);
+      const { error, count } = await sb.from('equipe_membros').update({ pin_hmac: hmac }, { count: 'exact' }).eq('id', id).eq('restaurante_id', rest);
+      if (error) throw error;
+      if (!count) return erro('Pessoa não encontrada.', 404);
+      return json({ ok: true });
+    }
+
+    // Daqui para baixo, só administrador.
+    if (!eu.admin) return erro('Só o administrador do restaurante pode fazer isso.', 403);
+
+    if (acao === 'adicionar') {
+      const nome = String(body.nome || '').trim().slice(0, 60);
+      const pin = String(body.pin || '');
+      if (!nome) return erro('Informe o nome da pessoa.');
+      if (!PIN_OK.test(pin)) return erro('O PIN precisa ter de 4 a 8 números.');
+      const r = await criarMembro(sb, rest, nome, pin, !!body.admin);
+      if (r.erro) return erro(r.erro, 409);
+      return json({ ok: true });
     }
 
     if (acao === 'remover') {
-      const { data: m } = await sb.from('equipe_membros').select('user_id').eq('id', String(body.id || '')).eq('restaurante_id', rest).maybeSingle();
+      const { data: m } = await sb.from('equipe_membros').select('id, user_id, admin').eq('id', String(body.id || '')).eq('restaurante_id', rest).maybeSingle();
       if (!m) return erro('Pessoa não encontrada.', 404);
+      if (m.id === eu.id) return erro('Você não pode remover a si mesmo.');
       const { error } = await sb.auth.admin.deleteUser(m.user_id);
+      if (error) throw error;
+      return json({ ok: true });
+    }
+
+    if (acao === 'admin') {
+      const quer = !!body.admin;
+      const { data: m } = await sb.from('equipe_membros').select('id, admin').eq('id', String(body.id || '')).eq('restaurante_id', rest).maybeSingle();
+      if (!m) return erro('Pessoa não encontrada.', 404);
+      if (!quer && m.admin && (await qtdAdmins(sb, rest)) <= 1) return erro('O restaurante precisa de pelo menos um administrador.');
+      const { error } = await sb.from('equipe_membros').update({ admin: quer }).eq('id', m.id);
       if (error) throw error;
       return json({ ok: true });
     }
