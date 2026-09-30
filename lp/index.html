@@ -222,12 +222,14 @@
         <div class="bloco">
           <h3>Serviços <span class="tipo tipo--mensal">Todo mês</span></h3>
           <div class="opcoes">
-            <label class="op"><input type="checkbox" id="svPagina" checked><span class="op-txt"><span class="op-top"><b>Página da mesa e cardápio</b><span class="preco">R$ 99 por mês</span></span>
+            <label class="op"><input type="checkbox" id="svPagina" checked><span class="op-txt"><span class="op-top"><b>Página da mesa e cardápio</b><span class="preco" data-preco="pagina"></span></span>
               <small>Cardápio com fotos e filtros, Wi-Fi, avaliação no Google, comentário anônimo e Instagram.</small></span></label>
-            <label class="op"><input type="checkbox" id="svGarcom" checked><span class="op-txt"><span class="op-top"><b>Chamar o garçom</b><span class="preco">R$ 99 por mês</span></span>
+            <label class="op"><input type="checkbox" id="svGarcom" checked><span class="op-txt"><span class="op-top"><b>Chamar o garçom</b><span class="preco" data-preco="garcom"></span></span>
               <small>O cliente chama pelo celular e a equipe recebe na hora no painel, com som e mapa do salão.</small></span></label>
-            <label class="op"><input type="checkbox" id="svFid" checked><span class="op-txt"><span class="op-top"><b>Programa de fidelidade</b><span class="preco">R$ 199 por mês</span></span>
-              <small>Pontos pela nota fiscal, prêmios, níveis do clube, indicação de amigos e dias com pontos em dobro.</small></span></label>
+            <label class="op"><input type="checkbox" id="svFid" checked><span class="op-txt"><span class="op-top"><b>Programa de fidelidade</b><span class="preco" data-preco="fidelidade"></span></span>
+              <small>Pontos pela nota fiscal, prêmios, níveis do clube, ranking, indicação de amigos e dias com pontos em dobro.</small></span></label>
+            <label class="op"><input type="checkbox" id="svDel"><span class="op-txt"><span class="op-top"><b>Delivery</b><span class="preco" data-preco="delivery"></span></span>
+              <small>Pedido para entrega com endereço, taxa por distância, comanda na cozinha e acompanhamento do pedido.</small></span></label>
           </div>
           <p class="dica" id="comboDica"></p>
         </div>
@@ -300,16 +302,18 @@
     </div>
 
     <div class="grupo-tab">
-      <header><span class="tipo tipo--mensal">Todo mês</span><p>Mensalidade de cada serviço. Escolha um, dois ou os três.</p></header>
+      <header><span class="tipo tipo--mensal">Todo mês</span><p>Mensalidade de cada serviço. Dois juntos: 10% de desconto. Três: 15%. Os quatro: preço fechado.</p></header>
       <div class="cards">
-        <article class="card"><h3>Página da mesa e cardápio</h3><p class="valor num">R$ 99<span>por mês</span></p>
+        <article class="card"><h3>Página da mesa e cardápio</h3><p class="valor num"><i data-preco-n="pagina"></i><span>por mês</span></p>
           <ul><li>Cardápio digital com fotos e filtros</li><li>Wi-Fi, Instagram e endereço</li><li>Avaliação no Google em um toque</li><li>Comentário anônimo para a gerência</li></ul></article>
-        <article class="card"><h3>Chamar o garçom</h3><p class="valor num">R$ 99<span>por mês</span></p>
+        <article class="card"><h3>Chamar o garçom</h3><p class="valor num"><i data-preco-n="garcom"></i><span>por mês</span></p>
           <ul><li>Chamado pelo celular, sem botão na mesa</li><li>Painel da equipe com som e alerta de atraso</li><li>Mapa do salão e fechamento da mesa</li><li>Proteção contra trote</li></ul></article>
-        <article class="card"><h3>Programa de fidelidade</h3><p class="valor num">R$ 199<span>por mês</span></p>
-          <ul><li>Pontos pela nota fiscal (QR da NFC-e)</li><li>Prêmios com foto e código para o garçom</li><li>Níveis do clube e dias com pontos em dobro</li><li>Indicação de amigos</li></ul></article>
-        <article class="card destaque"><div class="card-top"><h3>Os três juntos</h3><span class="tipo tipo--mensal">Combo</span></div><p class="valor num">R$ 329<span>por mês</span></p>
-          <ul><li>Tudo dos três serviços</li><li>R$ 68 a menos por mês que separados</li></ul></article>
+        <article class="card"><h3>Programa de fidelidade</h3><p class="valor num"><i data-preco-n="fidelidade"></i><span>por mês</span></p>
+          <ul><li>Pontos pela nota fiscal (QR da NFC-e)</li><li>Prêmios com foto e código para o garçom</li><li>Níveis do clube, ranking e pontos em dobro</li><li>Indicação de amigos</li></ul></article>
+        <article class="card"><h3>Delivery</h3><p class="valor num"><i data-preco-n="delivery"></i><span>por mês</span></p>
+          <ul><li>Pedido com endereço e taxa por distância</li><li>Comanda na cozinha</li><li>Entregador e acompanhamento do pedido</li><li>Mesmo cardápio da página da mesa</li></ul></article>
+        <article class="card destaque"><div class="card-top"><h3>Os quatro juntos</h3><span class="tipo tipo--mensal">Combo</span></div><p class="valor num"><i id="precoTodos"></i><span>por mês</span></p>
+          <ul><li>Tudo dos quatro serviços</li><li id="economiaTodos"></li></ul></article>
       </div>
     </div>
 
@@ -367,12 +371,21 @@
   </footer>
 </div>
 
+<script src="/assets/js/precos.js"></script>
 <script>
   (function () {
     const INTERNO = false;
     const $ = (s) => document.getElementById(s);
     const brl = (v) => 'R$ ' + Math.round(v).toLocaleString('pt-BR');
-    const PRECO = { pagina: 99, garcom: 99, fid: 199, combo: 329, fidSetup: 490, domSetup: 190, domMes: 19, domAno: 90 };
+    // Mensalidades vêm de /assets/js/precos.js (a mesma tabela do painel e do banco).
+    const PRECO = { fidSetup: 490, domSetup: 190, domMes: Precos.DOMINIO_MES, domAno: 90 };
+    Precos.SERVICOS.forEach((s) => {
+      document.querySelectorAll(`[data-preco="${s.id}"]`).forEach((el) => (el.textContent = `${brl(s.preco)} por mês`));
+      document.querySelectorAll(`[data-preco-n="${s.id}"]`).forEach((el) => (el.textContent = brl(s.preco)));
+    });
+    const todos = Precos.combo(Object.fromEntries(Precos.SERVICOS.map((s) => [s.id, true])));
+    $('precoTodos').textContent = brl(todos.total);
+    $('economiaTodos').textContent = `${brl(todos.economia)} a menos por mês que separados`;
     // Plaquinha padrão: preço por unidade conforme a quantidade.
     const FAIXAS = [
       { de: 1, ate: 19, valor: 59 },
@@ -396,7 +409,7 @@
     function calcular() {
       const m = Math.min(Math.max(Math.round(+$('mesasNum').value || 1), 1), 500);
       const q = Math.min(Math.max(Math.round(+$('placasNum').value || 1), 1), 1000);
-      const sv = { pagina: $('svPagina').checked, garcom: $('svGarcom').checked, fid: $('svFid').checked };
+      const sv = { pagina: $('svPagina').checked, garcom: $('svGarcom').checked, fidelidade: $('svFid').checked, delivery: $('svDel').checked };
       const qtd = Object.values(sv).filter(Boolean).length;
       const dom = document.querySelector('input[name="dom"]:checked').value;
       const meses = +document.querySelector('input[name="contrato"]:checked').value;
@@ -413,7 +426,7 @@
       if (qtd) {
         u.push(linha(`Implantação (${imp.porte})`, brl(imp.valor)));
         impTotal += imp.valor;
-        if (sv.fid) { u.push(linha('Implantação da fidelidade', brl(PRECO.fidSetup))); impTotal += PRECO.fidSetup; }
+        if (sv.fidelidade) { u.push(linha('Implantação da fidelidade', brl(PRECO.fidSetup))); impTotal += PRECO.fidSetup; }
         if (meses === 12) { u.push(linha('Desconto do contrato de 12 meses', '− ' + brl(impTotal / 2), 'desc')); impTotal /= 2; }
         totU += impTotal;
       }
@@ -432,15 +445,10 @@
       // Todo mês
       const mm = [];
       let totM = 0;
-      if (qtd === 3) {
-        mm.push(linha('Página, garçom e fidelidade (separados)', brl(PRECO.pagina + PRECO.garcom + PRECO.fid)));
-        mm.push(linha('Desconto do combo', '− ' + brl(PRECO.pagina + PRECO.garcom + PRECO.fid - PRECO.combo), 'desc'));
-        totM += PRECO.combo;
-      } else {
-        if (sv.pagina) { mm.push(linha('Página da mesa e cardápio', brl(PRECO.pagina))); totM += PRECO.pagina; }
-        if (sv.garcom) { mm.push(linha('Chamar o garçom', brl(PRECO.garcom))); totM += PRECO.garcom; }
-        if (sv.fid) { mm.push(linha('Programa de fidelidade', brl(PRECO.fid))); totM += PRECO.fid; }
-      }
+      const cb = Precos.combo(sv);
+      Precos.SERVICOS.forEach((s) => { if (sv[s.id]) mm.push(linha(s.nome, brl(s.preco))); });
+      if (cb.economia) mm.push(linha(cb.qtd === Precos.SERVICOS.length ? 'Desconto do combo (os quatro)' : `Desconto de ${Math.round(cb.desconto * 100)}% (${cb.qtd} serviços)`, '− ' + brl(cb.economia), 'desc'));
+      totM += cb.total;
       if (dom !== 'sub') { mm.push(linha('Domínio próprio', brl(PRECO.domMes))); totM += PRECO.domMes; }
       if (!mm.length) mm.push(linha('Escolha pelo menos um serviço', '—'));
       $('lnMensal').innerHTML = mm.join('');
@@ -451,8 +459,9 @@
       $('lnAnual').innerHTML = linha('Registro e renovação do domínio', brl(PRECO.domAno));
       $('totAnual').textContent = brl(PRECO.domAno);
 
-      $('comboDica').textContent = qtd === 3 ? 'Combo aplicado: R$ 329 por mês, R$ 68 a menos que separados.'
-        : qtd ? 'Com os três serviços juntos, a mensalidade fica em R$ 329 (combo).' : 'Escolha pelo menos um serviço.';
+      $('comboDica').textContent = !qtd ? 'Escolha pelo menos um serviço.'
+        : cb.economia ? `Desconto aplicado: ${brl(cb.economia)} a menos por mês.`
+        : 'Dois serviços juntos têm 10% de desconto; três, 15%; os quatro saem por ' + brl(Precos.TODOS) + '.';
 
       if (INTERNO) interno({ q, pu, placa, totPlacas, impTotal, totM, dom, meses });
     }

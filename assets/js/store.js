@@ -22,7 +22,8 @@
  *   uploadImage(blob, nome)      → URL pública da imagem (logo, capa)
  *   auth.estado()                → { temSenha } — se a senha da equipe já foi criada
  *   auth.entrar(pin) / auth.cadastrar({ nome, pin, senhaEquipe }) / auth.sessao() / auth.sair()
- *   auth.membros() / auth.remover(id) / auth.trocarSenha(senha)
+ *   auth.membros() / auth.remover(id) / auth.trocarSenha(senha)   (só administrador)
+ *   auth.adicionar({ nome, pin, admin }) / auth.definirAdmin(id, admin) (só administrador) / auth.trocarPin(id|null, pin)
  *
  *   Programa de fidelidade (módulo liberado pela Vortex; regras em settings.fidelidade):
  *   cliente: fidPrograma() / fidConsultar(cpf) / fidIndicador(codigo) / fidCadastrar(dados) /
@@ -170,12 +171,8 @@
     niveis: { ...FID_PADRAO.niveis, ...((f && f.niveis) || {}) },
   });
 
-  // Mensalidade do plano (a mesma tabela de public.plano_preco).
-  const precoPlano = (p) => {
-    const sv = (p && p.servicos) || {};
-    const base = sv.pagina && sv.garcom && sv.fidelidade ? 329 : (sv.pagina ? 99 : 0) + (sv.garcom ? 99 : 0) + (sv.fidelidade ? 199 : 0);
-    return base + (p && ['proprio', 'registro'].includes(p.dominio) ? 19 : 0);
-  };
+  // Mensalidade do plano (assets/js/precos.js, a mesma tabela de public.plano_preco).
+  const precoPlano = (p) => window.Precos.plano(p);
   // Valores iniciais, usados enquanto a equipe ainda não salvou nada pelo painel.
   // Demonstração: o restaurante de exemplo (Quintal Bistrô). Restaurante de verdade:
   // tudo em branco, e o que não for preenchido não aparece para o cliente.
@@ -615,9 +612,10 @@
       async alterarPlano(p) {
         const db = read();
         const sv = (p && p.servicos) || {};
-        if (!sv.pagina && !sv.garcom && !sv.fidelidade) throw new Error('Escolha pelo menos um serviço.');
+        const ids = window.Precos.SERVICOS.map((x) => x.id);
+        if (!ids.some((k) => sv[k])) throw new Error('Escolha pelo menos um serviço.');
         const antes = (await this.meuPlano()).plano;
-        const novo = { servicos: { pagina: !!sv.pagina, garcom: !!sv.garcom, fidelidade: !!sv.fidelidade }, mesas: Math.min(Math.max(Math.round(+p.mesas || 20), 1), 500), dominio: 'sub', contrato: 6, definido: true };
+        const novo = { servicos: Object.fromEntries(ids.map((k) => [k, !!sv[k]])), mesas: Math.min(Math.max(Math.round(+p.mesas || 20), 1), 500), dominio: 'sub', contrato: 6, definido: true };
         const cfgAtual = mergeSettings(db.configuracao, true);
         const mesas = cfgAtual.mesas.total > novo.mesas
           ? { total: novo.mesas, areas: cfgAtual.mesas.areas.filter((a) => a.de <= novo.mesas).map((a) => ({ ...a, ate: Math.min(a.ate, novo.mesas) })) }
@@ -1008,57 +1006,97 @@
       for (const c of txt) h = (h * 31 + c.charCodeAt(0)) | 0;
       return String(h);
     };
-    const equipe = () => read().equipe || { senhaHash: null, membros: [] };
+    const equipe = () => {
+      const eq = read().equipe || { senhaHash: null, membros: [] };
+      // Equipes salvas antes dos administradores: a primeira conta vira administradora.
+      if (eq.membros.length && !eq.membros.some((m) => m.admin)) eq.membros = eq.membros.map((m, i) => (i ? m : { ...m, admin: true }));
+      return eq;
+    };
     const salvar = (eq) => write({ ...read(), equipe: eq });
     const falha = (msg) => { throw new Error(msg); };
     const getSess = () => { try { return JSON.parse(localStorage.getItem(SESSAO)); } catch { return null; } };
     const abrir = (m) => { try { localStorage.setItem(SESSAO, JSON.stringify({ id: m.id })); } catch {} };
 
+    const eu = () => { const x = getSess(); return x && equipe().membros.find((m) => m.id === x.id); };
+    const soAdmin = () => { const m = eu(); if (!m) falha('Entre com seu PIN para continuar.'); if (!m.admin) falha('Só o administrador do restaurante pode fazer isso.'); return m; };
+    const pinLivre = async (pin, menos) => {
+      const h = await hash('pin:' + pin);
+      if (equipe().membros.some((x) => x.pinHash === h && x.id !== menos)) falha('Esse PIN já está em uso. Escolha outro.');
+      return h;
+    };
+
     return {
       async estado() {
-        return { temSenha: !!equipe().senhaHash };
+        return { temSenha: !!equipe().senhaHash, temEquipe: equipe().membros.length > 0 };
       },
       async entrar(pin) {
         if (!/^\d{4,8}$/.test(pin)) falha('O PIN tem de 4 a 8 números.');
         const h = await hash('pin:' + pin);
         const m = equipe().membros.find((x) => x.pinHash === h);
-        if (!m) falha('PIN não encontrado. Confira ou crie sua conta.');
+        if (!m) falha('PIN não encontrado. Confira o número ou peça ao administrador.');
         abrir(m);
-        return { nome: m.nome };
+        return { nome: m.nome, admin: !!m.admin };
       },
+      // Só a primeira conta se cadastra sozinha e vira administradora; as outras o administrador adiciona.
       async cadastrar({ nome, pin, senhaEquipe }) {
         nome = String(nome || '').trim().slice(0, 60);
         if (!nome) falha('Informe seu nome.');
         if (!/^\d{4,8}$/.test(pin)) falha('O PIN precisa ter de 4 a 8 números.');
         if (String(senhaEquipe || '').length < 6) falha('A senha da equipe tem pelo menos 6 caracteres.');
         const eq = equipe();
-        const pinHash = await hash('pin:' + pin);
-        if (eq.membros.some((x) => x.pinHash === pinHash)) falha('Esse PIN já está em uso. Escolha outro.');
+        if (eq.membros.length) falha('Este restaurante já tem administrador. Peça para ele cadastrar você no painel.');
+        const pinHash = await pinLivre(pin);
         const senhaHash = await hash('senha:' + senhaEquipe);
-        const primeiraConta = !eq.senhaHash;
-        if (!primeiraConta && eq.senhaHash !== senhaHash) falha('Senha da equipe incorreta. Peça a senha para a gerência.');
-        const m = { id: uid(), nome, pinHash, criado_em: nowIso() };
-        salvar({ senhaHash: eq.senhaHash || senhaHash, membros: [...eq.membros, m] });
+        if (eq.senhaHash && eq.senhaHash !== senhaHash) falha('Senha da equipe incorreta. Ela foi enviada pela Vortex.');
+        const m = { id: uid(), nome, pinHash, admin: true, criado_em: nowIso() };
+        salvar({ senhaHash: eq.senhaHash || senhaHash, membros: [m] });
         abrir(m);
-        return { nome, primeiraConta };
+        return { nome, admin: true, primeiraConta: true };
       },
       async sessao() {
-        const s = getSess();
-        const m = s && equipe().membros.find((x) => x.id === s.id);
-        return m ? { nome: m.nome, id: m.id } : null;
+        const m = eu();
+        return m ? { nome: m.nome, id: m.id, admin: !!m.admin } : null;
       },
       async sair() {
         try { localStorage.removeItem(SESSAO); } catch {}
       },
       async membros() {
-        const s = getSess();
-        return equipe().membros.map((m) => ({ id: m.id, nome: m.nome, criado_em: m.criado_em, voce: !!s && s.id === m.id }));
+        const x = eu();
+        return equipe().membros.map((m) => ({ id: m.id, nome: m.nome, criado_em: m.criado_em, admin: !!m.admin, voce: !!x && x.id === m.id }));
+      },
+      async adicionar({ nome, pin, admin }) {
+        soAdmin();
+        nome = String(nome || '').trim().slice(0, 60);
+        if (!nome) falha('Informe o nome da pessoa.');
+        if (!/^\d{4,8}$/.test(pin)) falha('O PIN precisa ter de 4 a 8 números.');
+        const pinHash = await pinLivre(pin);
+        const eq = equipe();
+        salvar({ ...eq, membros: [...eq.membros, { id: uid(), nome, pinHash, admin: !!admin, criado_em: nowIso() }] });
+      },
+      async trocarPin(id, pin) {
+        const x = eu();
+        if (!x) falha('Entre com seu PIN para continuar.');
+        id = id || x.id;
+        if (id !== x.id && !x.admin) falha('Só o administrador troca o PIN de outra pessoa.');
+        if (!/^\d{4,8}$/.test(pin)) falha('O PIN precisa ter de 4 a 8 números.');
+        const pinHash = await pinLivre(pin, id);
+        const eq = equipe();
+        salvar({ ...eq, membros: eq.membros.map((m) => (m.id === id ? { ...m, pinHash } : m)) });
+      },
+      async definirAdmin(id, admin) {
+        soAdmin();
+        const eq = equipe();
+        if (!admin && eq.membros.filter((m) => m.admin && m.id !== id).length === 0) falha('O restaurante precisa de pelo menos um administrador.');
+        salvar({ ...eq, membros: eq.membros.map((m) => (m.id === id ? { ...m, admin: !!admin } : m)) });
       },
       async remover(id) {
+        const x = soAdmin();
+        if (id === x.id) falha('Você não pode remover a si mesmo.');
         const eq = equipe();
         salvar({ ...eq, membros: eq.membros.filter((m) => m.id !== id) });
       },
       async trocarSenha(senha) {
+        soAdmin();
         if (String(senha || '').length < 6) falha('A senha da equipe precisa ter pelo menos 6 caracteres.');
         salvar({ ...equipe(), senhaHash: await hash('senha:' + senha) });
       },
@@ -1368,12 +1406,12 @@
         async entrar(pin) {
           const r = await this.chamar('entrar', { pin });
           must(await sb.auth.setSession(r.sessao));
-          return { nome: r.nome };
+          return { nome: r.nome, admin: !!r.admin };
         },
         async cadastrar({ nome, pin, senhaEquipe }) {
           const r = await this.chamar('cadastrar', { nome, pin, senhaEquipe });
           must(await sb.auth.setSession(r.sessao));
-          return { nome: r.nome, primeiraConta: r.primeiraConta };
+          return { nome: r.nome, admin: !!r.admin, primeiraConta: r.primeiraConta };
         },
         async sessao() {
           const { data } = await sb.auth.getSession();
@@ -1384,7 +1422,12 @@
             await sb.auth.signOut();
             return null;
           }
-          return { nome: (u.user.user_metadata && u.user.user_metadata.nome) || 'Equipe', id: u.user.id };
+          const { data: m } = await sb.from('equipe_membros').select('nome, admin').eq('user_id', u.user.id).maybeSingle();
+          if (!m) {
+            await sb.auth.signOut();
+            return null;
+          }
+          return { nome: m.nome || 'Equipe', id: u.user.id, admin: !!m.admin };
         },
         async sair() {
           await sb.auth.signOut();
@@ -1394,6 +1437,15 @@
         },
         async remover(id) {
           await this.chamar('remover', { id }, true);
+        },
+        async adicionar({ nome, pin, admin }) {
+          await this.chamar('adicionar', { nome, pin, admin: !!admin }, true);
+        },
+        async trocarPin(id, pin) {
+          await this.chamar('trocar_pin', { id: id || undefined, pin }, true);
+        },
+        async definirAdmin(id, admin) {
+          await this.chamar('admin', { id, admin: !!admin }, true);
         },
         async trocarSenha(senha) {
           await this.chamar('trocar_senha', { senha }, true);

@@ -195,9 +195,12 @@
       </form>`;
   }
 
+  // Sino: precisa do serviço no plano e de estar ligado nos ajustes (Widgets → Sino).
+  const sinoLigado = () => temServico('garcom') && live.mesas.sino !== false;
+
   function renderGate() {
     const gate = $('#callGate');
-    $('#call').hidden = !mesa || !temServico('garcom');
+    $('#call').hidden = !mesa || !sinoLigado();
     if (!mesa) return;
     const pend = sess && sess.status === 'pendente';
     gate.hidden = liberado();
@@ -1005,7 +1008,7 @@
   function boot() {
     if (mesa && !(mesa >= 1 && mesa <= live.mesas.total)) mesa = null;
     // Chamar o garçom fora do plano: some o sino e a escolha da mesa.
-    const semGarcom = !temServico('garcom');
+    const semGarcom = !sinoLigado();
     $('#call').hidden = semGarcom;
     document.querySelector('.plate-stage').hidden = semGarcom;
     renderTop();

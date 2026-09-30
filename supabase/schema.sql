@@ -122,7 +122,8 @@ create table if not exists private.equipe_senha (
 -- ---------------------------------------------------------------------------
 -- Plano contratado: serviços (página + cardápio, chamar o garçom, fidelidade),
 -- mesas, domínio e contrato. Sem plano definido = tudo liberado, como antes.
--- A mensalidade segue a tabela de preços (combo dos três = R$ 329).
+-- A mensalidade segue a tabela de preços (assets/js/precos.js): 49 + 69 + 199 + 149,
+-- 2 serviços −10%, 3 −15% (arredondado para terminar em 9), os quatro por R$ 399.
 -- ---------------------------------------------------------------------------
 alter table public.restaurantes add column if not exists plano jsonb;
 
@@ -135,13 +136,15 @@ begin
     'servicos', jsonb_build_object(
       'pagina', coalesce(s ->> 'pagina', '') = 'true',
       'garcom', coalesce(s ->> 'garcom', '') = 'true',
-      'fidelidade', coalesce(s ->> 'fidelidade', '') = 'true'),
+      'fidelidade', coalesce(s ->> 'fidelidade', '') = 'true',
+      'delivery', coalesce(s ->> 'delivery', '') = 'true'),
     'mesas', least(greatest(coalesce(public.num_ou(p ->> 'mesas', 20), 20), 1), 500)::int,
     'dominio', case when p ->> 'dominio' in ('proprio', 'registro') then p ->> 'dominio' else 'sub' end,
     'contrato', case when p ->> 'contrato' = '12' then 12 else 6 end,
     'inicio', case when coalesce(p ->> 'inicio', '') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' then p ->> 'inicio' end,
     'definido', true);
-  if not (n -> 'servicos' @> '{"pagina": true}' or n -> 'servicos' @> '{"garcom": true}' or n -> 'servicos' @> '{"fidelidade": true}') then
+  if not (n -> 'servicos' @> '{"pagina": true}' or n -> 'servicos' @> '{"garcom": true}' or n -> 'servicos' @> '{"fidelidade": true}'
+          or n -> 'servicos' @> '{"delivery": true}') then
     raise exception 'Escolha pelo menos um serviço.';
   end if;
   return n;
@@ -151,7 +154,7 @@ end $$;
 create or replace function public.plano_de(p_restaurante uuid) returns jsonb
 language sql stable security definer set search_path = public as $$
   select case when plano is null then jsonb_build_object(
-      'servicos', jsonb_build_object('pagina', true, 'garcom', true, 'fidelidade', coalesce(modulos ->> 'fidelidade', '') = 'true'),
+      'servicos', jsonb_build_object('pagina', true, 'garcom', true, 'fidelidade', coalesce(modulos ->> 'fidelidade', '') = 'true', 'delivery', false),
       'mesas', 500, 'dominio', 'sub', 'contrato', 6, 'inicio', null, 'definido', false)
     else plano end
   from public.restaurantes where id = p_restaurante;
@@ -159,14 +162,22 @@ $$;
 
 -- Mensalidade do plano, em reais.
 create or replace function public.plano_preco(p jsonb) returns numeric
-language sql immutable set search_path = public as $$
-  select (case when coalesce(p -> 'servicos' ->> 'pagina', '') = 'true' and coalesce(p -> 'servicos' ->> 'garcom', '') = 'true'
-                and coalesce(p -> 'servicos' ->> 'fidelidade', '') = 'true' then 329
-              else (case when coalesce(p -> 'servicos' ->> 'pagina', '') = 'true' then 99 else 0 end)
-                 + (case when coalesce(p -> 'servicos' ->> 'garcom', '') = 'true' then 99 else 0 end)
-                 + (case when coalesce(p -> 'servicos' ->> 'fidelidade', '') = 'true' then 199 else 0 end) end)
-       + (case when p ->> 'dominio' in ('proprio', 'registro') then 19 else 0 end);
-$$;
+language plpgsql immutable set search_path = public as $$
+declare
+  sv jsonb := coalesce(p -> 'servicos', '{}'::jsonb);
+  soma numeric := 0; n int := 0; total numeric;
+begin
+  if coalesce(sv ->> 'pagina', '') = 'true' then soma := soma + 49; n := n + 1; end if;
+  if coalesce(sv ->> 'garcom', '') = 'true' then soma := soma + 69; n := n + 1; end if;
+  if coalesce(sv ->> 'fidelidade', '') = 'true' then soma := soma + 199; n := n + 1; end if;
+  if coalesce(sv ->> 'delivery', '') = 'true' then soma := soma + 149; n := n + 1; end if;
+  total := case
+    when n = 4 then 399
+    when n = 3 then least(soma, floor(soma * 0.85 / 10) * 10 + 9)
+    when n = 2 then least(soma, floor(soma * 0.90 / 10) * 10 + 9)
+    else soma end;
+  return total + (case when p ->> 'dominio' in ('proprio', 'registro') then 19 else 0 end);
+end $$;
 
 create or replace function public.plano_tem(p_restaurante uuid, p_servico text) returns boolean
 language sql stable security definer set search_path = public as $$
@@ -267,6 +278,12 @@ create table if not exists public.equipe_membros (
 );
 alter table public.equipe_membros enable row level security;
 revoke all on public.equipe_membros from anon, authenticated;
+-- Administrador: adiciona, remove e troca o PIN das pessoas, e muda o plano.
+-- A primeira conta de cada restaurante é administradora.
+alter table public.equipe_membros add column if not exists admin boolean not null default false;
+update public.equipe_membros m set admin = true
+ where m.id in (select distinct on (restaurante_id) id from public.equipe_membros order by restaurante_id, criado_em)
+   and not exists (select 1 from public.equipe_membros x where x.restaurante_id = m.restaurante_id and x.admin);
 
 -- Restaurante de quem está logado (null = não é da equipe de ninguém).
 create or replace function public.meu_restaurante() returns uuid
@@ -276,7 +293,14 @@ $$;
 revoke execute on function public.meu_restaurante() from public, anon;
 grant execute on function public.meu_restaurante() to authenticated;
 
-grant select (id, restaurante_id, nome, criado_em) on public.equipe_membros to authenticated;
+grant select (id, restaurante_id, nome, criado_em, admin) on public.equipe_membros to authenticated;
+
+create or replace function public.eu_admin() returns boolean
+language sql stable security definer set search_path = public as $$
+  select coalesce((select admin from public.equipe_membros where user_id = auth.uid()), false);
+$$;
+revoke execute on function public.eu_admin() from public, anon;
+grant execute on function public.eu_admin() to authenticated;
 drop policy if exists "equipe ve a equipe" on public.equipe_membros;
 create policy "equipe ve a equipe" on public.equipe_membros
   for select to authenticated using (restaurante_id = public.meu_restaurante());
@@ -2019,6 +2043,7 @@ language plpgsql security definer set search_path = public as $$
 declare r uuid := public.meu_restaurante(); atual jsonb;
 begin
   if r is null then raise exception 'Acesso negado.'; end if;
+  if not public.eu_admin() then raise exception 'Só o administrador do restaurante pode mudar o plano.'; end if;
   atual := public.plano_de(r);
   return public.plano_aplicar(r, jsonb_build_object('servicos', p_plano -> 'servicos', 'mesas', p_plano -> 'mesas',
     'dominio', atual -> 'dominio', 'contrato', atual -> 'contrato', 'inicio', atual -> 'inicio'),

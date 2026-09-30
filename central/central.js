@@ -88,14 +88,10 @@
     openSheet('sh');
   }
   /* ---------- Planos: serviços, mesas e mensalidade (a mesma tabela de public.plano_preco) ---------- */
-  const SERVICOS = [['pagina', 'Página e cardápio', 99], ['garcom', 'Chamar o garçom', 99], ['fidelidade', 'Fidelidade', 199]];
+  // Tabela em assets/js/precos.js (a mesma do banco): 2 serviços −10%, 3 −15%, os quatro por R$ 399.
+  const SERVICOS = Precos.SERVICOS.map((s) => [s.id, s.nome, s.preco]);
   const reais = (v) => 'R$ ' + Number(v || 0).toLocaleString('pt-BR');
-  function planoPreco(p) {
-    if (!p) return 0;
-    const sv = p.servicos || {};
-    const base = sv.pagina && sv.garcom && sv.fidelidade ? 329 : SERVICOS.reduce((t, [k, , v]) => t + (sv[k] ? v : 0), 0);
-    return base + (['proprio', 'registro'].includes(p.dominio) ? 19 : 0);
-  }
+  const planoPreco = (p) => (p ? Precos.plano(p) : 0);
   const planoServicos = (p) => SERVICOS.filter(([k]) => p && p.servicos && p.servicos[k]).map(([, n]) => n);
   const planoResumo = (p) => (p ? `${planoServicos(p).join(' · ')} · ${p.mesas} mesas · ${reais(planoPreco(p))}/mês` : 'Plano não definido');
   // Plano para o formulário: o salvo ou, sem plano, o que o restaurante usa hoje.
@@ -126,8 +122,8 @@
         const r = db.restaurantes.find((x) => x.id === rid);
         if (!r) throw new Error('Restaurante não encontrado.');
         const sv = plano.servicos || {};
-        if (!sv.pagina && !sv.garcom && !sv.fidelidade) throw new Error('Escolha pelo menos um serviço.');
-        const novo = { servicos: { pagina: !!sv.pagina, garcom: !!sv.garcom, fidelidade: !!sv.fidelidade }, mesas: Math.min(Math.max(Math.round(+plano.mesas || 20), 1), 500),
+        if (!SERVICOS.some(([k]) => sv[k])) throw new Error('Escolha pelo menos um serviço.');
+        const novo = { servicos: Object.fromEntries(SERVICOS.map(([k]) => [k, !!sv[k]])), mesas: Math.min(Math.max(Math.round(+plano.mesas || 20), 1), 500),
           dominio: ['proprio', 'registro'].includes(plano.dominio) ? plano.dominio : 'sub', contrato: +plano.contrato === 12 ? 12 : 6, definido: true };
         (db.mudancas = db.mudancas || []).unshift({ id: id(), restaurante_id: rid, antes: r.plano || null, depois: novo, mensal_antes: r.plano ? planoPreco(r.plano) : null,
           mensal_depois: planoPreco(novo), origem: 'central', por: 'demonstração', visto: false, criado_em: new Date().toISOString() });
@@ -663,7 +659,7 @@
         <label class="field"><span>Contrato</span><select class="input" id="rContrato">
           <option value="6" ${+p.contrato !== 12 ? 'selected' : ''}>6 meses</option><option value="12" ${+p.contrato === 12 ? 'selected' : ''}>12 meses</option></select></label>
       </div>
-      <p class="plano-preco">Mensalidade: <b id="rPreco">${reais(planoPreco(p))}</b> <span class="muted">(combo dos três: R$ 329)</span></p>
+      <p class="plano-preco">Mensalidade: <b id="rPreco">${reais(planoPreco(p))}</b> <span class="muted">(2 serviços −10%, 3 −15%, os quatro: R$ ${Precos.TODOS})</span></p>
     </fieldset>`;
   }
   const planoDoForm = () => ({

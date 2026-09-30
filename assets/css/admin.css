@@ -779,3 +779,12 @@
 .fid-ocr-mira { position: absolute; inset: 36% 8%; border: 3px solid rgba(255, 255, 255, .9); border-radius: 12px; box-shadow: 0 0 0 999px rgba(0, 0, 0, .35); }
 .fid-ocr-msg { color: var(--ink-2); }
 .fid-ocr-msg.is-ok { color: var(--ink); }
+
+/* Equipe: ações do administrador */
+.team-row { flex-wrap: wrap; }
+.team-id { flex: 1 1 140px; min-width: 0; }
+.team-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-left: auto; }
+.team-add { padding-top: 6px; border-top: 1px solid var(--line); }
+.team-add h3 { font-size: 15px; }
+.team-add-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+@media (max-width: 520px) { .team-add-row { grid-template-columns: 1fr; } }
