@@ -681,36 +681,97 @@
     </form>`;
     openSheet('sh-fp');
   }
-  // Valor da nota lido da imagem: primeiro o quadro em que o QR foi achado, depois a câmera no total.
+  // Valor da nota lido da imagem: primeiro o quadro em que o QR foi achado, depois a câmera no total
+  // (com "Ler agora" e lanterna) ou uma foto tirada pela câmera do aparelho.
   let pararCam = null;
+  const O = { estado: '', lanterna: false, temLanterna: false };
   const pararOcr = () => { if (pararCam) pararCam(); pararCam = null; };
-  function ocrMsg(html, camera) {
+  function ocrAcoes() {
+    const ocupado = O.estado === 'lendo';
+    const cam = O.estado === 'camera';
+    if (O.estado === 'achou' || O.estado === '') return '';
+    return `${cam ? `<button type="button" class="btn btn-line" data-fp-capturar>${icon('search')} Ler agora</button>` : ''}
+      ${cam && O.temLanterna ? `<button type="button" class="btn btn-line ${O.lanterna ? 'is-on' : ''}" data-fp-lanterna aria-pressed="${O.lanterna}">${icon('zap')} ${O.lanterna ? 'Desligar luz' : 'Lanterna'}</button>` : ''}
+      <label class="btn btn-line ${ocupado ? 'is-disabled' : ''}">${icon('camera')} Tirar foto do valor<input type="file" accept="image/*" capture="environment" id="fpOcrFoto" hidden ${ocupado ? 'disabled' : ''}></label>
+      ${!cam && !ocupado && window.OcrNota ? '<button type="button" class="btn btn-quiet" data-fp-camera>Apontar a câmera</button>' : ''}`;
+  }
+  function ocrMsg(html, estado) {
+    O.estado = estado;
     const m = $('#fpOcrMsg');
     const box = $('#fpLancar2 .fid-ocr');
+    const ac = $('#fpLancar2 .fid-ocr-acoes');
     if (m) m.innerHTML = html;
-    if (box) box.hidden = !camera;
+    if (box) box.hidden = estado !== 'camera';
+    if (ac) ac.innerHTML = ocrAcoes();
   }
+  const formDoQr = (qr) => { const f = $('#fpLancar2'); return f && f.dataset.qr === qr ? f : null; };
   function ocrAchou(qr, v) {
-    const f = $('#fpLancar2');
-    if (!f || f.dataset.qr !== qr) return;
+    const f = formDoQr(qr);
+    if (!f) return;
     pararOcr();
     if (!f.dataset.digitou) f.elements.valor.value = v.toFixed(2).replace('.', ',');
-    ocrMsg(`Valor lido da nota: <b>${brl(v)}</b>. Confira antes de creditar.`, false);
+    ocrMsg(`Valor lido da nota: <b>${brl(v)}</b>. Confira antes de creditar.`, 'achou');
   }
   async function ocrValor(qr, quadro) {
-    if (!window.OcrNota) return ocrMsg('Digite o valor total da nota.', false);
+    if (!window.OcrNota) return ocrMsg('Digite o valor total da nota.', '');
     if (quadro) {
       const v = await OcrNota.lerValor(quadro, quadro.naturalWidth || quadro.width, quadro.naturalHeight || quadro.height);
       if (v) return ocrAchou(qr, v);
     }
-    const f = $('#fpLancar2');
-    if (!f || f.dataset.qr !== qr) return;
-    ocrMsg('Aponte a câmera para o <b>VALOR A PAGAR</b> da nota, ou digite o valor.', true);
+    ocrCamera(qr);
+  }
+  const DICA_CAM = 'Aponte a câmera para o <b>VALOR A PAGAR</b>, bem de perto. Se demorar, toque em <b>Ler agora</b>, tire uma foto ou digite o valor.';
+  function ocrCamera(qr) {
+    const f = formDoQr(qr);
+    if (!f) return;
     pararOcr();
+    O.lanterna = false;
+    O.temLanterna = false;
+    ocrMsg(DICA_CAM, 'camera');
     pararCam = OcrNota.camera(f.querySelector('video'), {
       achou: (v) => ocrAchou(qr, v),
-      aviso: (a) => { if (a === 'sem-camera' || a === 'sem-ocr') ocrMsg('Digite o valor total da nota.', false); },
+      aviso: (a) => {
+        if (!formDoQr(qr)) return;
+        if (a === 'camera' && pararCam) { O.temLanterna = pararCam.temLanterna(); if (O.estado === 'camera') ocrMsg(DICA_CAM, 'camera'); }
+        if (a === 'sem-camera' || a === 'sem-ocr') { pararOcr(); ocrMsg('Não deu para usar a câmera. Tire uma foto do valor ou digite o total.', 'falhou'); }
+      },
     });
+  }
+  async function ocrCapturar() {
+    const f = $('#fpLancar2');
+    const cam = pararCam;
+    if (!f || !cam) return;
+    const qr = f.dataset.qr;
+    const btn = f.querySelector('[data-fp-capturar]');
+    if (btn) btn.disabled = true;
+    $('#fpOcrMsg').innerHTML = 'Lendo a imagem com calma… segure a nota parada.';
+    const v = await cam.capturar().catch(() => null);
+    if (!formDoQr(qr) || O.estado !== 'camera') return;
+    if (v) return ocrAchou(qr, v);
+    ocrMsg('Ainda não deu. Chegue mais perto do <b>VALOR A PAGAR</b>, deixe a nota reta e acenda a luz — ou tire uma foto.', 'camera');
+  }
+  async function ocrLanterna() {
+    if (!pararCam) return;
+    if (await pararCam.lanterna(!O.lanterna)) O.lanterna = !O.lanterna;
+    const ac = $('#fpLancar2 .fid-ocr-acoes');
+    if (ac) ac.innerHTML = ocrAcoes();
+  }
+  async function ocrFoto(arquivo) {
+    const f = $('#fpLancar2');
+    if (!f || !arquivo || !window.OcrNota) return;
+    const qr = f.dataset.qr;
+    pararOcr();
+    ocrMsg('Lendo a foto…', 'lendo');
+    let v = null;
+    try {
+      const img = await OcrNota.abrirFoto(arquivo);
+      v = await OcrNota.lerFoto(img, { progresso: (n, de) => { const m = formDoQr(qr) && $('#fpOcrMsg'); if (m) m.innerHTML = `Lendo a foto… (${n} de ${de})`; } });
+    } catch (e) {
+      console.error(e);
+    }
+    if (!formDoQr(qr)) return;
+    if (v) return ocrAchou(qr, v);
+    ocrMsg('Não achamos o valor nessa foto. Tente outra mais de perto, com a nota reta e bem iluminada (use o flash), ou digite o total.', 'nada');
   }
   function depoisDoQr(cpf, qr, quadro) {
     const chave = F.chaveDoTexto(qr);
@@ -721,10 +782,12 @@
       ${/^https?:/i.test(qr) ? `<a class="link" href="${esc(qr)}" target="_blank" rel="noopener">${icon('external')} Conferir na SEFAZ</a>` : ''}
       <div class="fid-ocr" hidden><video playsinline muted></video><span class="fid-ocr-mira" aria-hidden="true"></span></div>
       <p class="fid-ocr-msg" id="fpOcrMsg" aria-live="polite">${doQr ? `Valor lido do QR: <b>${brl(doQr)}</b>. Confira antes de creditar.` : 'Procurando o valor na nota…'}</p>
+      <div class="fid-ocr-acoes"></div>
       <label class="field"><span>Valor total da nota</span><input class="input mono" name="valor" inputmode="decimal" placeholder="0,00" value="${doQr ? doQr.toFixed(2).replace('.', ',') : ''}" required></label>
       <p class="form-error" id="fpLancarErro" role="alert"></p>
       <button type="submit" class="btn btn-cobalt btn-block">${icon('check')} Creditar pontos</button>
     </form>`;
+    O.estado = doQr ? 'achou' : 'lendo';
     openSheet('sh-fp');
     if (!doQr) ocrValor(qr, quadro);
   }
@@ -743,6 +806,9 @@
       P.ranking = null;
       return ctx.rerender();
     }
+    if (t.closest('[data-fp-capturar]')) return ocrCapturar();
+    if (t.closest('[data-fp-lanterna]')) return ocrLanterna();
+    if (t.closest('[data-fp-camera]')) { const f = $('#fpLancar2'); return f && ocrCamera(f.dataset.qr); }
     const cli = t.closest('[data-fp-cliente]');
     if (cli) return abrirCliente(cli.dataset.fpCliente);
     const ent = t.closest('[data-fp-entregar]') || t.closest('[data-fp-cancelar]');
@@ -899,6 +965,11 @@
 
   async function onChange(e) {
     const t = e.target;
+    if (t.id === 'fpOcrFoto') {
+      const arq = t.files && t.files[0];
+      t.value = '';
+      return ocrFoto(arq);
+    }
     if (t.closest('#fpRegras')) {
       marcarSujo();
       if (t.name === 'nvBase') $('.fp-meses').hidden = t.value !== 'meses';
