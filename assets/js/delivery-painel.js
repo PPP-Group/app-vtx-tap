@@ -58,7 +58,7 @@
     const atraso = p.status === 'recebido' && minDesde(p.criado_em) >= 5;
     return `<article class="dp-card dp-card--${p.status} ${atraso ? 'is-atrasado' : ''}" data-dp-id="${esc(p.id)}">
       <header><b class="dp-num">#${p.numero}</b><span class="muted">${hora(p.criado_em)} · há ${minDesde(p.criado_em)} min</span><b class="dp-total">${brl(p.total)}</b></header>
-      <div class="dp-cli"><b>${esc(p.cliente.nome)}</b> <a href="https://wa.me/55${esc(String(p.cliente.telefone).replace(/\D/g, ''))}" target="_blank" rel="noopener">${esc(tel(p.cliente.telefone))}</a></div>
+      <div class="dp-cli"><b>${esc(p.cliente.nome)}</b>${p.cpf ? ` <span class="dp-fid" title="Os pontos do clube entram quando marcar Entregue">${icon('gift')} pontos</span>` : ''} <a href="https://wa.me/55${esc(String(p.cliente.telefone).replace(/\D/g, ''))}" target="_blank" rel="noopener">${esc(tel(p.cliente.telefone))}</a></div>
       <ul class="dp-itens">${p.itens.map((x) => `<li><b>${x.qtd}×</b> ${esc(x.nome)}${x.opcoes && x.opcoes.length ? `<small class="dp-op">${esc(x.opcoes.join(' · '))}</small>` : ''}${x.obs ? `<small>${esc(x.obs)}</small>` : ''}</li>`).join('')}</ul>
       ${p.obs ? `<p class="dp-obs">${icon('msg')} ${esc(p.obs)}</p>` : ''}
       <p class="dp-end"><a href="${esc(maps)}" target="_blank" rel="noopener">${icon('pin')} ${esc([e.rua, e.numero].filter(Boolean).join(', '))}${e.complemento ? ` · ${esc(e.complemento)}` : ''} · ${esc(e.bairro || '')}</a>
@@ -87,7 +87,7 @@
         return `<section class="dp-col"><h2>${t} <span class="muted">${lista.length}</span></h2>${lista.length ? lista.map(cartao).join('') : '<p class="muted dp-vazio">Nenhum pedido.</p>'}</section>`;
       }).join('')}</div>
       ${fim.length ? `<section class="panel stack dp-fim"><button type="button" class="link" data-dp-fim>${P.finalizados ? 'Esconder' : 'Ver'} os finalizados de hoje (${fim.length})</button>
-        ${P.finalizados ? `<ul class="dp-fim-lista">${fim.map((p) => `<li><b>#${p.numero}</b> ${esc(p.cliente.nome)} · ${brl(p.total)} · <span class="dp-st dp-st--${p.status}">${p.status === 'entregue' ? 'Entregue' : 'Cancelado'}</span> ${hora(p.atualizado_em)}${p.motivo ? ` · ${esc(p.motivo)}` : ''}</li>`).join('')}</ul>` : ''}</section>` : ''}`;
+        ${P.finalizados ? `<ul class="dp-fim-lista">${fim.map((p) => `<li><b>#${p.numero}</b> ${esc(p.cliente.nome)} · ${brl(p.total)} · <span class="dp-st dp-st--${p.status}">${p.status === 'entregue' ? 'Entregue' : 'Cancelado'}</span> ${hora(p.atualizado_em)}${p.fid_pontos != null && ['creditado', 'nota'].includes(p.fid_situacao) ? ` · ${icon('gift')} +${p.fid_pontos} pts` : p.fid_situacao === 'sem_cadastro' ? ` · ${icon('gift')} CPF fora do clube` : ''}${p.motivo ? ` · ${esc(p.motivo)}` : ''}</li>`).join('')}</ul>` : ''}</section>` : ''}`;
   }
 
   /* ---------- Ajustes ---------- */

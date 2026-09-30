@@ -117,23 +117,28 @@
         return u.href;
       }
 
-      // "ciencia", "ciencia.vortexsystems.tech" ou o link inteiro do site/painel → "ciencia".
-      function slugDe(texto) {
-        var t = String(texto || '').trim().toLowerCase().replace(/^https?:\/\//, '').split(/[\/?#\s]/)[0];
+      // O que a equipe digitou → { slug } ou { dominio }:
+      //   "ciencia", "ciencia.vortexsystems.tech" ou o link do site/painel → { slug: "ciencia" };
+      //   "cardapio.seurestaurante.com.br" (domínio próprio do restaurante) → { dominio: "cardapio.seurestaurante.com.br" }.
+      function enderecoDe(texto) {
+        var t = String(texto || '').trim().toLowerCase().replace(/^https?:\/\//, '').split(/[\/?#\s:]/)[0].replace(/\.+$/, '');
         if (BASE && t.slice(-(BASE.length + 1)) === '.' + BASE) t = t.slice(0, -(BASE.length + 1));
+        else if (t.indexOf('.') > 0 && t !== BASE && t !== String(env.CENTRAL_HOST || '').toLowerCase()) {
+          return /^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]$/.test(t) ? { dominio: t } : null;
+        }
         t = t.split('.')[0];
-        return /^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$/.test(t) ? t : '';
+        return /^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$/.test(t) ? { slug: t } : null;
       }
-      function buscarRestaurante(slug) {
-        if (temServidor) return rpc('restaurante_publico', { p_slug: slug });
-        var r = (lerDemo().restaurantes || []).find(function (x) { return x.slug === slug && x.ativo !== false; });
+      function buscarRestaurante(end) {
+        if (temServidor) return end.dominio ? rpc('restaurante_por_dominio', { p_host: end.dominio }) : rpc('restaurante_publico', { p_slug: end.slug });
+        var r = (lerDemo().restaurantes || []).find(function (x) { return x.slug === end.slug && x.ativo !== false; });
         return Promise.resolve(r ? { slug: r.slug, nome: r.nome } : null);
       }
 
-      function irParaMesa(slug) {
-        // Abre o painel do restaurante já na escolha da mesa desta plaquinha.
+      function irParaMesa(slug, dominio) {
+        // Abre o painel do restaurante já na escolha da mesa desta plaquinha (pelo domínio próprio, se estiver no ar).
         box.innerHTML = '<div class="dot" aria-hidden="true"></div><h1>Abrindo o painel…</h1><p>Entre com o seu PIN e escolha a mesa.</p>';
-        location.replace(site(slug, '/admin/', { vincular: codigo }));
+        location.replace(site(slug, '/admin/', { vincular: codigo }, dominio));
       }
 
       function telaAtivar(msg) {
@@ -146,12 +151,12 @@
             '<p style="font-size:13px">Cliente? Esta mesa ainda está sendo preparada. Chame o garçom.</p>';
           box.querySelector('#nomeR').textContent = salvo.nome || salvo.slug;
           box.querySelector('code').textContent = codigo;
-          box.querySelector('#ok').onclick = function () { irParaMesa(salvo.slug); };
+          box.querySelector('#ok').onclick = function () { irParaMesa(salvo.slug, salvo.dominio); };
           box.querySelector('#outro').onclick = function () { lembrar(null); telaAtivar(); };
           return;
         }
         box.innerHTML = '<div class="ico" aria-hidden="true">＋</div><h1>Plaquinha nova</h1>' +
-          '<p>Se você é da equipe, digite o <b>endereço do restaurante</b>. Depois é só entrar com o seu PIN e escolher a mesa.</p><code></code>' +
+          '<p>Se você é da equipe, digite o <b>endereço do restaurante</b> (ou o domínio próprio dele, como cardapio.seurestaurante.com.br). Depois é só entrar com o seu PIN e escolher a mesa.</p><code></code>' +
           '<form id="f" novalidate><label for="rest" class="sr">Endereço do restaurante</label>' +
           '<div class="campo"><input id="rest" class="slug" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="80" placeholder="restaurante" inputmode="url">' +
           (BASE ? '<span class="base"></span>' : '') + '</div>' +
@@ -160,18 +165,25 @@
         box.querySelector('code').textContent = codigo;
         if (BASE) box.querySelector('.base').textContent = '.' + BASE;
         var inp = box.querySelector('#rest');
+        // Digitou um domínio inteiro: o ".vortexsystems.tech" do lado some.
+        inp.oninput = function () { var b = box.querySelector('.base'); if (b) b.hidden = inp.value.indexOf('.') >= 0; };
         var erro = box.querySelector('#erro');
         erro.textContent = msg || '';
         box.querySelector('#f').onsubmit = function (ev) {
           ev.preventDefault();
-          var slug = slugDe(inp.value);
+          var end = enderecoDe(inp.value);
           var btn = this.querySelector('button');
-          if (!slug) { erro.textContent = 'Digite o endereço do restaurante (o nome antes de .' + (BASE || 'seu-dominio') + ').'; return inp.focus(); }
+          if (!end) { erro.textContent = 'Digite o endereço do restaurante (o nome antes de .' + (BASE || 'seu-dominio') + ' ou o domínio próprio).'; return inp.focus(); }
           btn.disabled = true;
-          buscarRestaurante(slug).then(function (r) {
-            if (!r) { btn.disabled = false; erro.textContent = 'Não achamos esse restaurante. Confira o endereço.'; return inp.focus(); }
-            lembrar({ slug: slug, nome: (r.restaurante && r.restaurante.nome) || r.nome || slug });
-            irParaMesa(slug);
+          buscarRestaurante(end).then(function (r) {
+            if (!r || !r.slug) {
+              btn.disabled = false;
+              erro.textContent = end.dominio ? 'Não achamos esse domínio. Ele precisa estar configurado no painel (Ajustes › Endereço). Ou digite o endereço .' + (BASE || 'seu-dominio') + '.' : 'Não achamos esse restaurante. Confira o endereço.';
+              return inp.focus();
+            }
+            var dominio = r.dominio || null;
+            lembrar({ slug: r.slug, dominio: dominio, nome: (r.restaurante && r.restaurante.nome) || r.nome || r.slug });
+            irParaMesa(r.slug, dominio);
           }).catch(function () {
             btn.disabled = false;
             erro.textContent = 'Sem conexão. Confira a internet e tente de novo.';

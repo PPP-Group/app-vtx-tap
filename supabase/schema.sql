@@ -1411,12 +1411,28 @@ begin
 end $$;
 
 -- Credita uma nota pendente com o valor conferido. Devolve os pontos.
+-- Se for a nota de um pedido do delivery que já deu pontos (mesmo CPF, mesmo valor, emitida perto da hora
+-- do pedido), a nota é ligada ao pedido e recusada com o motivo: a mesma compra não conta duas vezes.
 create or replace function public.fid_creditar(p_chave text, p_valor numeric, p_emitida timestamptz, p_por text) returns int
 language plpgsql security definer set search_path = public as $$
-declare n public.fid_notas; calc jsonb; pts int;
+declare n public.fid_notas; calc jsonb; pts int; v_ped uuid; v_num int; quando timestamptz;
 begin
   select * into n from public.fid_notas where chave = p_chave for update;
   if not found or n.status <> 'pendente' then return null; end if;
+  quando := coalesce(p_emitida, n.emitida_em, n.lida_em);
+  select p.id, p.numero into v_ped, v_num from public.pedidos p
+   where p.restaurante_id = n.restaurante_id and p.cpf = n.cpf and p.fid_situacao = 'creditado' and p.nota_chave is null
+     and (abs(p.total - p_valor) <= 0.05 or abs(p.subtotal - p_valor) <= 0.05)
+     and quando between p.criado_em - interval '1 hour' and p.criado_em + interval '12 hours'
+   order by abs(extract(epoch from quando - p.criado_em)) limit 1 for update;
+  if v_ped is not null then
+    update public.pedidos set nota_chave = p_chave where id = v_ped;
+    update public.fid_notas
+       set status = 'recusada', valor = p_valor, emitida_em = quando, conferida_em = now(), conferida_por = left(p_por, 60),
+           motivo = 'Esta compra já ganhou pontos pelo pedido nº ' || v_num || ' do delivery.'
+     where chave = p_chave;
+    return null;
+  end if;
   calc := public.fid_calcular(n.restaurante_id, p_valor, coalesce(p_emitida, n.lida_em), n.cpf);
   pts := (calc ->> 'pontos')::int;
   update public.fid_notas
@@ -1465,6 +1481,9 @@ begin
     return jsonb_build_object('status', 'recusada', 'motivo', v_motivo);
   end if;
   pts := public.fid_creditar(p_chave, x.valor, x.emitida_em, 'XML da nota');
+  if pts is null then
+    return jsonb_build_object('status', 'recusada', 'motivo', (select motivo from public.fid_notas where chave = p_chave));
+  end if;
   return jsonb_build_object('status', 'creditada', 'pontos', pts, 'valor', x.valor);
 end $$;
 
@@ -1643,6 +1662,11 @@ begin
   -- Notas com este CPF que a equipe já importou entram na hora.
   perform public.fid_auto_creditar(x.chave) from public.fid_xml x
    where x.restaurante_id = p_restaurante and x.cpf = v_cpf;
+  -- E os pedidos do delivery já entregues (com este CPF ou este celular).
+  perform public.fid_creditar_pedido(p.id) from public.pedidos p
+   where p.restaurante_id = p_restaurante and p.status = 'entregue' and coalesce(p.fid_situacao, 'sem_cadastro') = 'sem_cadastro'
+     and (p.cpf = v_cpf or (p.cpf is null and p.cliente ->> 'telefone' = v_tel))
+     and p.criado_em > now() - make_interval(days => public.fid_prazo(p_restaurante));
   return jsonb_build_object('status', 'ok', 'token', public.fid_nova_sessao(p_restaurante, v_cpf));
 end $$;
 
@@ -1852,7 +1876,7 @@ begin
   if p_emitida is not null and (p_emitida > now() + interval '1 hour' or p_emitida < n.lida_em - interval '400 days') then
     raise exception 'Data da compra inválida.';
   end if;
-  return public.fid_creditar(p_chave, round(p_valor, 2), coalesce(p_emitida, n.lida_em), public.fid_quem());
+  return coalesce(public.fid_creditar(p_chave, round(p_valor, 2), coalesce(p_emitida, n.lida_em), public.fid_quem()), 0);
 end $$;
 
 create or replace function public.fid_recusar_nota(p_chave text, p_motivo text) returns void
@@ -2389,6 +2413,9 @@ begin
   perform public.fid_itens_salvar(p_restaurante, p_chave, p_cpf, p_emitida, p_itens);
   if n.status <> 'pendente' then return jsonb_build_object('status', 'repetida', 'nota', n.status, 'pontos', n.pontos); end if;
   pts := public.fid_creditar(p_chave, round(p_valor, 2), coalesce(p_emitida, n.lida_em), 'SEFAZ');
+  if pts is null then
+    return jsonb_build_object('status', 'recusada', 'motivo', (select motivo from public.fid_notas where chave = p_chave));
+  end if;
   return jsonb_build_object('status', 'creditada', 'pontos', pts);
 end $$;
 
@@ -2433,12 +2460,12 @@ begin
           'pos', (select p.pos from pos p where p.cpf = v_cpf),
           'pontos', coalesce((select p.pontos from pos p where p.cpf = v_cpf), 0),
           'favoritos', coalesce((select jsonb_agg(f.descricao) from (
-              select min(i.descricao) as descricao from public.fid_itens i
-               where i.restaurante_id = p_restaurante and i.cpf = v_cpf
+              select min(i.descricao) as descricao from public.fid_itens_com_delivery(p_restaurante) i
+               where i.cpf = v_cpf
                group by lower(i.descricao) order by sum(i.quantidade) desc, count(*) desc limit 3) f), '[]'::jsonb)) end));
 end $$;
 
--- Equipe: produtos mais pedidos (no geral ou de um cliente), nos últimos p_dias.
+-- Equipe: produtos mais pedidos (no geral ou de um cliente), nos últimos p_dias. Soma as notas e o delivery.
 create or replace function public.fid_top_produtos(p_cpf text default null, p_dias int default 90) returns jsonb
 language plpgsql stable security definer set search_path = public as $$
 declare r uuid := public.meu_restaurante();
@@ -2448,8 +2475,8 @@ begin
       order by t.quantidade desc, t.notas desc)
     from (select min(i.descricao) as descricao, sum(i.quantidade) as quantidade, count(distinct i.chave) as notas,
                  count(distinct i.cpf) as clientes, sum(i.valor) as valor
-            from public.fid_itens i
-           where i.restaurante_id = r and (p_cpf is null or i.cpf = regexp_replace(p_cpf, '[^0-9]', '', 'g'))
+            from public.fid_itens_com_delivery(r) i
+           where (p_cpf is null or i.cpf = regexp_replace(p_cpf, '[^0-9]', '', 'g'))
              and coalesce(i.emitida_em, now()) > now() - make_interval(days => least(greatest(coalesce(p_dias, 90), 1), 3650))
            group by lower(i.descricao)
            order by sum(i.quantidade) desc, count(distinct i.chave) desc
@@ -2509,6 +2536,13 @@ create table if not exists public.pedidos (
   atualizado_em  timestamptz not null default now()
 );
 create index if not exists pedidos_rest_idx on public.pedidos (restaurante_id, criado_em desc);
+-- Clube de fidelidade: CPF informado no pedido (ou achado pelo celular), pontos creditados na entrega
+-- e a nota fiscal ligada ao pedido (para a mesma compra não contar duas vezes).
+alter table public.pedidos add column if not exists cpf text check (cpf ~ '^[0-9]{11}$');
+alter table public.pedidos add column if not exists fid_situacao text check (fid_situacao in ('creditado', 'nota', 'sem_cadastro', 'fora'));
+alter table public.pedidos add column if not exists fid_pontos int;
+alter table public.pedidos add column if not exists nota_chave text;
+create index if not exists pedidos_cpf_idx on public.pedidos (restaurante_id, cpf) where cpf is not null;
 alter table public.pedidos enable row level security;
 revoke all on public.pedidos from anon;
 revoke insert, update, delete, truncate on public.pedidos from authenticated;
@@ -2536,6 +2570,7 @@ declare
   g jsonb; op jsonb; sel jsonb; s2 jsonb; n int; qq int; tot int; v_preco numeric; rot jsonb;
   forma text := p_pedido #>> '{pagamento,forma}'; troco numeric;
   v_num int; v_token uuid := gen_random_uuid(); v_id uuid;
+  v_cpf text := nullif(regexp_replace(coalesce(p_pedido ->> 'cpf', ''), '[^0-9]', '', 'g'), '');
 begin
   select * into r from public.restaurantes where id = p_restaurante and ativo;
   if not found or not public.plano_tem(p_restaurante, 'delivery') then
@@ -2550,6 +2585,15 @@ begin
   if v_nome !~ '^\S{2,}' then return jsonb_build_object('status', 'erro', 'mensagem', 'Informe seu nome.'); end if;
   if char_length(v_tel) in (12, 13) and v_tel like '55%' then v_tel := substr(v_tel, 3); end if;
   if v_tel !~ '^[1-9][0-9]{9,10}$' then return jsonb_build_object('status', 'erro', 'mensagem', 'Informe um celular com DDD.'); end if;
+  -- CPF para os pontos do clube (opcional). Sem CPF, a conta do clube aberta neste aparelho.
+  if v_cpf is not null and not public.cpf_valido(v_cpf) then
+    return jsonb_build_object('status', 'erro', 'mensagem', 'CPF inválido. Confira os números ou deixe em branco.');
+  end if;
+  if v_cpf is null and coalesce(p_pedido ->> 'fid_token', '') ~ '^[0-9a-f-]{36}$' then
+    select s.cpf into v_cpf from private.fid_sessoes s
+     where s.token_hash = public.hash_token((p_pedido ->> 'fid_token')::uuid) and s.restaurante_id = p_restaurante
+       and s.criado_em > now() - interval '180 days';
+  end if;
   -- Endereço salvo (achado pelo celular em delivery_enderecos): o navegador só manda a referência;
   -- o endereço completo sai do pedido anterior, e só vale com o mesmo celular daquele pedido.
   if coalesce(e ->> 'ref', '') <> '' then
@@ -2643,7 +2687,7 @@ begin
   perform pg_advisory_xact_lock(hashtext('pedido:' || p_restaurante));
   select coalesce(max(numero), 0) + 1 into v_num from public.pedidos
    where restaurante_id = p_restaurante and (criado_em at time zone 'America/Sao_Paulo')::date = (now() at time zone 'America/Sao_Paulo')::date;
-  insert into public.pedidos (restaurante_id, numero, token_hash, cliente, endereco, itens, subtotal, taxa, total, pagamento, obs, distancia_km, historico)
+  insert into public.pedidos (restaurante_id, numero, token_hash, cliente, endereco, itens, subtotal, taxa, total, pagamento, obs, distancia_km, historico, cpf)
   values (p_restaurante, v_num, public.hash_token(v_token),
     jsonb_build_object('nome', v_nome, 'telefone', v_tel),
     jsonb_build_object('cep', left(regexp_replace(coalesce(e ->> 'cep', ''), '[^0-9]', '', 'g'), 8), 'rua', left(btrim(e ->> 'rua'), 120),
@@ -2653,7 +2697,7 @@ begin
     itens, sub, v_taxa, v_total,
     jsonb_build_object('forma', forma, 'troco', case when forma = 'dinheiro' then troco end),
     nullif(left(btrim(coalesce(p_pedido ->> 'obs', '')), 300), ''), v_dist,
-    jsonb_build_array(jsonb_build_object('status', 'recebido', 'em', now())))
+    jsonb_build_array(jsonb_build_object('status', 'recebido', 'em', now())), v_cpf)
   returning id into v_id;
   return jsonb_build_object('status', 'ok', 'token', v_token, 'numero', v_num, 'total', v_total);
 end $$;
@@ -2710,7 +2754,8 @@ language sql stable security definer set search_path = public as $$
   select jsonb_build_object('status', 'ok', 'pedido', jsonb_build_object(
       'numero', p.numero, 'status', p.status, 'itens', p.itens, 'subtotal', p.subtotal, 'taxa', p.taxa, 'total', p.total,
       'pagamento', p.pagamento, 'endereco', p.endereco - 'lat' - 'lng', 'entregador', p.entregador, 'motivo', p.motivo,
-      'historico', p.historico, 'criado_em', p.criado_em),
+      'historico', p.historico, 'criado_em', p.criado_em,
+      'fid', jsonb_build_object('cpf', p.cpf is not null, 'situacao', p.fid_situacao, 'pontos', p.fid_pontos)),
     'restaurante', jsonb_build_object('nome', r.nome, 'telefone', r.restaurante ->> 'telefone', 'whatsapp', r.delivery ->> 'whatsapp',
       'pix', case when p.pagamento ->> 'forma' = 'pix' then r.delivery ->> 'pix' end, 'tempo', r.delivery ->> 'tempo'))
   from public.pedidos p join public.restaurantes r on r.id = p.restaurante_id
@@ -2733,6 +2778,8 @@ begin
     historico = historico || jsonb_build_array(jsonb_build_object('status', p_status, 'em', now(), 'por', public.fid_quem())),
     atualizado_em = now()
   where id = p_id;
+  -- Entregue: os pontos do clube entram sozinhos.
+  if p_status = 'entregue' and p.status <> 'entregue' then perform public.fid_creditar_pedido(p_id); end if;
 end $$;
 
 do $$
@@ -2749,6 +2796,85 @@ begin
   if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'pedidos') then
     execute 'alter publication supabase_realtime add table public.pedidos';
   end if;
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- Pontos do delivery: quando a equipe marca "entregue", o pedido vira pontos sozinho, para o CPF
+-- informado no pedido, a conta do clube aberta no aparelho ou, sem nenhum dos dois, o cliente do clube
+-- com o mesmo celular. Mesmas regras da nota (fid_calcular: dobro, nível, início do programa e prazo).
+-- A nota fiscal do pedido não conta de novo (fid_creditar liga a nota ao pedido), e se a nota já tinha
+-- dado pontos antes da entrega, o pedido é que fica ligado a ela.
+-- Quem ainda não é do clube: o pedido fica "sem_cadastro" e entra quando a pessoa se cadastra (fid_cadastrar).
+-- ---------------------------------------------------------------------------
+create or replace function public.fid_creditar_pedido(p_id uuid) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare p public.pedidos; cli public.fid_clientes; v_cpf text; ini timestamptz; calc jsonb; pts int; n public.fid_notas;
+begin
+  select * into p from public.pedidos where id = p_id for update;
+  if not found or p.status <> 'entregue' or p.fid_situacao in ('creditado', 'nota') then return null; end if;
+  v_cpf := p.cpf;
+  if v_cpf is null then
+    select case when count(*) = 1 then min(c.cpf) end into v_cpf from public.fid_clientes c
+     where c.restaurante_id = p.restaurante_id and c.telefone = p.cliente ->> 'telefone';
+    if v_cpf is null then return null; end if;
+  end if;
+  if not public.fid_no_ar(p.restaurante_id) then
+    update public.pedidos set fid_situacao = 'fora' where id = p_id;
+    return jsonb_build_object('status', 'fora');
+  end if;
+  select * into cli from public.fid_clientes where restaurante_id = p.restaurante_id and cpf = v_cpf;
+  if not found then
+    update public.pedidos set fid_situacao = 'sem_cadastro' where id = p_id;
+    return jsonb_build_object('status', 'sem_cadastro');
+  end if;
+  ini := public.fid_inicio(p.restaurante_id);
+  if (ini is not null and p.criado_em < ini)
+     or p.criado_em < cli.criado_em - make_interval(days => public.fid_prazo(p.restaurante_id)) then
+    update public.pedidos set fid_situacao = 'fora', cpf = v_cpf where id = p_id;
+    return jsonb_build_object('status', 'fora');
+  end if;
+  -- A nota fiscal deste pedido já deu pontos (o cliente leu o QR antes de a equipe marcar entregue)?
+  select * into n from public.fid_notas f
+   where f.restaurante_id = p.restaurante_id and f.cpf = v_cpf and f.status = 'creditada'
+     and (abs(f.valor - p.total) <= 0.05 or abs(f.valor - p.subtotal) <= 0.05)
+     and f.emitida_em between p.criado_em - interval '1 hour' and p.criado_em + interval '12 hours'
+     and not exists (select 1 from public.pedidos o where o.nota_chave = f.chave)
+   order by abs(extract(epoch from f.emitida_em - p.criado_em)) limit 1;
+  if found then
+    update public.pedidos set fid_situacao = 'nota', cpf = v_cpf, nota_chave = n.chave, fid_pontos = n.pontos where id = p_id;
+    return jsonb_build_object('status', 'nota', 'pontos', n.pontos);
+  end if;
+  calc := public.fid_calcular(p.restaurante_id, p.total, p.criado_em, v_cpf);
+  pts := (calc ->> 'pontos')::int;
+  update public.pedidos set fid_situacao = 'creditado', cpf = v_cpf, fid_pontos = pts where id = p_id;
+  perform public.fid_mover(p.restaurante_id, v_cpf, 'compra', pts,
+    'Delivery nº ' || p.numero || ' · ' || public.brl(p.total) || coalesce(' · ' || (calc ->> 'boost'), '') || coalesce(' · nível ' || (calc ->> 'nivel'), '')
+      || case when (calc ->> 'mult')::numeric > 1
+              then ' (' || replace(rtrim(rtrim(to_char((calc ->> 'mult')::numeric, 'FM990.99'), '0'), '.'), '.', ',') || 'x)' else '' end,
+    p.total, (calc ->> 'mult')::numeric, null, null, 'Delivery');
+  perform public.fid_bonus_indicacao(p.restaurante_id, v_cpf);
+  return jsonb_build_object('status', 'creditado', 'pontos', pts);
+end $$;
+
+-- Produtos das notas (XML/SEFAZ) e dos pedidos entregues do delivery, para os mais pedidos e os favoritos.
+-- O pedido cuja nota também foi importada entra uma vez só (pelos produtos da nota).
+create or replace function public.fid_itens_com_delivery(p_restaurante uuid)
+returns table (chave text, cpf text, descricao text, quantidade numeric, valor numeric, emitida_em timestamptz)
+language sql stable security definer set search_path = public as $$
+  select i.chave, i.cpf, i.descricao, i.quantidade, i.valor, i.emitida_em
+    from public.fid_itens i where i.restaurante_id = p_restaurante
+  union all
+  select 'pedido:' || p.id, p.cpf, left(x ->> 'nome', 120), coalesce(public.num_ou(x ->> 'qtd', 1), 1),
+         round(coalesce(public.num_ou(x ->> 'preco', 0), 0) * coalesce(public.num_ou(x ->> 'qtd', 1), 1), 2), p.criado_em
+    from public.pedidos p, jsonb_array_elements(p.itens) x
+   where p.restaurante_id = p_restaurante and p.status = 'entregue' and btrim(coalesce(x ->> 'nome', '')) <> ''
+     and (p.nota_chave is null or not exists (select 1 from public.fid_itens j where j.chave = p.nota_chave));
+$$;
+
+do $$
+begin
+  execute 'revoke execute on function public.fid_creditar_pedido(uuid) from public, anon, authenticated';
+  execute 'revoke execute on function public.fid_itens_com_delivery(uuid) from public, anon, authenticated';
 end $$;
 
 -- ---------------------------------------------------------------------------
@@ -2988,6 +3114,18 @@ language sql stable security definer set search_path = public as $$
   select public.restaurante_publico(r.slug)
     from public.dominios d join public.restaurantes r on r.id = d.restaurante_id
    where d.dominio = public.dominio_normalizar(p_host) and d.status in ('certificado', 'ativo') and r.ativo;
+$$;
+
+-- Dados públicos do restaurante com o domínio próprio no ar (a ativação da plaquinha abre o painel por ele).
+-- Mesma função do começo do arquivo, redefinida aqui porque depende de public.dominios.
+create or replace function public.restaurante_publico(p_slug text) returns jsonb
+language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('id', r.id, 'slug', r.slug, 'nome', r.nome, 'restaurante', r.restaurante,
+    'wifi', r.wifi, 'cardapio', r.cardapio, 'mesas', r.mesas, 'widgets', r.widgets,
+    'modulos', r.modulos, 'fidelidade', r.fidelidade, 'delivery', r.delivery,
+    'plano', jsonb_build_object('servicos', public.plano_de(r.id) -> 'servicos', 'mesas', public.plano_de(r.id) -> 'mesas'),
+    'dominio', (select d.dominio from public.dominios d where d.restaurante_id = r.id and d.status = 'ativo'))
+  from public.restaurantes r where r.slug = lower(btrim(p_slug)) and r.ativo;
 $$;
 
 -- Plaquinha: devolve também o domínio próprio no ar, para o redirecionador abrir por ele.

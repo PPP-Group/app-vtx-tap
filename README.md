@@ -67,6 +67,9 @@ A central libera por restaurante (Editar restaurante → Módulos contratados �
 - **Conferência das notas**: a SEFAZ-MG não deixa consultar a nota automaticamente (tem verificação anti-robô). A chave da nota é validada na hora: dígito, modelo 65, CNPJ do restaurante, prazo e se já foi usada. Os pontos entram:
   - pelo **XML do caixa**: credita sozinho toda nota com CPF de cliente cadastrado, estorna as canceladas e corrige o valor de aprovações manuais;
   - ou pela **aprovação da equipe**.
+- **Pedidos do delivery**: no carrinho, o cliente informa o CPF (opcional; vem preenchido com a conta do clube do aparelho). Quando a equipe marca **Entregue**, os pontos entram sozinhos, com as mesmas regras da nota (dias com mais pontos, nível, início e prazo). Sem CPF, o pedido vale para o cliente do clube com o mesmo celular. Quem ainda não é do clube ganha os pontos do pedido ao se cadastrar (dentro do prazo).
+  - A mesma compra não conta duas vezes: se a nota fiscal do pedido for lida, importada no XML ou aprovada depois (mesmo CPF, mesmo valor, até 12 h depois do pedido), ela é recusada com o motivo "já ganhou pontos pelo pedido nº X". Se a nota deu pontos antes da entrega, o pedido fica ligado a ela e não credita de novo.
+  - Os produtos dos pedidos entregues entram nos **mais pedidos** e nos **favoritos** de cada cliente, junto com os produtos das notas importadas.
 - **Níveis do clube** (Regras → Níveis do clube): até 6 níveis, com nome, frase curta, cor, pontos mínimos, bônus nas compras (+5% a dobro), pontos ao chegar e vantagens. Os pontos contam desde o cadastro ou só nos últimos N meses. Prêmios podem ser exclusivos de um nível em diante.
 - Link direto do programa: `https://<restaurante>.<domínio>/?fidelidade`.
 
