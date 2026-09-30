@@ -771,5 +771,7 @@
     return prog;
   }
 
-  window.Fidelidade = { iniciar, tile, abrir, get ativo() { return !!(prog && prog.ativo); } };
+  // Conta do clube lembrada neste aparelho (o delivery usa para os pontos do pedido).
+  const conta = () => (S.cpf ? { cpf: S.cpf, nome: S.nome, token: S.token } : null);
+  window.Fidelidade = { iniciar, tile, abrir, conta, get ativo() { return !!(prog && prog.ativo); } };
 })();

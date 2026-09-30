@@ -1067,7 +1067,7 @@
         if (d === undefined) throw new Error('Data da compra inválida. Use dd/mm/aaaa.');
         if (d && d > new Date().toISOString().slice(0, 10)) throw new Error('A data da compra não pode ser no futuro.');
         const pontos = await ctx.store.fidAprovarNota(f.dataset.fpAprovar, valor, d ? new Date(`${d}T12:00:00-03:00`).toISOString() : null);
-        toast(`Nota aprovada: +${pts(pontos || 0)}.`, { tone: 'ok' });
+        toast(pontos ? `Nota aprovada: +${pts(pontos)}.` : 'Esta compra já ganhou pontos pelo pedido do delivery: a nota não conta de novo.', { tone: pontos ? 'ok' : 'ink', ms: pontos ? 3000 : 5000 });
         return recarregar();
       }
       if (id === 'fpRegras') {
@@ -1173,7 +1173,7 @@
         if (r.status !== 'pendente') throw new Error(r.mensagem || r.motivo || 'Esta nota não vale pontos.');
         const pontos = await ctx.store.fidAprovarNota(F.chaveDoTexto(f.dataset.qr), valor, null);
         closeSheet();
-        toast(`+${pts(pontos || 0)} creditados.`, { tone: 'ok' });
+        toast(pontos ? `+${pts(pontos)} creditados.` : 'Esta compra já ganhou pontos pelo pedido do delivery: a nota não conta de novo.', { tone: pontos ? 'ok' : 'ink', ms: pontos ? 3000 : 5000 });
         return recarregar();
       }
     } catch (ex) {

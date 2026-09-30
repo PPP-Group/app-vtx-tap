@@ -23,6 +23,21 @@
 
   // Clube de pontos (o mesmo da página da mesa): cartão no topo do cardápio e na tela do pedido.
   const temFid = () => !!(window.Fidelidade && Fidelidade.ativo);
+  // CPF dos pontos: o digitado neste aparelho ou o da conta do clube aberta aqui.
+  const cpfPedido = () => (cliente.cpf != null ? cliente.cpf : ((Fidelidade.conta && Fidelidade.conta()) || {}).cpf || '');
+  const fmtCpf = (c) => soDigitos(c).slice(0, 11).replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d{1,2})$/, '$1-$2');
+  const guardarCliente = () => safeSet('dl-cliente', JSON.stringify({ nome: cliente.nome, telefone: cliente.telefone, forma: cliente.forma, cpf: cliente.cpf }));
+  function fidTexto(p) {
+    const f = p.fid || {};
+    const pts = (n) => `${n} ponto${n === 1 ? '' : 's'}`;
+    if (f.situacao === 'creditado') return `+${pts(f.pontos)} entraram na sua conta do clube.`;
+    if (f.situacao === 'nota') return `Os pontos desta compra já entraram pela nota fiscal (+${pts(f.pontos)}).`;
+    if (f.situacao === 'sem_cadastro') return 'Você ainda não é do clube: cadastre-se com o CPF deste pedido e os pontos dele entram na hora.';
+    if (f.situacao === 'fora') return 'Este pedido ficou fora do período do programa de pontos.';
+    if (f.cpf) return 'Os pontos entram sozinhos quando o pedido for entregue. Não precisa ler a nota.';
+    return p.status === 'entregue' ? 'Leia o QR Code da nota fiscal que veio com o pedido. Os pontos entram na sua conta do clube.'
+      : 'Quando o pedido chegar, leia o QR Code da nota fiscal que vem junto. No próximo pedido, informe o CPF e os pontos entram sozinhos.';
+  }
   const itens = () => (live ? live.cardapio.map((c) => ({ ...c, itens: c.itens.filter((i) => i.delivery) })).filter((c) => c.itens.length) : []);
   const itemDe = (id) => live.cardapio.flatMap((c) => c.itens).find((i) => i.id === id && i.delivery);
   const OPC = Store.opcoes;
@@ -258,6 +273,8 @@
           <label class="field"><span>Nome</span><input class="input" name="nome" maxlength="60" autocomplete="name" value="${esc(cliente.nome || '')}"></label>
           <label class="field"><span>Celular (WhatsApp)</span><input class="input" name="telefone" type="tel" inputmode="tel" autocomplete="tel" maxlength="16" value="${esc(cliente.telefone || '')}"></label>
         </div>
+        ${temFid() ? `<label class="field"><span>CPF para ganhar pontos (opcional)</span><input class="input mono" name="cpf" inputmode="numeric" autocomplete="off" maxlength="14" placeholder="000.000.000-00" value="${esc(fmtCpf(cpfPedido()))}">
+          <small class="help">Os pontos do clube entram sozinhos quando o pedido for entregue.</small></label>` : ''}
       </section>
 
       <section class="stack"><h3 class="dl-h3">Pagamento na entrega</h3>
@@ -297,9 +314,9 @@
       if (['cep', 'numero', 'rua', 'bairro', 'cidade'].some((k) => (novoEnd[k] || '') !== (endereco[k] || '')) && !novoEnd.gps) { delete novoEnd.lat; delete novoEnd.lng; }
       endereco = novoEnd;
     } else if (tem('referencia')) endereco = { ...endereco, referencia: v('referencia') };
-    cliente = { ...cliente, nome: v('nome', cliente.nome), telefone: v('telefone', cliente.telefone), troco: v('troco', cliente.troco), obs: v('obs', cliente.obs) };
+    cliente = { ...cliente, nome: v('nome', cliente.nome), telefone: v('telefone', cliente.telefone), troco: v('troco', cliente.troco), obs: v('obs', cliente.obs), cpf: tem('cpf') ? soDigitos(v('cpf')) : cliente.cpf };
     if (endereco.rua) safeSet('dl-endereco', JSON.stringify(endereco));
-    safeSet('dl-cliente', JSON.stringify({ nome: cliente.nome, telefone: cliente.telefone, forma: cliente.forma }));
+    guardarCliente();
   }
   const redesenharCarrinho = () => { lerForm(); $('#dlBody').innerHTML = tCarrinho(); };
   // Atualiza só a localização, os totais e o botão (sem apagar o que está sendo digitado).
@@ -375,7 +392,7 @@
     lerForm();
     const erro = (m) => { const el = $('#dlErro'); if (el) el.textContent = m; };
     if (!/^[1-9]\d{9,10}$/.test(soDigitos(cliente.telefone).replace(/^55(?=\d{10,11}$)/, ''))) return erro('Informe o celular com DDD.');
-    safeSet('dl-cliente', JSON.stringify({ nome: cliente.nome, telefone: cliente.telefone, forma: cliente.forma }));
+    guardarCliente();
     enviando = true;
     $('#dlBody').innerHTML = tCarrinho();
     let r;
@@ -406,6 +423,9 @@
     const comSalvo = entrega === 'salvo' && salvo;
     if (!comSalvo && (!endereco.rua || !endereco.numero || !endereco.bairro)) return erro('Complete o endereço: rua, número e bairro.');
     if (!comSalvo && !endereco.lat) return erro('Toque em "Localizar endereço" para calcular a entrega.');
+    const cpf = temFid() ? cpfPedido() : '';
+    if (cpf && !Store.fid.cpfValido(cpf)) return erro('CPF inválido. Confira os números ou deixe em branco.');
+    const contaFid = temFid() && Fidelidade.conta ? Fidelidade.conta() : null;
     const forma = ($('[data-dl-forma][aria-checked="true"]') || {}).dataset?.dlForma;
     const troco = cliente.troco ? parseFloat(String(cliente.troco).replace(/\./g, '').replace(',', '.')) : null;
     enviando = true;
@@ -419,6 +439,8 @@
         itens: [...carrinho.values()].map((x) => ({ id: x.id, qtd: x.qtd, obs: x.obs || '', opcoes: x.opcoes || [] })),
         pagamento: { forma, troco },
         obs: cliente.obs || '',
+        cpf: cpf || null,
+        fid_token: !cpf && contaFid && contaFid.token ? contaFid.token : null,
       });
     } catch {
       r = { status: 'erro', mensagem: 'Sem conexão. Confira a internet e tente de novo.' };
@@ -433,7 +455,7 @@
     cliente.obs = '';
     // Próximo pedido neste aparelho já abre com este endereço.
     safeSet('dl-salvo', comSalvo ? JSON.stringify(salvo) : null);
-    safeSet('dl-cliente', JSON.stringify({ nome: cliente.nome, telefone: cliente.telefone, forma: cliente.forma }));
+    guardarCliente();
     const meus = JSON.parse(safeGet('dl-pedidos') || '[]').filter((p) => Date.now() - p.em < 2 * 864e5);
     safeSet('dl-pedidos', JSON.stringify([{ token: r.token, numero: r.numero, em: Date.now() }, ...meus].slice(0, 10)));
     closeSheet();
@@ -464,6 +486,7 @@
     const rest = r.restaurante || {};
     const i = ETAPAS.findIndex(([k]) => k === p.status);
     const cancelado = p.status === 'cancelado';
+    const f = p.fid || {};
     const quando = (k) => { const h = (p.historico || []).filter((x) => x.status === k).pop(); return h ? new Date(h.em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : ''; };
     const wa = soDigitos(rest.whatsapp || rest.telefone);
     $('#dlMain').innerHTML = `<div class="stack-lg dl-acomp">
@@ -480,8 +503,8 @@
         <p class="muted">${esc([p.endereco.rua, p.endereco.numero].filter(Boolean).join(', '))}${p.endereco.complemento ? ` · ${esc(p.endereco.complemento)}` : ''} · ${esc(p.endereco.bairro || '')}<br>
           Pagamento: ${esc({ pix: 'Pix', cartao: 'Cartão na entrega', dinheiro: 'Dinheiro' }[p.pagamento.forma] || '')}${p.pagamento.troco ? ` (troco para ${brl(p.pagamento.troco)})` : ''}</p>
       </section>
-      ${temFid() && !cancelado ? `<section class="stack dl-fid"><h3 class="dl-h3">${icon('gift')} Ganhe pontos com este pedido</h3>
-        <p class="muted">${p.status === 'entregue' ? 'Leia o QR Code da nota fiscal que veio com o pedido.' : 'Quando o pedido chegar, leia o QR Code da nota fiscal que vem junto.'} Os pontos entram na sua conta do clube.</p>
+      ${temFid() && !cancelado ? `<section class="stack dl-fid"><h3 class="dl-h3">${icon('gift')} ${f.situacao === 'creditado' || f.situacao === 'nota' ? 'Pontos deste pedido' : 'Ganhe pontos com este pedido'}</h3>
+        <p class="muted">${fidTexto(p)}</p>
         ${Fidelidade.tile()}</section>` : ''}
       ${wa ? `<a class="btn btn-line btn-block" href="https://wa.me/55${wa.replace(/^55/, '')}?text=${encodeURIComponent(`Olá! Sobre o pedido #${p.numero}`)}" target="_blank" rel="noopener">${icon('phone')} Falar com o restaurante</a>` : ''}
       <a class="btn btn-quiet btn-block" href="./">Fazer outro pedido</a>

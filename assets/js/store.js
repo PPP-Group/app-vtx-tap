@@ -397,10 +397,17 @@
       itens.slice(0, 300).forEach((i, n) => i.descricao && f.itens.push({ chave, n: n + 1, cpf: cpf || null, descricao: String(i.descricao).trim().slice(0, 120),
         quantidade: +i.quantidade || 1, unidade: i.unidade || '', valor: i.valor == null ? null : +i.valor, emitida_em: emitida || null }));
     }
+    // Produtos das notas e dos pedidos entregues do delivery (o pedido com nota importada conta uma vez só).
+    function itensComDelivery(db) {
+      const comNota = new Set((F(db).itens || []).map((i) => i.chave));
+      const doDelivery = (db.pedidos || []).filter((p) => p.status === 'entregue' && !(p.nota_chave && comNota.has(p.nota_chave)))
+        .flatMap((p) => p.itens.map((x) => ({ chave: 'pedido:' + p.id, cpf: p.cpf || null, descricao: x.nome, quantidade: x.qtd, valor: x.preco * x.qtd, emitida_em: p.criado_em })));
+      return [...(F(db).itens || []), ...doDelivery];
+    }
     function topProdutos(db, cpf, dias = 90, limite = 20) {
       const desde = Date.now() - dias * DIA;
       const g = new Map();
-      for (const i of F(db).itens || []) {
+      for (const i of itensComDelivery(db)) {
         if ((cpf && i.cpf !== cpf) || (i.emitida_em && new Date(i.emitida_em) < desde)) continue;
         const k = i.descricao.toLowerCase();
         const x = g.get(k) || { descricao: i.descricao, quantidade: 0, notas: new Set(), clientes: new Set(), valor: 0 };
@@ -442,6 +449,16 @@
     }
     function creditar(db, n, valor, emitida, por) {
       if (!n || n.status !== 'pendente') return null;
+      const quando = new Date(emitida || n.lida_em);
+      const ped = (db.pedidos || []).find((p) => p.cpf === n.cpf && p.fid_situacao === 'creditado' && !p.nota_chave
+        && (Math.abs(p.total - valor) <= 0.05 || Math.abs(p.subtotal - valor) <= 0.05)
+        && quando >= new Date(p.criado_em) - 3600e3 && quando <= +new Date(p.criado_em) + 12 * 3600e3);
+      if (ped) {
+        ped.nota_chave = n.chave;
+        Object.assign(n, { status: 'recusada', valor, emitida_em: quando.toISOString(), conferida_em: nowIso(), conferida_por: por,
+          motivo: `Esta compra já ganhou pontos pelo pedido nº ${ped.numero} do delivery.` });
+        return null;
+      }
       const calc = fidCalcular(regras(db), valor, emitida || n.lida_em, nivelDe(db, n.cpf));
       Object.assign(n, { status: 'creditada', valor, emitida_em: emitida || n.emitida_em || n.lida_em, pontos: calc.pontos, mult: calc.mult, conferida_em: nowIso(), conferida_por: por, motivo: null });
       mover(db, n.cpf, 'compra', calc.pontos, {
@@ -470,7 +487,38 @@
         Object.assign(n, { status: 'recusada', motivo, valor: x.valor, emitida_em: x.emitida_em, conferida_em: nowIso(), conferida_por: 'XML da nota' });
         return { status: 'recusada', motivo };
       }
-      return { status: 'creditada', pontos: creditar(db, n, x.valor, x.emitida_em, 'XML da nota'), valor: x.valor };
+      const pts = creditar(db, n, x.valor, x.emitida_em, 'XML da nota');
+      return pts == null ? { status: 'recusada', motivo: n.motivo } : { status: 'creditada', pontos: pts, valor: x.valor };
+    }
+    // Pedido entregue do delivery vira pontos (mesmas regras de public.fid_creditar_pedido).
+    function creditarPedido(db, p) {
+      if (!p || p.status !== 'entregue' || ['creditado', 'nota'].includes(p.fid_situacao)) return null;
+      const f = F(db);
+      let cpf = p.cpf;
+      if (!cpf) {
+        const achados = f.clientes.filter((c) => c.telefone === soDigitos(p.cliente.telefone));
+        if (achados.length !== 1) return null;
+        cpf = achados[0].cpf;
+      }
+      if (!noAr(db)) { p.fid_situacao = 'fora'; return { status: 'fora' }; }
+      const c = cliDe(db, cpf);
+      if (!c) { p.fid_situacao = 'sem_cadastro'; return { status: 'sem_cadastro' }; }
+      const ini = inicio(db);
+      const em = new Date(p.criado_em);
+      if ((ini && em < ini) || em < new Date(c.criado_em) - prazo(db) * DIA) { Object.assign(p, { fid_situacao: 'fora', cpf }); return { status: 'fora' }; }
+      const ligadas = new Set((db.pedidos || []).map((x) => x.nota_chave).filter(Boolean));
+      const n = f.notas.find((x) => x.cpf === cpf && x.status === 'creditada' && !ligadas.has(x.chave)
+        && (Math.abs(x.valor - p.total) <= 0.05 || Math.abs(x.valor - p.subtotal) <= 0.05)
+        && new Date(x.emitida_em) >= em - 3600e3 && new Date(x.emitida_em) <= +em + 12 * 3600e3);
+      if (n) { Object.assign(p, { fid_situacao: 'nota', cpf, nota_chave: n.chave, fid_pontos: n.pontos }); return { status: 'nota', pontos: n.pontos }; }
+      const calc = fidCalcular(regras(db), p.total, p.criado_em, nivelDe(db, cpf));
+      Object.assign(p, { fid_situacao: 'creditado', cpf, fid_pontos: calc.pontos });
+      mover(db, cpf, 'compra', calc.pontos, {
+        descricao: `Delivery nº ${p.numero} · ${brlTxt(p.total)}${calc.boost ? ` · ${calc.boost}` : ''}${calc.nivel ? ` · nível ${calc.nivel}` : ''}${calc.mult > 1 ? ` (${multTxt(calc.mult)}x)` : ''}`,
+        valor: p.total, mult: calc.mult, por: 'Delivery',
+      });
+      bonusIndicacao(db, cpf);
+      return { status: 'creditado', pontos: calc.pontos };
     }
     function autoCreditar(db, chave) {
       const f = F(db);
@@ -787,6 +835,9 @@
         f.pins[cpf] = await hashTxt(cpf + ':' + pin);
         if (regras(db).indicacao.quando !== 'compra') bonusIndicacao(db, cpf);
         f.xml.filter((x) => x.cpf === cpf).forEach((x) => autoCreditar(db, x.chave));
+        (db.pedidos || []).filter((p) => p.status === 'entregue' && (!p.fid_situacao || p.fid_situacao === 'sem_cadastro')
+          && (p.cpf === cpf || (!p.cpf && soDigitos(p.cliente.telefone) === telefone)) && Date.now() - new Date(p.criado_em) < prazo(db) * DIA)
+          .forEach((p) => creditarPedido(db, p));
         const token = uid();
         f.sessoes[token] = cpf;
         write(db);
@@ -876,6 +927,9 @@
         let e = p.endereco || {};
         if (nome.length < 2) return erro('Informe seu nome.');
         if (!/^[1-9]\d{9,10}$/.test(tel)) return erro('Informe um celular com DDD.');
+        let cpf = soDigitos(p.cpf) || null;
+        if (cpf && !cpfValido(cpf)) return erro('CPF inválido. Confira os números ou deixe em branco.');
+        if (!cpf && p.fid_token) cpf = F(db).sessoes[p.fid_token] || null;
         // Endereço salvo: só com o mesmo celular do pedido de onde ele veio.
         if (e.ref) {
           const ant = (db.pedidos || []).find((x) => x.id === e.ref && soDigitos(x.cliente.telefone) === tel);
@@ -911,7 +965,7 @@
           endereco: { cep: soDigitos(e.cep).slice(0, 8), rua: e.rua, numero: e.numero, complemento: e.complemento || '', bairro: e.bairro, cidade: e.cidade || '', referencia: e.referencia || '', lat: +e.lat, lng: +e.lng },
           itens, subtotal, taxa, total, pagamento: { forma: pg.forma, troco: pg.forma === 'dinheiro' && pg.troco ? +pg.troco : null },
           obs: String(p.obs || '').trim().slice(0, 300) || null, distancia_km: km, entregador: null, motivo: null,
-          historico: [{ status: 'recebido', em: nowIso() }], criado_em: nowIso(), atualizado_em: nowIso() });
+          historico: [{ status: 'recebido', em: nowIso() }], criado_em: nowIso(), atualizado_em: nowIso(), cpf });
         write(db);
         return { status: 'ok', token, numero, total };
       },
@@ -921,7 +975,7 @@
         if (!p) return null;
         const conf = mergeSettings(db.configuracao, true);
         const { lat, lng, ...endereco } = p.endereco;
-        return { status: 'ok', pedido: { ...p, endereco, token: undefined, cliente: undefined },
+        return { status: 'ok', pedido: { ...p, endereco, token: undefined, cliente: undefined, cpf: undefined, fid: { cpf: !!p.cpf, situacao: p.fid_situacao || null, pontos: p.fid_pontos ?? null } },
           restaurante: { nome: conf.restaurante.nome, telefone: conf.restaurante.telefone, whatsapp: conf.delivery.whatsapp, pix: p.pagamento.forma === 'pix' ? conf.delivery.pix : null, tempo: conf.delivery.tempo } };
       },
       /* ---------- Domínio próprio: demonstração (sem DNS de verdade, avança um passo a cada conferência) ---------- */
@@ -1004,8 +1058,11 @@
         const p = (db.pedidos || []).find((x) => x.id === id);
         if (!p) throw new Error('Pedido não encontrado.');
         if (['entregue', 'cancelado'].includes(p.status) && status !== p.status) throw new Error('Este pedido já foi finalizado.');
+        const antes = p.status;
         Object.assign(p, { status, entregador: (entregador || '').trim().slice(0, 60) || p.entregador, motivo: status === 'cancelado' ? (motivo || '').trim().slice(0, 160) || null : p.motivo, atualizado_em: nowIso() });
         p.historico.push({ status, em: nowIso(), por: quem(db) });
+        // Entregue: os pontos do clube entram sozinhos.
+        if (status === 'entregue' && antes !== 'entregue') creditarPedido(db, p);
         write(db);
       },
       async fidSefaz() {
@@ -1115,7 +1172,7 @@
         if (!(valor > 0 && valor < 1e5)) falha('Informe o valor total da nota.');
         const pts = creditar(db, n, Math.round(valor * 100) / 100, emitida || n.lida_em, quem(db));
         write(db);
-        return pts;
+        return pts ?? 0;
       },
       async fidRecusarNota(chave, motivo) {
         const db = read();
