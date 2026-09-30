@@ -9,7 +9,8 @@
  *
  * Dois modelos:
  *   'padrao'        → logo da VTX Tap no meio do QR.
- *   'personalizado' → "personalizado básico": logo do restaurante no meio do QR.
+ *   'personalizado' → "personalizado básico": logo do restaurante no meio do QR, e os detalhes
+ *                     em roxo claro passam para a cor do restaurante (tons claros dela).
  *   Nos dois, a logo da VTX Tap pequenininha fica em cima do @. Sem logo do restaurante,
  *                     sai igual ao padrão.
  *
@@ -27,8 +28,22 @@
     titulo: 'Aproxime o celular',
   };
   const TINTA = '#1C2733';
-  const LILAS = '#C9B3FF';        // roxo bem claro: divisória e detalhes do ícone de NFC
-  const LILAS_QR = '#A987FF';     // miolo dos quadrados do QR (um pouco mais forte para o leitor achar)
+  // Cores de destaque. Padrão: roxo claro da VTX. Personalizado básico: derivadas da cor do restaurante.
+  const PALETA_VTX = { forte: '#7D27FC', claro: '#C9B3FF', fundo: '#F6F1FF', qr: '#A987FF' };
+  const hexRgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+  const rgbHex = (c) => '#' + c.map((v) => Math.round(Math.min(255, Math.max(0, v))).toString(16).padStart(2, '0')).join('');
+  const misturar = (h, alvo, t) => rgbHex(hexRgb(h).map((v, i) => v + (hexRgb(alvo)[i] - v) * t));
+  const luz = (h) => {
+    const [r, g, b] = hexRgb(h).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  function paleta(cor) {
+    if (!/^#[0-9a-f]{6}$/i.test(cor || '')) return PALETA_VTX;
+    // Miolo dos quadrados do QR: a própria cor; escurecida só se for clara demais para o leitor achar o canto.
+    let qr = cor;
+    for (let i = 0; i < 12 && luz(qr) > 0.3; i++) qr = misturar(qr, '#000000', 0.12);
+    return { forte: cor, claro: misturar(cor, '#ffffff', 0.62), fundo: misturar(cor, '#ffffff', 0.92), qr };
+  }
   const COR_CODIGO = '#B7BCC6';   // código da plaquinha, cinza clarinho, em pé na lateral direita
   const JSPDF = 'https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js';
   const SVG2PDF = 'https://cdn.jsdelivr.net/npm/svg2pdf.js@2.2.4/dist/svg2pdf.umd.min.js';
@@ -38,15 +53,17 @@
   const LOGO_VTX_TEXTO = '/assets/img/vtx-tap-escuro.png'; // logo com texto (ao lado do @)
 
   /* Ícone de NFC: círculo com as ondas e o celular chegando perto. */
-  const NFC = {
+  const NFC = (pal) => ({
     w: 64, h: 48,
     svg: `<g fill="none" stroke="${TINTA}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-      <circle cx="17" cy="19" r="13" stroke="${LILAS}" fill="#F6F1FF"/>
-      <path d="M13 13.5a8 8 0 0 1 0 11" stroke="#7D27FC"/><path d="M17.5 10.5a12.5 12.5 0 0 1 0 17" stroke="#7D27FC"/><path d="M9 16a4 4 0 0 1 0 6" stroke="#7D27FC"/>
+      <circle cx="17" cy="19" r="13" stroke="${pal.claro}" fill="${pal.fundo}"/>
+      <path d="M13 13.5a8 8 0 0 1 0 11" stroke="${pal.forte}"/><path d="M17.5 10.5a12.5 12.5 0 0 1 0 17" stroke="${pal.forte}"/><path d="M9 16a4 4 0 0 1 0 6" stroke="${pal.forte}"/>
       <g transform="rotate(14 42 22)"><rect x="32" y="3" width="19" height="36" rx="3.5" fill="#fff"/><path d="M39 6.5h5"/><circle cx="41.5" cy="34.5" r="1.2" fill="${TINTA}" stroke="none"/></g>
       <path d="M43 47c0-4-2-7-4.5-10.5-1.2-1.8.8-3.8 2.6-2.5L46 38V26.5c0-1.6 2.2-2 2.8-.5l6 13c1 2.4 1 5-.2 8" fill="#fff"/>
     </g>`,
-  };
+  });
+  const NFC_W = 64;
+  const NFC_H = 48;
 
   const carregarScript = (src) =>
     new Promise((ok, falha) => {
@@ -102,7 +119,7 @@
 
   // QR em vetor: cada sequência de módulos escuros de uma linha vira um retângulo.
   // O miolo 3 × 3 dos três quadrados de canto sai em roxo claro; o meio fica livre para a logo.
-  function desenharQr(doc, texto, x, y, lado, livre) {
+  function desenharQr(doc, texto, x, y, lado, livre, corMiolo) {
     if (typeof window.qrcode !== 'function') throw new Error('Gerador de QR indisponível. Confira a internet.');
     const qr = window.qrcode(0, 'H');
     qr.addData(texto);
@@ -127,7 +144,7 @@
         doc.rect(x + ini * m, y + r * m, (c - ini) * m + 0.01, m + 0.02, 'F');
       }
     }
-    doc.setFillColor(LILAS_QR);
+    doc.setFillColor(corMiolo);
     cantos.forEach(([r0, c0]) => doc.rect(x + (c0 + 2) * m, y + (r0 + 2) * m, 3 * m, 3 * m, 'F'));
     return { x: x + ini0 * m, y: y + ini0 * m, lado: k * m };
   }
@@ -154,7 +171,7 @@
 
   /**
    * Gera e baixa o PDF: uma página do tamanho de um cartão de crédito por plaquinha.
-   * @param {{codigo: string, url: string, logo?: string}[]} itens  logo: do restaurante (modelo personalizado)
+   * @param {{codigo: string, url: string, logo?: string, cor?: string}[]} itens  logo e cor (#rrggbb) do restaurante (modelo personalizado)
    * @param {string} nomeArquivo
    * @param {{modelo?: 'padrao'|'personalizado'}} opcoes
    */
@@ -188,7 +205,7 @@
     const codX = L - 5;                // código em pé na lateral direita (as letras ficam à direita desta linha)
     const dirCx = (divX + L) / 2;      // centro da metade direita: ícone, título e @ alinhados nele
     const nfcW = 25;                   // ícone de NFC, grande e no centro
-    const nfcH = (nfcW * NFC.h) / NFC.w;
+    const nfcH = (nfcW * NFC_H) / NFC_W;
     const logoH = 3.4;                 // logo da VTX Tap em cima do @ (personalizado)
     // Bloco da direita: ícone, 2,5 de espaço, título (2 linhas), 3 de espaço, [logo + 1,2], @.
     const blocoH = nfcH + 2.5 + 8.4 + 3 + (vtxTexto ? logoH + 1.2 : 0) + 1.9;
@@ -202,7 +219,8 @@
 
       // Esquerda: QR com a logo no meio (padrão: VTX Tap; personalizado: a do restaurante).
       const logoMeio = (modelo === 'personalizado' && it.logo && logos[it.logo]) || vtx;
-      const meio = desenharQr(doc, it.url, qrX, qrY, qr, 0.26);
+      const pal = modelo === 'personalizado' ? paleta(it.cor) : PALETA_VTX;
+      const meio = desenharQr(doc, it.url, qrX, qrY, qr, 0.26, pal.qr);
       if (logoMeio) {
         const f = meio.lado * 0.08;
         doc.setFillColor('#FFFFFF');
@@ -211,13 +229,13 @@
       }
 
       // Divisória em roxo claro
-      doc.setDrawColor(LILAS);
+      doc.setDrawColor(pal.claro);
       doc.setLineWidth(0.6);
       doc.setLineCap('round');
       doc.line(divX, 9, divX, A - 9);
 
       // Direita: ícone de NFC grande e centralizado, com o título logo embaixo.
-      await svgNoPdf(doc, NFC, dirCx - nfcW / 2, nfcY, nfcW, nfcH);
+      await svgNoPdf(doc, NFC(pal), dirCx - nfcW / 2, nfcY, nfcW, nfcH);
       // Título em duas linhas ("Aproxime" / "o celular").
       const [l1, ...resto] = PLACA.titulo.split(' ');
       const tY = nfcY + nfcH + 2.5;

@@ -47,15 +47,15 @@
   try { modeloPlaca = localStorage.getItem('central-modelo-placa') === 'personalizado' ? 'personalizado' : 'padrao'; } catch {}
   async function pdfPlaquinhas(codigos, titulo) {
     const lista = [...codigos].sort();
-    const logoDe = (c) => {
+    const restDaPlaca = (c) => {
       const t = S.tags.find((x) => x.codigo === c);
-      const r = t && restDe(t.restaurante_id);
-      return (r && r.restaurante && r.restaurante.logo) || '';
+      return (t && restDe(t.restaurante_id) && restDe(t.restaurante_id).restaurante) || {};
     };
+    const logoDe = (c) => restDaPlaca(c).logo || '';
     if (modeloPlaca === 'personalizado' && !lista.some(logoDe)) {
       toast('Nenhuma dessas plaquinhas é de restaurante com logo: saem com a logo da VTX no QR. Atribua a um restaurante com logo antes.', { ms: 6000 });
     } else toast(`Gerando PDF com ${lista.length} ${lista.length === 1 ? 'plaquinha' : 'plaquinhas'}…`);
-    await Placa.baixarPdf(lista.map((c) => ({ codigo: c, url: tagUrl(c), logo: logoDe(c) })), `${nomeArq(titulo)}.pdf`, { modelo: modeloPlaca });
+    await Placa.baixarPdf(lista.map((c) => ({ codigo: c, url: tagUrl(c), logo: logoDe(c), cor: restDaPlaca(c).cor || '' })), `${nomeArq(titulo)}.pdf`, { modelo: modeloPlaca });
   }
   // Painel da equipe do restaurante.
   const painelDe = (r) => (BASE ? `https://${r.slug}.${BASE}/admin/` : new URL(`/admin/?r=${r.slug}`, location.origin).href);
