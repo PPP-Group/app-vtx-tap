@@ -50,8 +50,14 @@
   const temFid = () => !!(S.settings.modulos && S.settings.modulos.fidelidade && window.FidPainel);
   // Sem o serviço de chamar o garçom no plano, somem Chamados e Salão.
   const temServico = (k) => !S.settings.plano || !!S.settings.plano.servicos[k];
+  // Delivery aparece com o serviço no plano.
+  const temDel = () => temServico('delivery') && !!window.DelPainel;
   const views = () => {
-    const base = VIEWS.filter((v) => temServico('garcom') || !['chamados', 'salao'].includes(v.id));
+    let base = VIEWS.filter((v) => temServico('garcom') || !['chamados', 'salao'].includes(v.id));
+    if (temDel()) {
+      const i = base.findIndex((v) => v.id === 'comentarios');
+      base = [...base.slice(0, i), { id: 'delivery', label: 'Delivery', curto: 'Delivery', icon: 'receipt' }, ...base.slice(i)];
+    }
     if (!temFid()) return base;
     const i = base.findIndex((v) => v.id === 'plaquinhas');
     return [...base.slice(0, i), { id: 'fidelidade', label: 'Fidelidade', curto: 'Pontos', icon: 'gift' }, ...base.slice(i)];
@@ -325,11 +331,13 @@
       S.online = false;
     }
     if (temFid()) await FidPainel.atualizar();
+    if (temDel()) await DelPainel.atualizar();
     detectNew();
     renderChrome();
     // Na fidelidade só redesenha sem formulário em edição (não apaga o que está sendo digitado).
     if (['chamados', 'salao', 'comentarios', 'plaquinhas'].includes(S.view)) renderView();
     else if (S.view === 'fidelidade' && !$('#main').contains(document.activeElement)) renderView();
+    else if (S.view === 'delivery' && !DelPainel.editando()) renderView();
     if (S.mesaAberta && !$('#sh-mesa').hidden) renderMesaSheet(S.mesaAberta);
   }
 
@@ -430,6 +438,7 @@
     if (id === 'chamados' && n.abertos) return `<span class="badge">${n.abertos}</span>`;
     if (id === 'comentarios' && n.naoLidos) return `<span class="badge badge--soft">${n.naoLidos}</span>`;
     if (id === 'fidelidade' && temFid() && FidPainel.badge()) return `<span class="badge">${FidPainel.badge()}</span>`;
+    if (id === 'delivery' && temDel() && DelPainel.badge()) return `<span class="badge">${DelPainel.badge()}</span>`;
     return '';
   };
 
@@ -575,7 +584,7 @@
   function renderView() {
     const main = $('#main');
     main.dataset.view = S.view;
-    main.innerHTML = avisoConfig() + { chamados: vChamados, salao: vSalao, comentarios: vComentarios, plaquinhas: vPlaquinhas, ajustes: vAjustes, fidelidade: () => FidPainel.html() }[S.view]();
+    main.innerHTML = avisoConfig() + { chamados: vChamados, salao: vSalao, comentarios: vComentarios, plaquinhas: vPlaquinhas, ajustes: vAjustes, fidelidade: () => FidPainel.html(), delivery: () => DelPainel.html() }[S.view]();
     if (S.view === 'ajustes' && S.ajTab === 'restaurante') carregarEquipe();
   }
 
@@ -2093,6 +2102,7 @@
     if (started) return;
     started = true;
     if (window.FidPainel) FidPainel.iniciar({ store, S, rerender: renderView, chrome: renderChrome, ding, isDemo, prepararImagem });
+    if (window.DelPainel) DelPainel.iniciar({ store, S, rerender: renderView, chrome: renderChrome, ding });
     route();
     window.addEventListener('hashchange', route);
     store.subscribe(queueRefresh);

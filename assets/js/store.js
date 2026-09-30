@@ -7,6 +7,8 @@
  *   listCalls({ desde })         → chamados criados depois de `desde` (Date)
  *   getCall(id) / updateCall(id, patch)          (equipe)
  *
+ *   Delivery: deliveryPedir(pedido) / deliveryAcompanhar(token)   (cliente)
+ *             deliveryPedidos({ desde }) / deliveryMudar(id, status, entregador, motivo)   (equipe)
  *   Plaquinhas e sino liberado pela equipe:
  *   mesaDaEtiqueta(codigo)       → nº da mesa ligada à plaquinha, ou null
  *   sessaoAbrir({ mesa, nome, codigo }) → { token, status, mesa, nome, codigo }
@@ -173,6 +175,17 @@
 
   // Mensalidade do plano (assets/js/precos.js, a mesma tabela de public.plano_preco).
   const precoPlano = (p) => window.Precos.plano(p);
+  // Distância em linha reta (km), a mesma conta de public.distancia_km.
+  const distanciaKm = (a, b) => {
+    const r = (x) => (x * Math.PI) / 180;
+    const h = Math.sin(r(b.lat - a.lat) / 2) ** 2 + Math.cos(r(a.lat)) * Math.cos(r(b.lat)) * Math.sin(r(b.lng - a.lng) / 2) ** 2;
+    return Math.round(6371 * 2 * Math.asin(Math.sqrt(h)) * 100) / 100;
+  };
+  // Taxa de entrega pela distância: a primeira faixa que cobre. null = fora da área.
+  const taxaEntrega = (dcfg, km) => {
+    const f = (dcfg.faixas || []).filter((x) => +x.ate > 0).sort((x, y) => x.ate - y.ate).find((x) => +x.ate >= km);
+    return f ? +f.taxa || 0 : null;
+  };
   // Valores iniciais, usados enquanto a equipe ainda não salvou nada pelo painel.
   // Demonstração: o restaurante de exemplo (Quintal Bistrô). Restaurante de verdade:
   // tudo em branco, e o que não for preenchido não aparece para o cliente.
@@ -180,12 +193,19 @@
     nome: '', descricao: '', endereco: '', telefone: '', instagram: '', googleUrl: '', logo: '', capa: '', cor: '',
     taxaServico: 10, horarios: [],
   };
+  // Delivery: taxa por distância (faixas até X km), pedido mínimo, tempo e formas de pagamento.
+  const DELIVERY_PADRAO = {
+    ativo: false, local: null, faixas: [{ ate: 3, taxa: 5 }, { ate: 6, taxa: 8 }, { ate: 10, taxa: 12 }],
+    minimo: 0, tempo: '40 a 60', pagamentos: { pix: true, cartao: true, dinheiro: true }, pix: '', whatsapp: '',
+  };
   const seed = (demo = true) => (demo ? {
     restaurante: cfg.restaurante,
     wifi: cfg.wifi,
-    cardapio: cfg.cardapio,
+    // Demonstração: o cardápio de exemplo também vende no delivery.
+    cardapio: cfg.cardapio.map((c) => ({ ...c, itens: c.itens.map((i) => ({ delivery: true, ...i })) })),
     mesas: cfg.mesasPadrao,
     widgets: cfg.widgetsPadrao,
+    delivery: { ...DELIVERY_PADRAO, ativo: true, local: { lat: -23.5667, lng: -46.6849, endereco: 'Rua dos Pinheiros, 412 - Pinheiros, São Paulo' }, pix: 'pix@quintalbistro.com.br' },
   } : {
     restaurante: RESTAURANTE_VAZIO,
     wifi: { rede: '', senha: '', seguranca: 'WPA' },
@@ -193,6 +213,7 @@
     mesas: { total: 20, areas: [{ nome: 'Salão', de: 1, ate: 20 }] },
     // As informações (endereço, telefone, horários, Instagram) começam desligadas.
     widgets: cfg.widgetsPadrao.map((w) => (w.tipo === 'info' ? { ...w, ativo: false } : w)),
+    delivery: DELIVERY_PADRAO,
   });
   // Completa o que foi salvo com os valores iniciais (campos novos em versões futuras).
   // Módulos: na demonstração vêm todos liberados; no servidor, a central libera.
@@ -210,7 +231,7 @@
     // Plano contratado: serviços e mesas. Sem plano definido = tudo liberado.
     const pl = saved && saved.plano;
     out.plano = {
-      servicos: { pagina: true, garcom: true, fidelidade: !!out.modulos.fidelidade, ...((pl && pl.servicos) || {}) },
+      servicos: { pagina: true, garcom: true, fidelidade: !!out.modulos.fidelidade, delivery: !!demo, ...((pl && pl.servicos) || {}) },
       mesas: Math.min(Math.max(+((pl && pl.mesas) || 500), 1), 500),
     };
     out.modulos.fidelidade = !!out.plano.servicos.fidelidade;
@@ -778,6 +799,72 @@
         write(db);
         return r;
       },
+      /* ---------- Delivery ---------- */
+      async deliveryPedir(p) {
+        const db = read();
+        const conf = mergeSettings(db.configuracao, true);
+        const d = conf.delivery;
+        const erro = (mensagem) => ({ status: 'erro', mensagem });
+        if (!conf.plano.servicos.delivery) return erro('Este restaurante não faz delivery por aqui.');
+        if (!d.ativo) return erro('O delivery está fechado agora.');
+        const nome = String(p.cliente && p.cliente.nome || '').trim().slice(0, 60);
+        const tel = soDigitos(p.cliente && p.cliente.telefone);
+        const e = p.endereco || {};
+        if (nome.length < 2) return erro('Informe seu nome.');
+        if (!/^[1-9]\d{9,10}$/.test(tel)) return erro('Informe um celular com DDD.');
+        if (!String(e.rua || '').trim() || !String(e.numero || '').trim() || !String(e.bairro || '').trim()) return erro('Complete o endereço: rua, número e bairro.');
+        if (!Array.isArray(p.itens) || !p.itens.length) return erro('O carrinho está vazio.');
+        const todos = conf.cardapio.flatMap((c) => c.itens);
+        const itens = [];
+        for (const x of p.itens) {
+          const it = todos.find((i) => i.id === x.id && i.delivery);
+          if (!it) return erro('Um item do carrinho não está mais disponível. Atualize a página.');
+          itens.push({ id: it.id, nome: it.nome, preco: +it.preco, qtd: Math.min(Math.max(Math.round(+x.qtd || 1), 1), 50), obs: String(x.obs || '').trim().slice(0, 140) || null });
+        }
+        const subtotal = Math.round(itens.reduce((t, i) => t + i.preco * i.qtd, 0) * 100) / 100;
+        if (subtotal < (+d.minimo || 0)) return erro(`O pedido mínimo é ${brlTxt(+d.minimo)}.`);
+        if (!(e.lat && e.lng) || !d.local) return erro('Não conseguimos localizar o endereço. Confira o CEP e o número.');
+        const km = distanciaKm(d.local, e);
+        const taxa = taxaEntrega(d, km);
+        if (taxa == null) return erro(`Seu endereço está fora da área de entrega (${String(km).replace('.', ',')} km).`);
+        const pg = p.pagamento || {};
+        if (!['pix', 'cartao', 'dinheiro'].includes(pg.forma) || !d.pagamentos[pg.forma]) return erro('Escolha uma forma de pagamento.');
+        const total = Math.round((subtotal + taxa) * 100) / 100;
+        if (pg.forma === 'dinheiro' && pg.troco && +pg.troco < total) return erro('O troco precisa ser para um valor maior que o total.');
+        const hoje = new Date().toDateString();
+        db.pedidos = db.pedidos || [];
+        const numero = db.pedidos.filter((x) => new Date(x.criado_em).toDateString() === hoje).reduce((m, x) => Math.max(m, x.numero), 0) + 1;
+        const token = uid();
+        db.pedidos.push({ id: uid(), token, numero, status: 'recebido', cliente: { nome, telefone: tel },
+          endereco: { cep: soDigitos(e.cep).slice(0, 8), rua: e.rua, numero: e.numero, complemento: e.complemento || '', bairro: e.bairro, cidade: e.cidade || '', referencia: e.referencia || '', lat: +e.lat, lng: +e.lng },
+          itens, subtotal, taxa, total, pagamento: { forma: pg.forma, troco: pg.forma === 'dinheiro' && pg.troco ? +pg.troco : null },
+          obs: String(p.obs || '').trim().slice(0, 300) || null, distancia_km: km, entregador: null, motivo: null,
+          historico: [{ status: 'recebido', em: nowIso() }], criado_em: nowIso(), atualizado_em: nowIso() });
+        write(db);
+        return { status: 'ok', token, numero, total };
+      },
+      async deliveryAcompanhar(token) {
+        const db = read();
+        const p = (db.pedidos || []).find((x) => x.token === token);
+        if (!p) return null;
+        const conf = mergeSettings(db.configuracao, true);
+        const { lat, lng, ...endereco } = p.endereco;
+        return { status: 'ok', pedido: { ...p, endereco, token: undefined, cliente: undefined },
+          restaurante: { nome: conf.restaurante.nome, telefone: conf.restaurante.telefone, whatsapp: conf.delivery.whatsapp, pix: p.pagamento.forma === 'pix' ? conf.delivery.pix : null, tempo: conf.delivery.tempo } };
+      },
+      async deliveryPedidos({ desde } = {}) {
+        const d = desde ? new Date(desde) : new Date(Date.now() - 24 * 3600e3);
+        return (read().pedidos || []).filter((x) => new Date(x.criado_em) >= d).sort((a, b) => new Date(b.criado_em) - new Date(a.criado_em));
+      },
+      async deliveryMudar(id, status, entregador, motivo) {
+        const db = read();
+        const p = (db.pedidos || []).find((x) => x.id === id);
+        if (!p) throw new Error('Pedido não encontrado.');
+        if (['entregue', 'cancelado'].includes(p.status) && status !== p.status) throw new Error('Este pedido já foi finalizado.');
+        Object.assign(p, { status, entregador: (entregador || '').trim().slice(0, 60) || p.entregador, motivo: status === 'cancelado' ? (motivo || '').trim().slice(0, 160) || null : p.motivo, atualizado_em: nowIso() });
+        p.historico.push({ status, em: nowIso(), por: quem(db) });
+        write(db);
+      },
       async fidSefaz() {
         return { status: 'indisponivel' };
       },
@@ -1189,7 +1276,7 @@
         this.restaurante = { id: r.id, slug: r.slug, nome: r.nome };
         if (realtimeAll) {
           const ch = sb.channel('painel-' + rid);
-          for (const table of ['chamados', 'comentarios', 'sessoes', 'mesas_abertas', 'etiquetas', 'fid_notas', 'fid_resgates']) {
+          for (const table of ['chamados', 'comentarios', 'sessoes', 'mesas_abertas', 'etiquetas', 'fid_notas', 'fid_resgates', 'pedidos']) {
             ch.on('postgres_changes', { event: '*', schema: 'public', table, filter: 'restaurante_id=eq.' + rid }, () => listeners.forEach((f) => f()));
           }
           ch.subscribe();
@@ -1354,6 +1441,21 @@
       },
       async fidTopProdutos(cpf, dias) {
         return must(await sb.rpc('fid_top_produtos', { p_cpf: cpf || null, p_dias: dias || 90 }));
+      },
+
+      /* ---------- Delivery ---------- */
+      async deliveryPedir(pedido) {
+        return must(await sb.rpc('delivery_pedir', { p_restaurante: rid, p_pedido: pedido }));
+      },
+      async deliveryAcompanhar(token) {
+        return must(await sb.rpc('delivery_acompanhar', { p_token: token }));
+      },
+      async deliveryPedidos({ desde } = {}) {
+        const d = desde ? new Date(desde) : new Date(Date.now() - 24 * 3600e3);
+        return must(await sb.from('pedidos').select('*').eq('restaurante_id', rid).gte('criado_em', d.toISOString()).order('criado_em', { ascending: false }).limit(300));
+      },
+      async deliveryMudar(id, status, entregador, motivo) {
+        must(await sb.rpc('delivery_mudar', { p_id: id, p_status: status, p_entregador: entregador || null, p_motivo: motivo || null }));
       },
       async fidResgatar(token, premioId) {
         return must(await sb.rpc('fid_resgatar', { p_token: token, p_premio: premioId }));
@@ -1533,6 +1635,7 @@
     padrao: (demo) => mergeSettings(null, demo),
     precoPlano,
     // Regras do programa de fidelidade usadas também pelas telas (validação e simulação).
+    delivery: { PADRAO: DELIVERY_PADRAO, distanciaKm, taxa: taxaEntrega },
     fid: { PADRAO: FID_PADRAO, cpfValido, chaveValida, chaveDoTexto, valorDoQr, boost: fidBoost, calcular: fidCalcular, niveis: fidNiveis, nivelDe: fidNivelDe, soDigitos },
     create() {
       const b = cfg.backend || {};

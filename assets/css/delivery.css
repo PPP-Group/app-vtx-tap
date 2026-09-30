@@ -1,0 +1,76 @@
+/* Delivery (/delivery): cardápio, carrinho, finalizar e acompanhar. Usa a base da página da mesa. */
+.delivery .hero-status { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.dl-info { display: inline-flex; align-items: center; gap: 6px; font-size: 13.5px; color: var(--ink-2); }
+.dl-info svg { width: 16px; height: 16px; }
+.dl-main { display: grid; gap: 18px; padding-bottom: 24px; }
+body.com-barra .dl-main { padding-bottom: 96px; }
+
+.dl-cats { position: sticky; top: 0; z-index: 5; display: flex; gap: 8px; overflow-x: auto; padding: 10px 0; margin: 0 -16px; padding-inline: 16px;
+  background: var(--bg); scrollbar-width: none; }
+.dl-cats::-webkit-scrollbar { display: none; }
+.dl-cats .chip { flex: none; }
+.dl-sec { scroll-margin-top: 64px; display: grid; gap: 10px; }
+.dl-h2 { font-family: var(--font-display); font-weight: 900; font-size: 24px; text-transform: uppercase; line-height: 1; }
+.dl-h3 { font-size: 16px; font-weight: 700; }
+.dl-itens { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.dl-item { display: flex; align-items: center; gap: 12px; padding: 14px; border-radius: 18px; background: var(--surface); border: 1px solid var(--line); }
+.dl-item.is-no-carrinho { border-color: var(--cobalt); }
+.dl-item-txt { flex: 1; min-width: 0; display: grid; gap: 3px; }
+.dl-item-txt b { font-size: 15.5px; }
+.dl-item-txt small { color: var(--ink-2); font-size: 13.5px; }
+.dl-item-txt .price { font-weight: 700; font-variant-numeric: tabular-nums; }
+.dl-qtd { display: inline-flex; align-items: center; gap: 6px; flex: none; }
+.dl-qtd b { min-width: 22px; text-align: center; font-variant-numeric: tabular-nums; }
+.dl-qtd .icon-btn { width: 34px; height: 34px; }
+
+.dl-barra { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; padding: 12px 16px calc(12px + var(--safe-b, 0px)); background: linear-gradient(transparent, var(--bg) 30%); }
+.dl-barra .btn { justify-content: space-between; max-width: 560px; margin: 0 auto; }
+
+.dl-form .field { margin: 0; }
+.dl-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.dl-row .dl-num { max-width: none; }
+@media (max-width: 380px) { .dl-row { grid-template-columns: 1fr; } }
+.dl-carrinho { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.dl-carrinho li { display: grid; gap: 8px; padding: 12px; border-radius: 16px; background: var(--surface-2); }
+.dl-c-top { display: flex; align-items: center; gap: 10px; }
+.dl-c-nome { flex: 1; min-width: 0; }
+.dl-c-obs { font-size: 14px; }
+.dl-local { display: grid; gap: 10px; padding: 12px; border-radius: 14px; background: var(--surface-2); font-size: 14px; }
+.dl-local > span:first-child { display: flex; align-items: center; gap: 8px; }
+.dl-local svg { width: 18px; height: 18px; flex: none; }
+.dl-local.is-ok { background: var(--leaf-soft); }
+.dl-local.is-fora { background: var(--pepper-soft); }
+.dl-local-acts { display: flex; flex-wrap: wrap; gap: 8px; }
+.dl-formas { justify-self: start; flex-wrap: wrap; }
+.dl-totais { margin: 0; display: grid; gap: 6px; }
+.dl-totais div { display: flex; justify-content: space-between; font-variant-numeric: tabular-nums; }
+.dl-totais dt { color: var(--ink-2); }
+.dl-totais dd { margin: 0; }
+.dl-total { padding-top: 6px; border-top: 1px solid var(--line); font-weight: 800; font-size: 18px; }
+.dl-total dt { color: var(--ink); }
+
+.dl-acomp { padding-top: 8px; }
+.dl-num { justify-self: center; display: grid; justify-items: center; padding: 16px 28px; }
+.dl-num small { font-size: 12px; letter-spacing: .12em; text-transform: uppercase; }
+.dl-num b { font-family: var(--font-display); font-size: 46px; line-height: 1; }
+.dl-etapas { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
+.dl-etapas li { position: relative; display: grid; grid-template-columns: 34px 1fr; gap: 12px; padding-bottom: 18px; color: var(--muted); }
+.dl-etapas li:not(:last-child)::before { content: ''; position: absolute; left: 16px; top: 32px; bottom: 0; width: 2px; background: var(--line); }
+.dl-etapas li.is-feito::before { background: var(--cobalt); }
+.dl-etapas b { display: block; font-size: 16px; }
+.dl-etapas small { font-size: 13.5px; }
+.dl-bola { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; border: 2px solid var(--line); background: var(--surface); color: #fff; }
+.dl-bola svg { width: 18px; height: 18px; }
+.dl-etapas li.is-feito, .dl-etapas li.is-agora { color: var(--ink); }
+.dl-etapas li.is-feito .dl-bola { background: var(--cobalt); border-color: var(--cobalt); }
+.dl-etapas li.is-agora .dl-bola { background: var(--cobalt); border-color: var(--cobalt); box-shadow: 0 0 0 6px var(--cobalt-soft); }
+.dl-tempo { display: flex; align-items: center; gap: 6px; }
+.dl-tempo svg { width: 16px; height: 16px; }
+.dl-pix { display: grid; gap: 8px; padding: 14px; border-radius: 16px; background: var(--surface-2); }
+.dl-pix b { word-break: break-all; }
+.dl-pix .btn { justify-self: start; }
+.dl-resumo { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.dl-resumo li { display: flex; justify-content: space-between; gap: 10px; }
+.dl-resumo small { display: block; color: var(--ink-2); font-size: 12.5px; }
+.dl-cancelado { background: var(--pepper-soft); }
+.dl-aviso { color: inherit; text-decoration: none; }
