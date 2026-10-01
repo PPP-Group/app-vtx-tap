@@ -1,0 +1,91 @@
+/* ==========================================================================
+   Campos no padrão do sistema: setas dos números e listas de opções.
+   Usa os tokens do painel; na landing page cai nos tokens dela (roxo).
+   ========================================================================== */
+:root {
+  --campo-cor: var(--cobalt, var(--roxo, #7D27FC));
+  --campo-cor-ink: var(--cobalt-ink, var(--roxo-ink, #6A1BE0));
+  --campo-cor-soft: var(--cobalt-soft, var(--roxo-soft, #EEE5FF));
+  --campo-sombra: var(--shadow-2, 0 2px 6px rgba(22, 14, 51, .08), 0 22px 48px -18px rgba(22, 14, 51, .35));
+}
+
+/* ---------- Números ---------- */
+input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; appearance: none; margin: 0; }
+
+.num { position: relative; display: flex; width: fit-content; max-width: 100%; min-width: 0; }
+.num--cheio { width: 100%; }
+.num--cheio > input { width: 100%; }
+.num > input { padding-right: 34px; min-width: 0; }
+.num-setas {
+  position: absolute; top: 5px; right: 5px; bottom: 5px;
+  display: grid; grid-template-rows: 1fr 1fr; gap: 2px; width: 24px;
+}
+.num-setas button {
+  display: grid; place-items: center; padding: 0; min-height: 0;
+  border: 0; border-radius: 7px; background: transparent; color: var(--muted);
+  cursor: pointer; transition: background-color .15s, color .15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.num-setas button:first-child { border-radius: 8px 8px 4px 4px; }
+.num-setas button:last-child { border-radius: 4px 4px 8px 8px; }
+.num-setas svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.num-setas button:hover { background: var(--campo-cor-soft); color: var(--campo-cor-ink); }
+.num-setas button:active { background: var(--campo-cor); color: #fff; }
+.num:has(input:focus) .num-setas button { color: var(--campo-cor-ink); }
+.num:has(input:disabled) .num-setas { opacity: .35; pointer-events: none; }
+
+/* ---------- Listas de opções (select) ---------- */
+select.input {
+  appearance: none; -webkit-appearance: none;
+  padding-right: 42px; cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238A82A8' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 14px center; background-size: 16px 16px;
+}
+
+/* Navegadores que permitem desenhar a lista aberta (Chrome e Edge recentes). */
+@supports (appearance: base-select) {
+  select.input, select.input::picker(select) { appearance: base-select; }
+  select.input { display: flex; align-items: center; gap: 8px; background-image: none; padding-right: 14px; }
+  select.input::picker-icon {
+    content: ''; width: 16px; height: 16px; margin-left: auto; flex: none;
+    background: var(--muted);
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") center / contain no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") center / contain no-repeat;
+    transition: rotate .25s var(--spring, ease-out), background-color .15s;
+  }
+  select.input:open { border-color: var(--campo-cor); box-shadow: 0 0 0 4px color-mix(in srgb, var(--campo-cor) 16%, transparent); }
+  select.input:open::picker-icon { rotate: 180deg; background: var(--campo-cor); }
+
+  select.input::picker(select) {
+    margin-block: 6px; padding: 6px;
+    border: 1.5px solid var(--line); border-radius: 16px;
+    background: var(--surface); color: var(--ink);
+    box-shadow: var(--campo-sombra);
+    font-family: var(--font-body, var(--body, system-ui, sans-serif));
+    max-height: min(340px, 60dvh); overflow-y: auto; overscroll-behavior: contain;
+    scrollbar-width: thin; scrollbar-color: var(--line) transparent;
+    opacity: 0; translate: 0 -4px;
+    transition: opacity .16s ease-out, translate .2s var(--spring, ease-out), overlay .2s allow-discrete, display .2s allow-discrete;
+  }
+  select.input:open::picker(select) { opacity: 1; translate: 0 0; }
+  @starting-style { select.input:open::picker(select) { opacity: 0; translate: 0 -4px; } }
+
+  select.input option {
+    display: flex; align-items: center; gap: 10px;
+    min-height: 40px; padding: 9px 12px; border-radius: 10px;
+    font-size: 15px; color: var(--ink); cursor: pointer;
+    transition: background-color .12s, color .12s;
+  }
+  select.input option:hover, select.input option:focus-visible { background: var(--surface-2, var(--campo-cor-soft)); outline: none; }
+  select.input option:checked { background: var(--campo-cor-soft); color: var(--campo-cor-ink); font-weight: 600; }
+  select.input option::checkmark { order: 1; margin-left: auto; color: var(--campo-cor); font-weight: 700; }
+  select.input option:disabled { opacity: .45; cursor: default; }
+  select.input optgroup { padding: 4px 0; }
+  select.input optgroup legend { padding: 8px 12px 4px; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  select.input::picker(select), select.input::picker-icon { transition: none; }
+}

@@ -223,6 +223,7 @@
   .fechamento .btn-cta { background: #FFC61A; color: #1D1400; box-shadow: none; min-height: 50px; padding: 0 22px; font-size: 16px; }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
+<link rel="stylesheet" href="/assets/css/campos.css">
 </head>
 <body>
 <header class="topo">
@@ -441,6 +442,7 @@
 </div>
 
 <script src="/assets/js/precos.js"></script>
+<script src="/assets/js/campos.js"></script>
 <script>
   // Local (/lp/orcamento.html) a landing page é /lp/; publicada, é a raiz.
   if (location.pathname.startsWith('/lp/')) document.querySelectorAll('[data-home]').forEach((a) => (a.href = a.getAttribute('href').replace(/^\//, '/lp/')));
