@@ -6,15 +6,17 @@
  * Manifesto e ícones do app com o nome e a logo do restaurante: vêm do cache 'painel-marca',
  * que o painel preenche (assets/js/admin.js, marcaDoApp).
  */
-const VERSAO = 'painel-v6';
+const VERSAO = 'painel-v7';
 const MARCA = 'painel-marca';
 const BASE = [
   '/admin/',
   '/assets/css/base.css',
   '/assets/css/admin.css',
+  '/assets/css/campos.css',
   '/assets/js/config.js',
   '/assets/js/store.js',
   '/assets/js/ui.js',
+  '/assets/js/campos.js',
   '/assets/js/admin.js',
   '/admin/icons/icon-192.png',
 ];

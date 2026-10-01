@@ -4,13 +4,15 @@
  * Fontes e bibliotecas externas: cópia guardada, atualizada em segundo plano.
  * Dados do servidor (Supabase) nunca passam pelo cache.
  */
-const VERSAO = 'master-v2';
+const VERSAO = 'master-v3';
 const INICIO = '/master';
 const BASE = [
   INICIO,
   '/assets/css/base.css',
   '/central/central.css',
+  '/assets/css/campos.css',
   '/assets/js/ui.js',
+  '/assets/js/campos.js',
   '/central/central.js',
   '/central/placa.js',
   '/assets/img/vtx-tap.png',
