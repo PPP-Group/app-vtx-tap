@@ -30,13 +30,16 @@
  *   Programa de fidelidade (módulo liberado pela Vortex; regras em settings.fidelidade):
  *   cliente: fidPrograma() / fidConsultar(cpf) / fidIndicador(codigo) / fidCadastrar(dados) /
  *            fidEntrar(cpf, pin) / fidConta(token) / fidSair(token) /
- *            fidNotaSituacao({ cpf, qr }) / fidRegistrarNota({ cpf, qr, valor }) / fidSefaz({ cpf, qr }) / fidRanking(token) / fidResgatar(token, premioId)
+ *            fidNotaSituacao({ cpf, qr }) / fidRegistrarNota({ cpf, qr, valor }) / fidSefaz({ cpf, qr }) / fidRanking(token) / fidResgatar(token, premioId) /
+ *            fidDefinirAniversario(token, mes) / fidTransferirDestino(token, cpfOuCodigo) / fidTransferir(token, cpfOuCodigo, pontos, pin) /
+ *            fidTorcer(token, eventoId, time)
  *            → sempre { status, ... } (status 'erro' traz a mensagem)
  *   equipe:  fidResumo() / fidPendencias() / fidClientes(busca) / fidCliente(cpf) / fidRecentes() /
  *            fidAprovarNota(chave, valor, emitidaIso) / fidRecusarNota(chave, motivo) /
  *            fidImportarXml(notas) / fidResgateDecidir(id, entregar) / fidLancar(cpf, valor, descricao) /
  *            fidRedefinirPin(cpf) / fidExcluirCliente(cpf) / fidEditarCliente(cpf, dados) /
- *            fidPremios() / fidSalvarPremio(p) / fidExcluirPremio(id) / fidExportar() / fidTopProdutos(cpf, dias)
+ *            fidPremios() / fidSalvarPremio(p) / fidExcluirPremio(id) / fidExportar() / fidTopProdutos(cpf, dias) /
+ *            fidEventos() / fidEventoSalvar(e) / fidEventoExcluir(id) / fidEventoResultado(id, vencedor|'empate')
  *            → erros viram exceção com a mensagem
  */
 (function () {
@@ -51,6 +54,12 @@
     ativo: false, nome: 'Clube de pontos', pontosPorReal: 1, boosts: [], cnpjs: [], prazoDias: 7, inicio: null,
     manual: false, regulamento: '', fuso: 'America/Sao_Paulo', indicacao: { ativo: true, indicador: 50, indicado: 20, quando: 'cadastro' },
     niveis: { ativo: false, base: 'sempre', meses: 12, lista: [] }, ranking: { ativo: true },
+    // Mês do aniversário: pontos x mult no mês e bônus de presente (1 vez por ano).
+    aniversario: { ativo: false, mult: 1, bonus: 0 },
+    // Cliente manda pontos para outro cliente (CPF ou código), com o PIN.
+    transferencia: { ativo: true, minimo: 10, maximoDia: 0 },
+    // Pontos vencem depois de quantidade dias/meses (os mais antigos primeiro). desde = dia em que a regra foi ligada.
+    validade: { ativo: false, quantidade: 12, unidade: 'meses', desde: null },
   };
   const soDigitos = (s) => String(s || '').replace(/\D/g, '');
   function cpfValido(c) {
@@ -117,13 +126,19 @@
     }
     return melhor;
   }
-  // Pontos de uma compra: valor x pontos por real x dia com mais pontos x bônus do nível.
-  function fidCalcular(regras, valor, quando, nivel = null) {
+  // Pontos de uma compra: valor x pontos por real x (dia com mais pontos ou mês do aniversário, o maior)
+  // x bônus do nível x clássico. extra = { aniversarioMes, eventoMult, eventoNome } (mesmas regras de public.fid_calcular).
+  function fidCalcular(regras, valor, quando, nivel = null, extra = {}) {
     const ppr = Math.min(Math.max(Number(regras.pontosPorReal) || 0, 0), 1000);
-    const b = fidBoost(regras, quando);
+    let b = fidBoost(regras, quando);
+    const an = regras.aniversario || {};
+    const am = Math.min(Math.max(Number(an.mult) || 1, 1), 10);
+    if (an.ativo && extra.aniversarioMes && extra.aniversarioMes === new Date(quando).getMonth() + 1 && am > b.mult) b = { mult: am, nome: 'mês do aniversário' };
+    const em = extra.eventoMult > 1 ? extra.eventoMult : 1;
     const mn = nivel ? nivel.mult : 1;
-    const m = Math.round(b.mult * mn * 100) / 100;
-    return { pontos: Math.floor(Math.max(Number(valor) || 0, 0) * ppr * m + 1e-9), mult: m, boost: b.nome, nivel: mn > 1 ? nivel.nome : null };
+    const m = Math.round(b.mult * mn * em * 100) / 100;
+    const nome = [b.nome, em > 1 ? extra.eventoNome : null].filter(Boolean).join(' · ') || null;
+    return { pontos: Math.floor(Math.max(Number(valor) || 0, 0) * ppr * m + 1e-9), mult: m, boost: nome, nivel: mn > 1 ? nivel.nome : null };
   }
   // Níveis do clube (mesma arrumação de public.fid_niveis): ordem pelo mínimo, o primeiro começa em 0.
   function fidNiveis(regras) {
@@ -158,6 +173,7 @@
       { id: 'b2', nome: 'Happy hour', mult: 1.5, dias: [1, 2, 3, 4, 5], de: '17:00', ate: '19:00', inicio: '', fim: '', ativo: true },
     ],
     regulamento: 'Demonstração: 1 ponto a cada R$ 1 gasto com CPF na nota. Os pontos valem por 12 meses.',
+    aniversario: { ativo: true, mult: 2, bonus: 50 },
     niveis: {
       ativo: true, base: 'sempre', meses: 12,
       lista: [
@@ -171,6 +187,9 @@
     ...FID_PADRAO, ...(f || {}),
     indicacao: { ...FID_PADRAO.indicacao, ...((f && f.indicacao) || {}) },
     niveis: { ...FID_PADRAO.niveis, ...((f && f.niveis) || {}) },
+    aniversario: { ...FID_PADRAO.aniversario, ...((f && f.aniversario) || {}) },
+    transferencia: { ...FID_PADRAO.transferencia, ...((f && f.transferencia) || {}) },
+    validade: { ...FID_PADRAO.validade, ...((f && f.validade) || {}) },
   });
 
   // Mensalidade do plano (assets/js/precos.js, a mesma tabela de public.plano_preco).
@@ -385,7 +404,7 @@
       const n = regras(db).niveis || {};
       const desde = n.base === 'meses' ? Date.now() - Math.min(Math.max(+n.meses || 12, 1), 60) * 30.44 * DIA : 0;
       return Math.max(F(db).movimentos.filter((m) => m.cpf === cpf && new Date(m.criado_em) > desde
-        && (['compra', 'manual'].includes(m.tipo) || (['estorno', 'ajuste'].includes(m.tipo) && !m.resgate_id)))
+        && (['compra', 'manual', 'evento'].includes(m.tipo) || (['estorno', 'ajuste'].includes(m.tipo) && !m.resgate_id)))
         .reduce((t, m) => t + m.pontos, 0), 0);
     }
     const nivelDe = (db, cpf) => fidNivelDe(fidNiveis(regras(db)), pontosNivel(db, cpf));
@@ -459,7 +478,7 @@
           motivo: `Esta compra já ganhou pontos pelo pedido nº ${ped.numero} do delivery.` });
         return null;
       }
-      const calc = fidCalcular(regras(db), valor, emitida || n.lida_em, nivelDe(db, n.cpf));
+      const calc = fidCalcular(regras(db), valor, emitida || n.lida_em, nivelDe(db, n.cpf), extraDe(db, n.cpf, emitida || n.lida_em));
       Object.assign(n, { status: 'creditada', valor, emitida_em: emitida || n.emitida_em || n.lida_em, pontos: calc.pontos, mult: calc.mult, conferida_em: nowIso(), conferida_por: por, motivo: null });
       mover(db, n.cpf, 'compra', calc.pontos, {
         descricao: `Compra de ${brlTxt(valor)}${calc.boost ? ` · ${calc.boost}` : ''}${calc.nivel ? ` · nível ${calc.nivel}` : ''}${calc.mult > 1 ? ` (${multTxt(calc.mult)}x)` : ''}`,
@@ -511,7 +530,7 @@
         && (Math.abs(x.valor - p.total) <= 0.05 || Math.abs(x.valor - p.subtotal) <= 0.05)
         && new Date(x.emitida_em) >= em - 3600e3 && new Date(x.emitida_em) <= +em + 12 * 3600e3);
       if (n) { Object.assign(p, { fid_situacao: 'nota', cpf, nota_chave: n.chave, fid_pontos: n.pontos }); return { status: 'nota', pontos: n.pontos }; }
-      const calc = fidCalcular(regras(db), p.total, p.criado_em, nivelDe(db, cpf));
+      const calc = fidCalcular(regras(db), p.total, p.criado_em, nivelDe(db, cpf), extraDe(db, cpf, p.criado_em));
       Object.assign(p, { fid_situacao: 'creditado', cpf, fid_pontos: calc.pontos });
       mover(db, cpf, 'compra', calc.pontos, {
         descricao: `Delivery nº ${p.numero} · ${brlTxt(p.total)}${calc.boost ? ` · ${calc.boost}` : ''}${calc.nivel ? ` · nível ${calc.nivel}` : ''}${calc.mult > 1 ? ` (${multTxt(calc.mult)}x)` : ''}`,
@@ -544,6 +563,86 @@
       const ini = inicio(db);
       if (ini && fimMes <= ini) return 'A compra foi antes do início do programa.';
       return null;
+    }
+    /* ---- Aniversário, validade, transferência e clássico (mesmas regras do banco) ---- */
+    const evs = (db) => { const f = F(db); f.eventos = f.eventos || []; f.torcidas = f.torcidas || []; return f; };
+    const fechaEvento = (e) => new Date(`${e.data}T${e.hora || '23:59'}:00`);
+    // Mês do aniversário e clássico vencido pelo time do cliente no dia da compra.
+    function extraDe(db, cpf, quando) {
+      const c = cpf && cliDe(db, cpf);
+      if (!c) return {};
+      const f = evs(db);
+      const dia = diaIso(new Date(quando));
+      const e = f.eventos.filter((x) => x.data === dia && x.vencedor && f.torcidas.some((t) => t.evento_id === x.id && t.cpf === cpf && t.time === x.vencedor))
+        .sort((a, b) => b.mult - a.mult)[0];
+      return { aniversarioMes: c.aniversario_mes || null, eventoMult: e ? +e.mult : 1, eventoNome: e ? e.nome : null };
+    }
+    function bonusAniversario(db, cpf) {
+      const a = regras(db).aniversario || {};
+      const b = Math.round(Math.min(Math.max(+a.bonus || 0, 0), 1e5));
+      const c = cliDe(db, cpf);
+      const agora = new Date();
+      if (!a.ativo || b <= 0 || !noAr(db) || !c || c.aniversario_mes !== agora.getMonth() + 1 || (c.aniversario_ano || 0) >= agora.getFullYear()) return 0;
+      c.aniversario_ano = agora.getFullYear();
+      mover(db, cpf, 'aniversario', b, { descricao: 'Presente de aniversário', por: 'Aniversário' });
+      return b;
+    }
+    // Validade em ms (null = não vence) e o início da contagem.
+    function validadeMs(db) {
+      const v = regras(db).validade || {};
+      if (!v.ativo) return null;
+      return v.unidade === 'dias' ? Math.min(Math.max(+v.quantidade || 365, 1), 3650) * DIA : Math.min(Math.max(+v.quantidade || 12, 1), 120) * 30.44 * DIA;
+    }
+    const validadeDesde = (db) => { const d = (regras(db).validade || {}).desde; return /^\d{4}-\d{2}-\d{2}$/.test(d || '') ? +new Date(d + 'T00:00:00') : null; };
+    const venceEm = (db, m, iv) => Math.max(+new Date(m.criado_em), validadeDesde(db) || 0) + iv;
+    // A parte que veio de transferência recebida vence separada e não desconta do ranking (como no banco).
+    function vencer(db, cpf) {
+      const iv = validadeMs(db);
+      const c = cliDe(db, cpf);
+      if (!iv || !c || c.pontos <= 0) return 0;
+      const ms = F(db).movimentos.filter((m) => m.cpf === cpf);
+      let restante = -ms.filter((m) => m.pontos < 0).reduce((t, m) => t + m.pontos, 0);
+      let tr = 0; let out = 0;
+      for (const m of ms.filter((x) => x.pontos > 0).map((x) => ({ ...x, vence: venceEm(db, x, iv) })).sort((a, b) => a.vence - b.vence)) {
+        if (m.vence > Date.now()) break;
+        const usado = Math.min(restante, m.pontos);
+        restante -= usado;
+        if (m.tipo === 'transferencia') tr += m.pontos - usado; else out += m.pontos - usado;
+      }
+      const total = Math.min(tr + out, c.pontos);
+      if (total <= 0) return 0;
+      tr = Math.min(tr, total);
+      out = total - tr;
+      if (out > 0) mover(db, cpf, 'validade', -out, { descricao: 'Pontos vencidos', por: 'Validade' });
+      if (tr > 0) mover(db, cpf, 'validade', -tr, { descricao: 'Pontos vencidos (recebidos por transferência)', por: 'Validade (transferência)' });
+      return total;
+    }
+    function aVencer(db, cpf) {
+      const iv = validadeMs(db);
+      if (!iv) return null;
+      const ms = F(db).movimentos.filter((m) => m.cpf === cpf);
+      const saidas = -ms.filter((m) => m.pontos < 0).reduce((t, m) => t + m.pontos, 0);
+      let acum = 0; let primeira = null; let total = 0;
+      for (const m of ms.filter((x) => x.pontos > 0).map((x) => ({ pontos: x.pontos, vence: venceEm(db, x, iv) })).sort((a, b) => a.vence - b.vence)) {
+        if (m.vence > Date.now() + 30 * DIA) break;
+        acum += m.pontos;
+        if (acum > saidas) { primeira = primeira || m.vence; total = acum - saidas; }
+      }
+      return total > 0 ? { pontos: total, em: new Date(primeira).toISOString() } : null;
+    }
+    // Destino da transferência: CPF ou código de indicação.
+    function destinoDe(db, d) {
+      const x = String(d || '').replace(/[^0-9A-Za-z]/g, '');
+      return /^\d{11}$/.test(x) ? cliDe(db, x) : /^[A-Za-z0-9]{4,12}$/.test(x) ? F(db).clientes.find((c) => c.codigo === x.toUpperCase()) : null;
+    }
+    function eventosPublicos(db) {
+      const hoje = diaIso(new Date());
+      const limite = diaIso(new Date(Date.now() + 30 * DIA));
+      const ontem = diaIso(new Date(Date.now() - DIA));
+      return evs(db).eventos
+        .filter((e) => (!e.vencedor && e.data >= ontem && e.data <= limite) || (e.resultado_em && Date.now() - new Date(e.resultado_em) < 3 * DIA))
+        .sort((a, b) => (a.data + (a.hora || '')).localeCompare(b.data + (b.hora || '')))
+        .map((e) => ({ id: e.id, nome: e.nome, data: e.data, hora: e.hora || null, times: e.times, mult: +e.mult, vencedor: e.vencedor || null, aberta: !e.vencedor && Date.now() < fechaEvento(e), hoje: e.data === hoje }));
     }
     const sessaoDe = (db, token) => {
       const s = token && F(db).sessoes[token];
@@ -787,8 +886,13 @@
           boosts: (r.boosts || []).filter((b) => b.ativo !== false && +b.mult > 1 && !(b.fim && b.fim < hoje))
             .map(({ nome, mult, dias, de, ate, inicio: ini, fim }) => ({ nome, mult: +mult, dias: dias || [], de: de || '', ate: ate || '', inicio: ini || '', fim: fim || '' })),
           niveis: fidNiveis(r).length ? { ativo: true, base: r.niveis.base === 'meses' ? 'meses' : 'sempre', meses: Math.min(Math.max(+r.niveis.meses || 12, 1), 60), lista: fidNiveis(r) } : { ativo: false },
-          premios: F(db).premios.filter((p) => p.ativo).sort((a, b) => a.ordem - b.ordem || a.pontos - b.pontos)
-            .map(({ id, nome, descricao, pontos, imagem, nivel_min }) => ({ id, nome, descricao, pontos, imagem, nivel_min: nivel_min || null })),
+          aniversario: r.aniversario && r.aniversario.ativo ? { ativo: true, mult: Math.min(Math.max(+r.aniversario.mult || 1, 1), 10), bonus: Math.max(+r.aniversario.bonus || 0, 0) } : { ativo: false },
+          transferencia: r.transferencia && r.transferencia.ativo ? { ativo: true, minimo: Math.max(+r.transferencia.minimo || 1, 1), maximoDia: Math.max(+r.transferencia.maximoDia || 0, 0) } : { ativo: false },
+          validade: validadeMs(db) ? { ativo: true, quantidade: +r.validade.quantidade || 12, unidade: r.validade.unidade === 'dias' ? 'dias' : 'meses' } : { ativo: false },
+          eventos: eventosPublicos(db),
+          premios: F(db).premios.filter((p) => p.ativo && (!p.aniversario || (r.aniversario && r.aniversario.ativo)))
+            .sort((a, b) => (b.aniversario ? 1 : 0) - (a.aniversario ? 1 : 0) || a.ordem - b.ordem || a.pontos - b.pontos)
+            .map(({ id, nome, descricao, pontos, imagem, nivel_min, aniversario }) => ({ id, nome, descricao, pontos, imagem, nivel_min: nivel_min || null, aniversario: !!aniversario })),
         };
       },
       async fidConsultar(cpf) {
@@ -798,15 +902,17 @@
         if (!cpfValido(cpf)) return { status: 'erro', mensagem: 'CPF inválido. Confira os números.' };
         const c = cliDe(db, cpf);
         if (!c) return { status: 'novo' };
+        if (vencer(db, cpf) + bonusAniversario(db, cpf)) write(db);
         return { status: 'ok', nome: c.nome.split(' ')[0], pontos: c.pontos, nivel: nivelDe(db, cpf), pendentes: F(db).notas.filter((n) => n.cpf === cpf && n.status === 'pendente').length, tem_pin: !!F(db).pins[cpf] };
       },
       async fidIndicador(codigo) {
         const c = F(read()).clientes.find((x) => x.codigo === String(codigo || '').toUpperCase().replace(/[^A-Z0-9]/g, ''));
         return c ? { status: 'ok', nome: c.nome.split(' ')[0] } : { status: 'nao' };
       },
-      async fidCadastrar({ cpf, nome, email, telefone, pin, marketing, indicacao }) {
+      async fidCadastrar({ cpf, nome, email, telefone, pin, marketing, indicacao, aniversario }) {
         const db = read();
         if (!noAr(db)) return { status: 'inativo' };
+        aniversario = Math.round(+aniversario);
         cpf = soDigitos(cpf);
         nome = String(nome || '').replace(/\s+/g, ' ').trim().slice(0, 80);
         email = String(email || '').trim().toLowerCase();
@@ -816,7 +922,8 @@
           : !/^\S{2,}( \S+)+$/.test(nome) ? 'Informe seu nome completo (nome e sobrenome).'
           : email.length > 120 || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) ? 'E-mail inválido.'
           : !/^[1-9]\d{9,10}$/.test(telefone) ? 'Telefone inválido. Use DDD + número.'
-          : !/^\d{4}$/.test(pin || '') ? 'O PIN tem 4 números.' : null;
+          : !/^\d{4}$/.test(pin || '') ? 'O PIN tem 4 números.'
+          : !(aniversario >= 1 && aniversario <= 12) ? 'Escolha o mês do seu aniversário.' : null;
         if (erro) return { status: 'erro', mensagem: erro };
         const f = F(db);
         if (cliDe(db, cpf)) return { status: 'erro', mensagem: 'Este CPF já tem cadastro. Entre com o seu PIN.', existe: true };
@@ -831,13 +938,14 @@
         let codigo;
         do codigo = Array.from({ length: 6 }, () => ALF[Math.floor(Math.random() * ALF.length)]).join('');
         while (f.clientes.some((x) => x.codigo === codigo));
-        f.clientes.push({ cpf, nome, email, telefone, pontos: 0, codigo, indicado_por, bonus_indicacao: false, marketing: !!marketing, criado_em: nowIso() });
+        f.clientes.push({ cpf, nome, email, telefone, pontos: 0, codigo, indicado_por, bonus_indicacao: false, marketing: !!marketing, aniversario_mes: aniversario, aniversario_ano: null, criado_em: nowIso() });
         f.pins[cpf] = await hashTxt(cpf + ':' + pin);
         if (regras(db).indicacao.quando !== 'compra') bonusIndicacao(db, cpf);
         f.xml.filter((x) => x.cpf === cpf).forEach((x) => autoCreditar(db, x.chave));
         (db.pedidos || []).filter((p) => p.status === 'entregue' && (!p.fid_situacao || p.fid_situacao === 'sem_cadastro')
           && (p.cpf === cpf || (!p.cpf && soDigitos(p.cliente.telefone) === telefone)) && Date.now() - new Date(p.criado_em) < prazo(db) * DIA)
           .forEach((p) => creditarPedido(db, p));
+        bonusAniversario(db, cpf);
         const token = uid();
         f.sessoes[token] = cpf;
         write(db);
@@ -864,13 +972,21 @@
         const db = read();
         const cpf = sessaoDe(db, token);
         if (!cpf) return { status: 'sem_sessao' };
-        const f = F(db);
+        const f = evs(db);
+        vencer(db, cpf);
+        bonusAniversario(db, cpf);
         const c = cliDe(db, cpf);
         const desc = (a, b) => (a < b ? 1 : a > b ? -1 : 0);
         const nivel = atualizarNivel(db, cpf, false);
         write(db);
+        const ano = new Date().getFullYear();
         return {
           status: 'ok', ...c, nivel, indicacoes: f.clientes.filter((x) => x.indicado_por === cpf).length,
+          aniversariante: c.aniversario_mes === new Date().getMonth() + 1,
+          a_vencer: aVencer(db, cpf),
+          torcidas: Object.fromEntries(f.torcidas.filter((t) => t.cpf === cpf).map((t) => [t.evento_id, t.time])),
+          presentes_ano: [...new Set(f.resgates.filter((x) => x.cpf === cpf && x.status !== 'cancelado' && new Date(x.criado_em).getFullYear() === ano
+            && (f.premios.find((p) => p.id === x.premio_id) || {}).aniversario).map((x) => x.premio_id))],
           notas: f.notas.filter((n) => n.cpf === cpf).sort((a, b) => desc(a.lida_em, b.lida_em)).slice(0, 20)
             .map((n) => ({ chave: n.chave, status: n.status, valor: n.valor ?? n.valor_informado, pontos: n.pontos, lida_em: n.lida_em, motivo: n.motivo })),
           movimentos: f.movimentos.filter((m) => m.cpf === cpf).slice(-40).reverse()
@@ -1074,7 +1190,8 @@
         const f = F(db);
         const ganhos = new Map();
         for (const m of f.movimentos) {
-          if (m.tipo === 'resgate' || (m.tipo === 'estorno' && m.resgate_id)) continue;
+          if (m.tipo === 'resgate' || m.tipo === 'transferencia' || (m.tipo === 'estorno' && m.resgate_id)) continue;
+          if (m.tipo === 'validade' && m.por === 'Validade (transferência)') continue;
           ganhos.set(m.cpf, (ganhos.get(m.cpf) || 0) + m.pontos);
         }
         const lista = [...ganhos].filter(([, p]) => p > 0).map(([cpf, pontos]) => ({ cpf, pontos, nome: nomeCurto((cliDe(db, cpf) || {}).nome) }))
@@ -1096,6 +1213,16 @@
         const f = F(db);
         const p = f.premios.find((x) => x.id === premioId && x.ativo);
         if (!p) return { status: 'erro', mensagem: 'Este prêmio não está mais disponível.' };
+        vencer(db, cpf);
+        if (p.aniversario) {
+          const cl = cliDe(db, cpf);
+          if (!(regras(db).aniversario || {}).ativo) return { status: 'erro', mensagem: 'Este prêmio não está mais disponível.' };
+          if (!cl.aniversario_mes) return { status: 'erro', mensagem: 'Informe o mês do seu aniversário na sua conta para liberar o presente.' };
+          if (cl.aniversario_mes !== new Date().getMonth() + 1) return { status: 'erro', mensagem: 'Este presente é só no mês do seu aniversário.' };
+          if (f.resgates.some((x) => x.cpf === cpf && x.premio_id === p.id && x.status !== 'cancelado' && new Date(x.criado_em).getFullYear() === new Date().getFullYear())) {
+            return { status: 'erro', mensagem: 'Você já pegou este presente de aniversário este ano.' };
+          }
+        }
         // Prêmio exclusivo de um nível (se o nível não existe mais, vale para todos).
         const lista = fidNiveis(regras(db));
         const iMin = p.nivel_min ? lista.findIndex((l) => l.id === p.nivel_min) : -1;
@@ -1109,9 +1236,78 @@
         }
         const x = { id: uid(), cpf, premio_id: p.id, premio_nome: p.nome, pontos: p.pontos, codigo: String(Math.floor(Math.random() * 1e4)).padStart(4, '0'), status: 'pendente', criado_em: nowIso(), resolvido_em: null, resolvido_por: null };
         f.resgates.push(x);
-        mover(db, cpf, 'resgate', -p.pontos, { descricao: `Resgate: ${p.nome}`, resgate_id: x.id, por: 'Cliente' });
+        if (p.pontos > 0) mover(db, cpf, 'resgate', -p.pontos, { descricao: `Resgate: ${p.nome}`, resgate_id: x.id, por: 'Cliente' });
         write(db);
         return { status: 'ok', pontos: c.pontos, resgate: { id: x.id, premio: p.nome, pontos: p.pontos, codigo: x.codigo, status: 'pendente', criado_em: x.criado_em } };
+      },
+
+      async fidDefinirAniversario(token, mes) {
+        const db = read();
+        const cpf = sessaoDe(db, token);
+        if (!cpf) return { status: 'sem_sessao' };
+        mes = Math.round(+mes);
+        if (!(mes >= 1 && mes <= 12)) return { status: 'erro', mensagem: 'Escolha o mês.' };
+        const c = cliDe(db, cpf);
+        if (c.aniversario_mes) return { status: 'erro', mensagem: 'O mês do aniversário já está salvo. Para mudar, fale com a equipe.' };
+        c.aniversario_mes = mes;
+        bonusAniversario(db, cpf);
+        write(db);
+        return { status: 'ok' };
+      },
+      async fidTransferirDestino(token, destino) {
+        const db = read();
+        const cpf = sessaoDe(db, token);
+        if (!cpf) return { status: 'sem_sessao' };
+        if (!noAr(db)) return { status: 'inativo' };
+        if (!(regras(db).transferencia || {}).ativo) return { status: 'erro', mensagem: 'A transferência de pontos está desligada neste restaurante.' };
+        const d = destinoDe(db, destino);
+        if (!d) return { status: 'erro', mensagem: 'Não achamos ninguém no clube com esse CPF ou código. A pessoa precisa estar cadastrada.' };
+        if (d.cpf === cpf) return { status: 'erro', mensagem: 'Esse é você. Digite o CPF ou o código de outra pessoa.' };
+        return { status: 'ok', nome: nomeCurto(d.nome) };
+      },
+      async fidTransferir(token, destino, pontos, pin) {
+        const db = read();
+        const cpf = sessaoDe(db, token);
+        if (!cpf) return { status: 'sem_sessao' };
+        if (!noAr(db)) return { status: 'inativo' };
+        const t = regras(db).transferencia || {};
+        if (!t.ativo) return { status: 'erro', mensagem: 'A transferência de pontos está desligada neste restaurante.' };
+        const min = Math.max(+t.minimo || 1, 1);
+        const max = Math.max(+t.maximoDia || 0, 0);
+        pontos = Math.round(+pontos);
+        if (!(pontos >= min)) return { status: 'erro', mensagem: `O mínimo para transferir é ${min} ${min === 1 ? 'ponto' : 'pontos'}.` };
+        if (!/^\d{4}$/.test(pin || '')) return { status: 'erro', mensagem: 'O PIN tem 4 números.' };
+        if (F(db).pins[cpf] !== await hashTxt(cpf + ':' + pin)) return { status: 'erro', mensagem: 'PIN incorreto.' };
+        const d = destinoDe(db, destino);
+        if (!d) return { status: 'erro', mensagem: 'Não achamos ninguém no clube com esse CPF ou código.' };
+        if (d.cpf === cpf) return { status: 'erro', mensagem: 'Esse é você. Digite o CPF ou o código de outra pessoa.' };
+        vencer(db, cpf);
+        const eu = cliDe(db, cpf);
+        if (eu.pontos < pontos) return { status: 'erro', mensagem: `Você tem ${Math.max(eu.pontos, 0)} pontos. Escolha uma quantidade menor.` };
+        if (max > 0) {
+          const hoje = diaIso(new Date());
+          const ja = -F(db).movimentos.filter((m) => m.cpf === cpf && m.tipo === 'transferencia' && m.pontos < 0 && diaIso(new Date(m.criado_em)) === hoje).reduce((s2, m) => s2 + m.pontos, 0);
+          if (ja + pontos > max) return { status: 'erro', mensagem: `O limite é ${max} pontos transferidos por dia. Hoje ainda dá para mandar ${Math.max(max - ja, 0)}.` };
+        }
+        mover(db, cpf, 'transferencia', -pontos, { descricao: `Transferência para ${nomeCurto(d.nome)}`, por: 'Cliente' });
+        mover(db, d.cpf, 'transferencia', pontos, { descricao: `Transferência de ${nomeCurto(eu.nome)}`, por: 'Cliente' });
+        write(db);
+        return { status: 'ok', pontos: eu.pontos, nome: nomeCurto(d.nome) };
+      },
+      async fidTorcer(token, eventoId, time) {
+        const db = read();
+        const cpf = sessaoDe(db, token);
+        if (!cpf) return { status: 'sem_sessao' };
+        const f = evs(db);
+        const e = f.eventos.find((x) => x.id === eventoId);
+        if (!e) return { status: 'erro', mensagem: 'Evento não encontrado.' };
+        const ja = f.torcidas.find((t) => t.evento_id === e.id && t.cpf === cpf);
+        if (ja) return { status: ja.time === time ? 'ok' : 'erro', mensagem: `Você já escolheu ${ja.time}.` };
+        if (e.vencedor || Date.now() >= fechaEvento(e)) return { status: 'erro', mensagem: 'A escolha do time já fechou: o jogo começou.' };
+        if (!e.times.includes(time)) return { status: 'erro', mensagem: 'Escolha um dos times.' };
+        f.torcidas.push({ evento_id: e.id, cpf, time, criado_em: nowIso() });
+        write(db);
+        return { status: 'ok' };
       },
 
       /* ---------- Fidelidade: equipe ---------- */
@@ -1232,7 +1428,7 @@
               }
               continue;
             }
-            const calc = fidCalcular(r, x.valor, x.emitida_em, nivelDe(db, n.cpf));
+            const calc = fidCalcular(r, x.valor, x.emitida_em, nivelDe(db, n.cpf), extraDe(db, n.cpf, x.emitida_em));
             const dif = calc.pontos - (n.pontos || 0);
             const antes = n.valor;
             Object.assign(n, { valor: x.valor, emitida_em: x.emitida_em, pontos: calc.pontos, mult: calc.mult, conferida_em: nowIso(), conferida_por: 'XML da nota' });
@@ -1252,7 +1448,7 @@
         const x = F(db).resgates.find((y) => y.id === id && y.status === 'pendente');
         if (!x) falha('Este resgate já foi resolvido.');
         Object.assign(x, { status: entregar ? 'entregue' : 'cancelado', resolvido_em: nowIso(), resolvido_por: quem(db) });
-        if (!entregar) mover(db, x.cpf, 'estorno', x.pontos, { descricao: `Resgate cancelado: ${x.premio_nome}`, resgate_id: x.id, por: quem(db) });
+        if (!entregar && x.pontos > 0) mover(db, x.cpf, 'estorno', x.pontos, { descricao: `Resgate cancelado: ${x.premio_nome}`, resgate_id: x.id, por: quem(db) });
         write(db);
       },
       async fidLancar(cpf, valor, descricao) {
@@ -1264,7 +1460,7 @@
         if (!(valor > 0 && valor < 1e5)) falha('Informe o valor da compra.');
         descricao = String(descricao || '').trim().slice(0, 100);
         if (!descricao) falha('Informe o motivo (ex.: pedido do delivery nº 123).');
-        const calc = fidCalcular(r, valor, nowIso(), nivelDe(db, cpf));
+        const calc = fidCalcular(r, valor, nowIso(), nivelDe(db, cpf), extraDe(db, cpf, nowIso()));
         mover(db, cpf, 'manual', calc.pontos, { descricao: `Lançado: ${descricao} · ${brlTxt(valor)}`, valor, mult: calc.mult, por: quem(db) });
         bonusIndicacao(db, cpf);
         write(db);
@@ -1287,7 +1483,7 @@
         for (const [t, c] of Object.entries(f.sessoes)) if (c === cpf) delete f.sessoes[t];
         write(db);
       },
-      async fidEditarCliente(cpf, { nome, email, telefone, marketing }) {
+      async fidEditarCliente(cpf, { nome, email, telefone, marketing, aniversario }) {
         const db = read();
         const c = cliDe(db, cpf);
         if (!c) falha('Cliente não encontrado.');
@@ -1297,8 +1493,76 @@
         if (!/^\S{2,}( \S+)+$/.test(nome)) falha('Informe o nome completo.');
         if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) falha('E-mail inválido.');
         if (!/^[1-9]\d{9,10}$/.test(telefone)) falha('Telefone inválido. Use DDD + número.');
-        Object.assign(c, { nome, email, telefone, marketing: marketing == null ? c.marketing : !!marketing });
+        if (aniversario != null && aniversario !== '' && !(+aniversario >= 1 && +aniversario <= 12)) falha('Mês do aniversário inválido.');
+        Object.assign(c, { nome, email, telefone, marketing: marketing == null ? c.marketing : !!marketing,
+          aniversario_mes: aniversario != null && aniversario !== '' ? +aniversario : c.aniversario_mes || null });
         write(db);
+      },
+      async fidEventos() {
+        const f = evs(read());
+        return f.eventos.slice().sort((a, b) => (b.data + (b.hora || '')).localeCompare(a.data + (a.hora || ''))).slice(0, 40).map((e) => ({
+          ...e, aberta: !e.vencedor && Date.now() < fechaEvento(e),
+          torcida: f.torcidas.filter((t) => t.evento_id === e.id).reduce((o, t) => ({ ...o, [t.time]: (o[t.time] || 0) + 1 }), {}),
+        }));
+      },
+      async fidEventoSalvar(ev) {
+        const db = read();
+        const f = evs(db);
+        const vistos = new Set();
+        const times = (ev.times || []).map((t) => String(t || '').trim().slice(0, 30)).filter((t) => t && !vistos.has(t.toLowerCase()) && vistos.add(t.toLowerCase()));
+        if (times.length < 2 || times.length > 4) falha('Informe os dois times (até quatro).');
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(ev.data || '')) falha('Informe o dia do jogo.');
+        const hora = String(ev.hora || '').trim() || null;
+        if (!hora) falha('Informe a hora do jogo: a escolha do time fecha nessa hora.');
+        if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(hora)) falha('Hora inválida (ex.: 16:00).');
+        const dados = { nome: String(ev.nome || '').trim().slice(0, 60) || times.join(' x ').slice(0, 60), data: ev.data, hora, times,
+          mult: Math.round(Math.min(Math.max(+ev.mult || 2, 1.1), 10) * 100) / 100 };
+        const atual = ev.id && f.eventos.find((x) => x.id === ev.id);
+        if (atual) {
+          if (atual.vencedor) falha('Este evento já tem resultado.');
+          if (f.torcidas.some((t) => t.evento_id === atual.id && !times.includes(t.time))) falha('Já tem torcedores escolhendo os times: não dá para trocar os times.');
+          Object.assign(atual, dados);
+        } else {
+          if (ev.data < diaIso(new Date())) falha('O dia do jogo já passou.');
+          f.eventos.push({ id: uid(), ...dados, vencedor: null, premiados: null, pontos_pagos: null, resultado_em: null, criado_em: nowIso() });
+        }
+        write(db);
+      },
+      async fidEventoExcluir(id) {
+        const db = read();
+        const f = evs(db);
+        const e = f.eventos.find((x) => x.id === id && !x.vencedor);
+        if (!e) falha('Evento não encontrado ou já com resultado.');
+        f.eventos = f.eventos.filter((x) => x !== e);
+        f.torcidas = f.torcidas.filter((t) => t.evento_id !== id);
+        write(db);
+      },
+      async fidEventoResultado(id, vencedor) {
+        const db = read();
+        const f = evs(db);
+        const e = f.eventos.find((x) => x.id === id);
+        if (!e) falha('Evento não encontrado.');
+        if (e.vencedor) falha('O resultado já foi lançado.');
+        if (Date.now() < fechaEvento(e)) falha('O jogo ainda não começou.');
+        if (!(e.times.includes(vencedor) || vencedor === 'empate')) falha('Escolha o time vencedor ou empate.');
+        Object.assign(e, { vencedor, resultado_em: nowIso(), resultado_por: quem(db) });
+        let n = 0; let total = 0;
+        if (vencedor !== 'empate') {
+          for (const t of f.torcidas.filter((x) => x.evento_id === e.id && x.time === vencedor)) {
+            const doDia = (iso) => iso && diaIso(new Date(iso)) === e.data;
+            const base = f.notas.filter((x) => x.cpf === t.cpf && x.status === 'creditada' && doDia(x.emitida_em)).reduce((s2, x) => s2 + (x.pontos || 0), 0)
+              + (db.pedidos || []).filter((x) => x.cpf === t.cpf && x.fid_situacao === 'creditado' && doDia(x.criado_em)).reduce((s2, x) => s2 + (x.fid_pontos || 0), 0)
+              + f.movimentos.filter((x) => x.cpf === t.cpf && x.tipo === 'manual' && doDia(x.criado_em)).reduce((s2, x) => s2 + x.pontos, 0);
+            const b = Math.floor(base * (e.mult - 1));
+            if (b > 0) {
+              mover(db, t.cpf, 'evento', b, { descricao: `${e.nome}: ${vencedor} venceu (${String(e.mult).replace('.', ',')}x)`, mult: e.mult, por: quem(db) });
+              n++; total += b;
+            }
+          }
+        }
+        Object.assign(e, { premiados: n, pontos_pagos: total });
+        write(db);
+        return { premiados: n, pontos: total };
       },
       async fidPremios() {
         return F(read()).premios.slice().sort((a, b) => a.ordem - b.ordem || a.pontos - b.pontos);
@@ -1306,9 +1570,9 @@
       async fidSalvarPremio(p) {
         const db = read();
         const f = F(db);
-        const dados = { nome: String(p.nome || '').trim().slice(0, 60), descricao: String(p.descricao || '').trim().slice(0, 160), pontos: Math.round(+p.pontos), imagem: p.imagem || '', ativo: p.ativo !== false, ordem: +p.ordem || 0, nivel_min: p.nivel_min || null };
+        const dados = { nome: String(p.nome || '').trim().slice(0, 60), descricao: String(p.descricao || '').trim().slice(0, 160), pontos: Math.round(+p.pontos || 0), imagem: p.imagem || '', ativo: p.ativo !== false, ordem: +p.ordem || 0, nivel_min: p.nivel_min || null, aniversario: !!p.aniversario };
         if (!dados.nome) falha('Informe o nome do prêmio.');
-        if (!(dados.pontos >= 1 && dados.pontos <= 1e6)) falha('Informe quantos pontos vale o prêmio.');
+        if (!(dados.pontos >= (dados.aniversario ? 0 : 1) && dados.pontos <= 1e6)) falha(dados.aniversario ? 'Informe quantos pontos custa o presente (0 = de graça).' : 'Informe quantos pontos vale o prêmio.');
         const atual = p.id && f.premios.find((x) => x.id === p.id);
         if (atual) Object.assign(atual, dados);
         else f.premios.push({ id: uid(), criado_em: nowIso(), ...dados });
@@ -1610,11 +1874,23 @@
       async fidIndicador(codigo) {
         return must(await sb.rpc('fid_indicador', { p_restaurante: rid, p_codigo: codigo }));
       },
-      async fidCadastrar({ cpf, nome, email, telefone, pin, marketing, indicacao }) {
+      async fidCadastrar({ cpf, nome, email, telefone, pin, marketing, indicacao, aniversario }) {
         return must(await sb.rpc('fid_cadastrar', {
           p_restaurante: rid, p_cpf: soDigitos(cpf), p_nome: nome, p_email: email, p_telefone: telefone,
-          p_pin: pin, p_marketing: !!marketing, p_indicacao: indicacao || null,
+          p_pin: pin, p_marketing: !!marketing, p_indicacao: indicacao || null, p_aniversario: +aniversario || null,
         }));
+      },
+      async fidDefinirAniversario(token, mes) {
+        return must(await sb.rpc('fid_definir_aniversario', { p_token: token, p_mes: +mes || null }));
+      },
+      async fidTransferirDestino(token, destino) {
+        return must(await sb.rpc('fid_transferir_destino', { p_token: token, p_destino: destino }));
+      },
+      async fidTransferir(token, destino, pontos, pin) {
+        return must(await sb.rpc('fid_transferir', { p_token: token, p_destino: destino, p_pontos: Math.round(+pontos) || 0, p_pin: pin }));
+      },
+      async fidTorcer(token, eventoId, time) {
+        return must(await sb.rpc('fid_torcer', { p_token: token, p_evento: eventoId, p_time: time }));
       },
       async fidEntrar(cpf, pin) {
         return must(await sb.rpc('fid_entrar', { p_restaurante: rid, p_cpf: soDigitos(cpf), p_pin: pin }));
@@ -1784,8 +2060,21 @@
       async fidExcluirCliente(cpf) {
         must(await sb.rpc('fid_excluir_cliente', { p_cpf: cpf }));
       },
-      async fidEditarCliente(cpf, { nome, email, telefone, marketing }) {
-        must(await sb.rpc('fid_editar_cliente', { p_cpf: cpf, p_nome: nome, p_email: email, p_telefone: telefone, p_marketing: marketing == null ? null : !!marketing }));
+      async fidEditarCliente(cpf, { nome, email, telefone, marketing, aniversario }) {
+        must(await sb.rpc('fid_editar_cliente', { p_cpf: cpf, p_nome: nome, p_email: email, p_telefone: telefone, p_marketing: marketing == null ? null : !!marketing,
+          p_aniversario: +aniversario || null }));
+      },
+      async fidEventos() {
+        return must(await sb.rpc('fid_eventos_lista'));
+      },
+      async fidEventoSalvar(e) {
+        return must(await sb.rpc('fid_evento_salvar', { p: e }));
+      },
+      async fidEventoExcluir(id) {
+        must(await sb.rpc('fid_evento_excluir', { p_id: id }));
+      },
+      async fidEventoResultado(id, vencedor) {
+        return must(await sb.rpc('fid_evento_resultado', { p_id: id, p_vencedor: vencedor }));
       },
       async fidPremios() {
         return must(await sb.from('fid_premios').select('*').eq('restaurante_id', rid).order('ordem').order('pontos'));
@@ -1793,10 +2082,13 @@
       async fidSalvarPremio(p) {
         const dados = {
           nome: String(p.nome || '').trim().slice(0, 60), descricao: String(p.descricao || '').trim().slice(0, 160),
-          pontos: Math.round(+p.pontos), imagem: p.imagem || '', ativo: p.ativo !== false, ordem: +p.ordem || 0, nivel_min: p.nivel_min || null,
+          pontos: Math.round(+p.pontos || 0), imagem: p.imagem || '', ativo: p.ativo !== false, ordem: +p.ordem || 0, nivel_min: p.nivel_min || null,
+          aniversario: !!p.aniversario,
         };
         if (!dados.nome) throw new Error('Informe o nome do prêmio.');
-        if (!(dados.pontos >= 1 && dados.pontos <= 1e6)) throw new Error('Informe quantos pontos vale o prêmio.');
+        if (!(dados.pontos >= (dados.aniversario ? 0 : 1) && dados.pontos <= 1e6)) {
+          throw new Error(dados.aniversario ? 'Informe quantos pontos custa o presente (0 = de graça).' : 'Informe quantos pontos vale o prêmio.');
+        }
         if (p.id) must(await sb.from('fid_premios').update(dados).eq('id', p.id));
         else must(await sb.from('fid_premios').insert({ ...dados, restaurante_id: rid }));
       },

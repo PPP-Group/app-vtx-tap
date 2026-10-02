@@ -969,3 +969,17 @@
 .it-grupo-lim { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .it-grupo textarea { font-size: 14px; }
 @media (max-width: 420px) { .it-grupo-top { grid-template-columns: 1fr auto; } .it-grupo-top select { grid-column: 1 / -1; grid-row: 2; width: 100%; } }
+
+/* Fidelidade: presente de aniversário e dias de clássico. */
+.fp-selo--aniv { --nv: var(--cobalt); margin-left: 4px; }
+.fp-eventos { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.fp-evento { display: grid; gap: 6px; padding: 12px 14px; border-radius: 14px; background: var(--surface-2); box-shadow: inset 4px 0 0 var(--leaf); }
+.fp-evento.is-fim { box-shadow: inset 4px 0 0 var(--muted); }
+.fp-evento-h { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.fp-evento-h b { font-size: 15.5px; }
+.fp-evento small { font-size: 13px; }
+.fp-evento-res { margin: 0; font-size: 14px; }
+.fp-evento-acoes { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.fp-evento-acoes > span { font-size: 13.5px; font-weight: 600; margin-right: 2px; }
+.fp-passos { margin: 0; padding-left: 20px; display: grid; gap: 6px; color: var(--ink-2); font-size: 14px; }
+.fp-evento .vhead-actions > .muted { flex-basis: 100%; font-size: 13.5px; }

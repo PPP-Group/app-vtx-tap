@@ -34,6 +34,15 @@
   const num = (n) => Number(n || 0).toLocaleString('pt-BR');
   const pts = (n) => `${num(n)} ${Math.abs(n) === 1 ? 'ponto' : 'pontos'}`;
   const dataCurta = (iso) => new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+  const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+  const mesesOpts = (sel) => `<option value="">Escolha o mês</option>${MESES.map((m, i) => `<option value="${i + 1}" ${+sel === i + 1 ? 'selected' : ''}>${m[0].toUpperCase() + m.slice(1)}</option>`).join('')}`;
+  // "sáb, 05/10 às 16h"
+  const DSEM = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+  const quandoEvento = (e) => {
+    const d = new Date(`${e.data}T12:00:00`);
+    return `${DSEM[d.getDay()]}, ${e.data.split('-').reverse().slice(0, 2).join('/')}${e.hora ? ` às ${e.hora.replace(':00', 'h')}` : ''}`;
+  };
+  const multCurto = (m) => (+m === 2 ? 'o dobro' : +m === 3 ? 'o triplo' : `${String(+m).replace('.', ',')}x`);
 
   // "1 ponto a cada R$ 1", "2 pontos a cada R$ 1", "1 ponto a cada R$ 2".
   function regraTexto() {
@@ -85,17 +94,60 @@
   function render() {
     const html = {
       inicio: tInicio, cadastro: tCadastro, conta: tConta, pin: tPin, resultado: tResultado, valor: tValor, ranking: tRanking,
-      resgatar: tResgatar, codigo: tCodigo, indicar: tIndicar, regulamento: tRegulamento, niveis: tNiveis,
+      resgatar: tResgatar, codigo: tCodigo, indicar: tIndicar, regulamento: tRegulamento, niveis: tNiveis, transferir: tTransferir,
     }[S.tela]();
     corpo().innerHTML = html;
-    $('#fidTitle').textContent = S.tela === 'inicio' ? nomeRest || 'Fidelidade' : S.tela === 'niveis' ? 'Níveis do clube' : S.tela === 'ranking' ? 'Ranking do clube' : prog.nome;
+    $('#fidTitle').textContent = S.tela === 'inicio' ? nomeRest || 'Fidelidade' : S.tela === 'niveis' ? 'Níveis do clube' : S.tela === 'ranking' ? 'Ranking do clube'
+      : S.tela === 'transferir' ? 'Transferir pontos' : prog.nome;
     const foco = corpo().querySelector('[data-foco]');
     if (foco) setTimeout(() => foco.focus(), 60);
   }
   const ir = (tela) => { if (tela !== 'valor') pararOcr(); S.tela = tela; render(); corpo().scrollTop = 0; };
 
-  const boosts = () => (prog.boosts || []).length
-    ? `<ul class="fid-boosts">${prog.boosts.map((b) => `<li>${icon('sparkle')}<span>${b.nome ? `<b>${esc(b.nome)}</b> · ` : ''}${esc(boostTexto(b))}</span></li>`).join('')}</ul>` : '';
+  const aniv = () => prog.aniversario && prog.aniversario.ativo ? prog.aniversario : null;
+  function anivTexto() {
+    const a = aniv();
+    if (!a) return '';
+    const partes = [...(a.mult > 1 ? [multTexto(a.mult)] : []), ...(a.bonus > 0 ? [`${pts(a.bonus)} de presente`] : []),
+      ...((prog.premios || []).some((p) => p.aniversario) ? ['um presente para trocar'] : [])];
+    return partes.length ? `No mês do seu aniversário: ${partes.join(', ').replace(/, ([^,]*)$/, ' e $1')}` : '';
+  }
+  const boosts = () => {
+    const itens = [
+      ...(prog.boosts || []).map((b) => `<li>${icon('sparkle')}<span>${b.nome ? `<b>${esc(b.nome)}</b> · ` : ''}${esc(boostTexto(b))}</span></li>`),
+      ...(anivTexto() ? [`<li>${icon('gift')}<span><b>Aniversário</b> · ${esc(anivTexto())}</span></li>`] : []),
+    ];
+    return itens.length ? `<ul class="fid-boosts">${itens.join('')}</ul>` : '';
+  };
+  const validadeTexto = () => {
+    const v = prog.validade;
+    if (!v || !v.ativo) return '';
+    const n = v.quantidade;
+    return `Os pontos valem por ${n} ${v.unidade === 'dias' ? (n === 1 ? 'dia' : 'dias') : n === 1 ? 'mês' : 'meses'}: os mais antigos vencem primeiro.`;
+  };
+
+  /* ---------- Dia de clássico ---------- */
+  const eventos = () => prog.eventos || [];
+  function eventosHtml() {
+    if (!eventos().length) return '';
+    const minhas = (S.conta && S.conta.torcidas) || {};
+    return `<section class="stack"><h3 class="fid-h3">Dia de clássico</h3>${eventos().map((e) => {
+      const meu = minhas[e.id];
+      let corpo;
+      if (e.vencedor) {
+        corpo = e.vencedor === 'empate' ? '<p class="muted">Deu empate. Valeu pela torcida!</p>'
+          : `<p><b>${esc(e.vencedor)}</b> venceu!${meu ? (meu === e.vencedor ? ' Seus pontos do dia do jogo valeram ' + multCurto(e.mult) + '.' : ' Não foi dessa vez.') : ''}</p>`;
+      } else if (meu) {
+        corpo = `<p>Você torce pelo <b>${esc(meu)}</b>. Se ele vencer, seus pontos das compras do dia valem ${multCurto(e.mult)}.</p>`;
+      } else if (e.aberta) {
+        corpo = `<p class="muted">Escolha seu time. Se ele vencer, os pontos que você ganhar no dia do jogo valem ${multCurto(e.mult)}.</p>
+          <div class="fid-times">${e.times.map((t) => `<button type="button" class="btn btn-line btn-sm" data-fid-torcer="${esc(e.id)}" data-time="${esc(t)}">${esc(t)}</button>`).join('')}</div>`;
+      } else {
+        corpo = '<p class="muted">A escolha do time fechou: o jogo já começou.</p>';
+      }
+      return `<article class="fid-evento ${e.vencedor ? 'is-fim' : ''}"><div class="fid-evento-top"><b>${esc(e.nome)}</b><small>${esc(quandoEvento(e))}</small></div>${corpo}</article>`;
+    }).join('')}</section>`;
+  }
 
   /* ---------- Níveis do clube ---------- */
   const temNiveis = () => !!(prog.niveis && prog.niveis.ativo && (prog.niveis.lista || []).length);
@@ -140,7 +192,9 @@
     if (!lista.length) return '<p class="muted fid-vazio">Os prêmios aparecem aqui em breve.</p>';
     const saldo = S.pontos || 0;
     const meuIdx = S.nivel ? S.nivel.indice : -1;
+    const c = S.conta;
     return `<div class="fid-premios">${lista.map((p) => {
+      if (p.aniversario) return presenteHtml(p, comBotao, c, saldo);
       const falta = p.pontos - saldo;
       const iMin = temNiveis() && p.nivel_min ? nivelDoId(p.nivel_min) : -1;
       const nvMin = iMin >= 0 ? prog.niveis.lista[iMin] : null;
@@ -156,6 +210,24 @@
         </div>
       </article>`;
     }).join('')}</div>`;
+  }
+
+  // Presente de aniversário: só no mês do aniversário, uma vez por ano.
+  function presenteHtml(p, comBotao, c, saldo) {
+    const falta = p.pontos - saldo;
+    let acao = '';
+    if (comBotao) {
+      if (c && !c.aniversario_mes) acao = '<small class="muted">Informe o mês do seu aniversário acima para liberar.</small>';
+      else if (c && !c.aniversariante) acao = `<small class="muted">Disponível em ${esc(MESES[c.aniversario_mes - 1])}, o mês do seu aniversário.</small>`;
+      else if (c && (c.presentes_ano || []).includes(p.id)) acao = '<small class="muted">Você já pegou este presente este ano.</small>';
+      else if (falta > 0) acao = `<small class="muted">Faltam ${pts(falta)}</small>`;
+      else acao = `<button type="button" class="btn btn-cobalt btn-sm" data-fid-resgatar="${esc(p.id)}">Pegar presente</button>`;
+    }
+    return `<article class="fid-premio fid-premio--aniv">
+      <div class="fid-premio-img ${p.imagem ? '' : 'is-vazia'}">${p.imagem ? `<img src="${esc(p.imagem)}" alt="" loading="lazy">` : icon('gift')}</div>
+      <div class="fid-premio-info"><span class="fid-selo fid-selo--sm fid-selo--aniv">${icon('gift')} Presente de aniversário</span><h4>${esc(p.nome)}</h4>${p.descricao ? `<p>${esc(p.descricao)}</p>` : ''}
+        <b class="fid-premio-pts">${p.pontos ? pts(p.pontos) : 'De graça'}</b>${acao}</div>
+    </article>`;
   }
 
   function tInicio() {
@@ -174,8 +246,10 @@
         <li><b>Cadastre-se</b> com o seu CPF (uma vez só).</li>
         <li>Na hora de pagar, <b>peça CPF na nota</b>.</li>
         <li><b>Leia o QR Code</b> da nota aqui. Os pontos entram depois que o restaurante confere a nota.</li>
-        <li>Troque os pontos por <b>prêmios</b>.</li>
+        <li>Troque os pontos por <b>prêmios</b>${prog.transferencia && prog.transferencia.ativo ? ' ou transfira para um amigo do clube' : ''}.</li>
       </ol>
+      ${validadeTexto() ? `<p class="muted fid-validade">${icon('clock')} ${esc(validadeTexto())}</p>` : ''}
+      ${eventosHtml()}
       ${temNiveis() ? `<section class="stack"><h3 class="fid-h3">Níveis do clube</h3>
         <div class="fid-niveis-mini">${prog.niveis.lista.map((l) => `<span class="fid-selo" style="--nv:${esc(l.cor)}">${esc(l.nome)}</span>`).join('<span aria-hidden="true">›</span>')}</div>
         <button type="button" class="link fid-link" data-fid-ir="niveis">Ver as vantagens de cada nível</button></section>` : ''}
@@ -191,6 +265,8 @@
       <label class="field"><span>Nome completo</span><input class="input" id="fcNome" autocomplete="name" maxlength="80" data-foco required></label>
       <label class="field"><span>E-mail</span><input class="input" id="fcEmail" type="email" autocomplete="email" maxlength="120" required></label>
       <label class="field"><span>Celular com DDD</span><input class="input" id="fcTel" type="tel" inputmode="tel" autocomplete="tel" maxlength="16" placeholder="(31) 99999-9999" required></label>
+      <label class="field"><span>Mês do seu aniversário</span><select class="input" id="fcAniv" required>${mesesOpts(null)}</select>
+        ${anivTexto() ? `<small class="help">${esc(anivTexto())}.</small>` : ''}</label>
       <label class="field"><span>Crie um PIN de 4 números</span><input class="input mono pin-input" id="fcPin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="new-password" required>
         <small class="help">Você usa o PIN para trocar os pontos por prêmios.</small></label>
       ${prog.indicacao && prog.indicacao.ativo ? `<label class="field"><span>Código de quem indicou (opcional)</span><input class="input mono" id="fcInd" maxlength="12" autocapitalize="characters" autocomplete="off" value="${esc(S.indicacao || '')}"></label>` : ''}
@@ -212,12 +288,19 @@
         <b class="fid-pontos">${num(S.pontos)}<span>${Math.abs(S.pontos) === 1 ? 'ponto' : 'pontos'}</span></b>
         ${notasPend ? `<p>${notasPend} ${notasPend === 1 ? 'nota em conferência' : 'notas em conferência'}</p>` : ''}
       </div>
+      ${c && c.aniversariante && aniv() ? `<p class="note fid-aniv">${icon('gift')}<span><b>Feliz aniversário!</b> ${esc(anivTexto())}.</span></p>` : ''}
+      ${c && !c.aniversario_mes && aniv() ? `<form class="fid-aniv-form" id="fidAnivForm" novalidate>
+        <label class="field"><span>Quando é o seu aniversário? No mês dele você ganha presente.</span><select class="input" id="fidAnivMes">${mesesOpts(null)}</select></label>
+        <button type="submit" class="btn btn-line btn-sm">Salvar</button></form>` : ''}
+      ${c && c.a_vencer ? `<p class="note fid-vence">${icon('clock')}<span><b>${pts(c.a_vencer.pontos)}</b> ${c.a_vencer.pontos === 1 ? 'vence' : 'vencem'} em ${dataCurta(c.a_vencer.em)}. Troque antes!</span></p>` : ''}
       ${meuNivel()}
       ${agora ? `<p class="note fid-agora">${icon('sparkle')}<span><b>Agora vale ${agora.mult === 2 ? 'o dobro' : `${String(agora.mult).replace('.', ',')}x`}!</b>${agora.nome ? ` ${esc(agora.nome)}.` : ''}</span></p>` : ''}
       <div class="fid-acoes">
         <button type="button" class="btn btn-cobalt" data-fid-nota>${icon('receipt')} Ler nota fiscal</button>
         ${prog.indicacao && prog.indicacao.ativo ? `<button type="button" class="btn btn-line" data-fid-ir="indicar">${icon('users')} Indicar amigos</button>` : ''}
+        ${prog.transferencia && prog.transferencia.ativo ? `<button type="button" class="btn btn-line" data-fid-ir="transferir">${icon('share')} Transferir pontos</button>` : ''}
       </div>
+      ${eventosHtml()}
       <div id="fidRankSlot">${rankingCartao()}${favoritos()}</div>
       ${pendRes.length ? `<section class="stack"><h3 class="fid-h3">Mostre ao garçom</h3>${pendRes.map((x) => `<div class="fid-cod"><span>${esc(x.premio)}</span><b class="mono">${esc(x.codigo)}</b></div>`).join('')}</section>` : ''}
       <section class="stack"><h3 class="fid-h3">Troque seus pontos</h3>${premiosHtml(true)}</section>
@@ -271,7 +354,7 @@
       ${podio(ranking.top, true)}
       ${resto.length ? `<ol class="rk-lista">${resto.map((x) => `<li class="${x.voce ? 'is-voce' : ''}"><span class="rk-pos">${x.pos}º</span><span class="pd-av">${inicialDe(x.nome)}</span><b>${esc(x.nome)}${x.voce ? ' <em>(você)</em>' : ''}</b><span class="rk-pts">${num(x.pontos)} pts</span></li>`).join('')}</ol>` : ''}
       ${eu && eu.pos && eu.pos > 10 ? `<p class="note">${icon('trophy')}<span>Você está em <b>${eu.pos}º lugar</b>, com ${num(eu.pontos)} pontos.</span></p>` : ''}
-      <p class="muted fid-rank-regra">Contam todos os pontos ganhos (compras, bônus e indicações). Trocar pontos por prêmios não tira ninguém do ranking.</p>
+      <p class="muted fid-rank-regra">Contam todos os pontos ganhos (compras, bônus e indicações). Trocar pontos por prêmios não tira ninguém do ranking${prog.validade && prog.validade.ativo ? '; pontos vencidos saem' : ''}. Transferências não contam.</p>
       <button type="button" class="btn btn-quiet btn-block" data-fid-ir="${S.cpf && S.nome ? 'conta' : 'inicio'}">Voltar</button>
     </div>`;
   }
@@ -410,6 +493,30 @@
       <button type="button" class="btn btn-line btn-block" data-fid-copiar="${esc(texto)}">${icon('copy')} Copiar convite</button>
       <button type="button" class="btn btn-quiet btn-block" data-fid-ir="conta">Voltar</button>
     </div>`;
+  }
+
+  function tTransferir() {
+    const t = prog.transferencia || {};
+    const x = S.transf || {};
+    if (!x.nome) {
+      return `<form class="stack-lg fid" id="fidTrDestForm" novalidate>
+        <p>Mande pontos para um amigo do clube. Você tem <b>${pts(S.pontos || 0)}</b>.</p>
+        <label class="field"><span>CPF ou código de indicação do amigo</span><input class="input mono" id="fidTrDest" autocomplete="off" autocapitalize="characters" maxlength="20" data-foco value="${esc(x.destino || '')}">
+          <small class="help">O amigo precisa estar cadastrado no clube. O código fica em "Indicar amigos" na conta dele.</small></label>
+        <p class="form-error" id="fidErro" role="alert">${esc(S.aviso || '')}</p>
+        <button type="submit" class="btn btn-cobalt btn-block">Continuar</button>
+        <button type="button" class="btn btn-quiet btn-block" data-fid-ir="conta">Voltar</button>
+      </form>`;
+    }
+    return `<form class="stack-lg fid" id="fidTrForm" novalidate>
+      <p class="note">${icon('users')}<span>Para <b>${esc(x.nome)}</b>, do clube.</span></p>
+      <label class="field"><span>Quantos pontos?</span><input class="input mono" id="fidTrPts" inputmode="numeric" pattern="[0-9]*" maxlength="7" data-foco>
+        <small class="help">Você tem ${pts(S.pontos || 0)}.${t.minimo > 1 ? ` Mínimo de ${pts(t.minimo)}.` : ''}${t.maximoDia ? ` Até ${pts(t.maximoDia)} por dia.` : ''}</small></label>
+      <label class="field"><span>Seu PIN</span><input class="input mono pin-input" id="fidTrPin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="current-password"></label>
+      <p class="form-error" id="fidErro" role="alert">${esc(S.aviso || '')}</p>
+      <button type="submit" class="btn btn-cobalt btn-block">${icon('share')} Transferir</button>
+      <button type="button" class="btn btn-quiet btn-block" data-fid-trocar-dest>Trocar o amigo</button>
+    </form>`;
   }
 
   function tRegulamento() {
@@ -626,7 +733,19 @@
     if (irPara) {
       S.aviso = null;
       if (irPara.dataset.fidIr === 'indicar' && !S.token) { S.depoisPin = 'indicar'; return ir('pin'); }
+      if (irPara.dataset.fidIr === 'transferir') {
+        S.transf = null;
+        if (!S.token) { S.depoisPin = 'transferir'; return ir('pin'); }
+      }
       return ir(irPara.dataset.fidIr);
+    }
+    if (t.closest('[data-fid-trocar-dest]')) { S.transf = { destino: (S.transf || {}).destino || '' }; return ir('transferir'); }
+    const tc = t.closest('[data-fid-torcer]');
+    if (tc) {
+      S.torcer = { evento: tc.dataset.fidTorcer, time: tc.dataset.time };
+      if (!S.cpf) return erro('Entre com o seu CPF para escolher o time.');
+      if (!S.token) { S.depoisPin = 'torcer'; return ir('pin'); }
+      return torcer();
     }
     if (t.closest('[data-fid-nota]')) return lerNota();
     if (t.closest('[data-fid-semvalor]') && S.qr) return enviarNota(S.qr, null);
@@ -649,6 +768,18 @@
       atualizarTile();
       return ir('inicio');
     }
+  }
+
+  async function torcer() {
+    const x = S.torcer;
+    S.torcer = null;
+    if (!x) return ir('conta');
+    const r = await store.fidTorcer(S.token, x.evento, x.time).catch(() => ({ status: 'erro', mensagem: 'Sem conexão. Tente de novo.' }));
+    if (r.status === 'sem_sessao') { S.token = null; gravar(); S.torcer = x; S.depoisPin = 'torcer'; return ir('pin'); }
+    if (r.status !== 'ok') toast(r.mensagem || 'Não foi possível escolher o time.', { tone: 'error', ms: 4500 });
+    else toast(`Você está torcendo pelo ${x.time}!`, { tone: 'ok' });
+    await atualizarConta();
+    ir('conta');
   }
 
   async function resgatar() {
@@ -675,10 +806,12 @@
         if (!F.cpfValido(cpf)) return erro('CPF inválido. Confira os números.');
         await entrarCpf(cpf);
       } else if (f.id === 'fidCadForm') {
+        if (!$('#fcAniv').value) return erro('Escolha o mês do seu aniversário.');
         if (!$('#fcAceite').checked) return erro('Para participar, aceite o regulamento e o uso dos dados.');
         const r = await store.fidCadastrar({
           cpf: S.cpf, nome: $('#fcNome').value, email: $('#fcEmail').value, telefone: $('#fcTel').value,
           pin: $('#fcPin').value, marketing: $('#fcMkt').checked, indicacao: $('#fcInd') ? $('#fcInd').value : null,
+          aniversario: +$('#fcAniv').value,
         });
         if (r.status !== 'ok') {
           if (r.existe) { S.aviso = 'Este CPF já tem cadastro.'; return ir('inicio'); }
@@ -705,7 +838,36 @@
         if (r.pin_novo) toast('PIN novo salvo.', { tone: 'ok' });
         const depois = S.depoisPin;
         S.depoisPin = null;
-        ir(depois === 'resgatar' && S.premio ? 'resgatar' : depois === 'indicar' ? 'indicar' : 'conta');
+        if (depois === 'torcer') return torcer();
+        ir(depois === 'resgatar' && S.premio ? 'resgatar' : ['indicar', 'transferir'].includes(depois) ? depois : 'conta');
+      } else if (f.id === 'fidAnivForm') {
+        const mes = +$('#fidAnivMes').value;
+        if (!mes) return toast('Escolha o mês.', { tone: 'error' });
+        const r = await store.fidDefinirAniversario(S.token, mes);
+        if (r.status !== 'ok') return toast(r.mensagem || 'Não foi possível salvar.', { tone: 'error', ms: 4500 });
+        await atualizarConta();
+        toast('Aniversário salvo!', { tone: 'ok' });
+        render();
+      } else if (f.id === 'fidTrDestForm') {
+        const destino = $('#fidTrDest').value.trim();
+        if (!destino) return erro('Digite o CPF ou o código do seu amigo.');
+        const r = await store.fidTransferirDestino(S.token, destino);
+        if (r.status === 'sem_sessao') { S.token = null; gravar(); S.depoisPin = 'transferir'; return ir('pin'); }
+        if (r.status !== 'ok') return erro(r.mensagem || 'Não foi possível achar agora.');
+        S.transf = { destino, nome: r.nome };
+        ir('transferir');
+      } else if (f.id === 'fidTrForm') {
+        const q = Math.round(+$('#fidTrPts').value);
+        const pin = $('#fidTrPin').value;
+        if (!(q > 0)) return erro('Digite quantos pontos.');
+        if (!/^\d{4}$/.test(pin)) return erro('O PIN tem 4 números.');
+        const r = await store.fidTransferir(S.token, S.transf.destino, q, pin);
+        if (r.status === 'sem_sessao') { S.token = null; gravar(); S.depoisPin = 'transferir'; return ir('pin'); }
+        if (r.status !== 'ok') { $('#fidTrPin').value = ''; return erro(r.mensagem || 'Não foi possível transferir.'); }
+        S.transf = null;
+        await atualizarConta();
+        toast(`${pts(q)} ${q === 1 ? 'enviado' : 'enviados'} para ${r.nome}!`, { tone: 'ok', ms: 4000 });
+        ir('conta');
       }
     } catch (ex) {
       console.error(ex);
@@ -720,7 +882,8 @@
     if (t.id === 'fidCpf') t.value = fmtCpf(t.value);
     if (t.id === 'fidValor') S.digitou = true;
     if (t.id === 'fcTel') t.value = fmtTel(t.value);
-    if (t.id === 'fcPin' || t.id === 'fidPin') t.value = t.value.replace(/\D/g, '').slice(0, 4);
+    if (t.id === 'fcPin' || t.id === 'fidPin' || t.id === 'fidTrPin') t.value = t.value.replace(/\D/g, '').slice(0, 4);
+    if (t.id === 'fidTrPts') t.value = t.value.replace(/\D/g, '').slice(0, 7);
   }
 
   async function abrir() {

@@ -1,0 +1,35 @@
+VTX Tap — pendências
+====================
+
+BANCO (ANTES DE PUBLICAR O PR DO CLUBE)
+[ ] Aplicar no Supabase as mudanças do clube (aniversário, transferência, validade e dia de clássico).
+    Sem isso, o cadastro novo no clube não funciona. Dá para rodar o supabase/schema.sql inteiro no SQL Editor
+    (pode rodar de novo) ou pedir ao Claude para aplicar a migração.
+
+DOMÍNIO PRÓPRIO DOS RESTAURANTES
+[ ] Subir o roteador de domínios (app "vtx-dominios") no EasyPanel — passo a passo no README, seção 5
+    - Criar o app a partir da pasta deploy/dominios (Dockerfile)
+    - Variáveis: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, APP_URL (endereço interno do app, ex.: http://vtx_tap:80)
+    - Bind mount: /etc/easypanel/traefik/config -> /traefik
+    - Conferir no Traefik do servidor os nomes do resolvedor de certificado e dos entrypoints
+      (padrão: letsencrypt, http e https; se forem outros, ajustar CERT_RESOLVER, ENTRY_HTTP e ENTRY_HTTPS)
+    - No log do app deve aparecer "Roteador de domínios: app ..., arquivo ..."
+[ ] Testar com um domínio de verdade (depende do item acima)
+    - Painel > Ajustes > Endereço: cadastrar um domínio de teste (ex.: cardapio.seu-dominio.com.br)
+    - Criar o CNAME para tap.vortexsystems.tech (no Cloudflare, nuvem cinza)
+    - Ver o andamento chegar em "No ar"
+    - Conferir site, painel, delivery e clube abrindo pelo domínio com HTTPS
+    - Conferir as plaquinhas (QR e NFC) abrindo pelo domínio
+    - Ativar uma plaquinha nova digitando o domínio próprio
+    - Conferir na central a cobrança: R$ 190 uma vez + R$ 19/mês
+
+SEGURANÇA DO SERVIDOR
+[ ] Gerar um token novo da API da Hostinger e revogar o antigo (o antigo apareceu em conversa: tratar como exposto)
+[ ] Tirar TRAEFIK_LOG_LEVEL=DEBUG do servidor
+[ ] Confirmar que o INFOSIMPLES_TOKEN está nos secrets das Edge Functions do Supabase (conferência das notas na SEFAZ)
+
+CIÊNCIA (CLIENTE)
+[ ] Orientar o caixa a sempre perguntar "CPF na nota?" (nos 20 XML enviados, só 2 tinham CPF; só nota com CPF dá ponto)
+[ ] Combinar o envio do XML/ZIP das notas toda semana (ou todo dia) em Fidelidade > Hoje > Importar XML
+    (repetir nota já enviada não dá problema)
+[ ] Explicar o delivery: com o CPF no pedido, os pontos entram sozinhos quando a equipe marca "Entregue"
