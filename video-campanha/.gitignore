@@ -1,0 +1,6 @@
+# Gerados: renders, dependências, capturas e áudio (refeitos pelos scripts do projeto)
+previas/*.mp4
+projeto/node_modules/
+projeto/out/
+projeto/public/capturas/
+projeto/public/audio/
