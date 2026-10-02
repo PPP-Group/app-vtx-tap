@@ -335,7 +335,7 @@
 .howto ol { margin: 0; padding-left: 1.3em; display: grid; gap: 6px; font-size: 14.5px; color: var(--ink-2); }
 .howto ol li::marker { font-family: var(--font-mono); color: var(--muted); }
 .link-cod { color: var(--cobalt-ink); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; letter-spacing: .06em; }
-.placa-manual { display: grid; grid-template-columns: 1fr 96px; gap: 8px; }
+.placa-manual { display: grid; grid-template-columns: 1fr 84px 96px; gap: 8px; }
 .plist { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); }
 .prow { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 16px; background: var(--surface); box-shadow: var(--shadow-1); }
 .prow .mini-plate { width: 50px; height: 50px; }
@@ -990,8 +990,6 @@
 @keyframes hh-pisca { 50% { opacity: .3; } }
 .hh-grid { align-items: start; }
 .hh-vivo { display: grid; justify-items: center; text-align: center; gap: 10px; padding: 28px 20px; }
-.hh-rotulo { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
-.hh-relogio { margin: 0; font-family: var(--font-display); font-weight: 900; font-size: clamp(64px, 14vw, 120px); line-height: .9; font-variant-numeric: tabular-nums; color: var(--cobalt-ink); }
 .hh-fim { margin: 0; color: var(--muted); }
 .hh-stats { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 18px; font-size: 14px; }
 .hh-stats b { font-size: 18px; }
@@ -1012,3 +1010,18 @@
 .hh-hist li { display: grid; gap: 2px; padding: 10px 0; border-bottom: 1px solid var(--line); }
 .hh-recorde { margin: 0; display: flex; align-items: center; gap: 8px; }
 .hh-dias { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+
+/* Comandas individuais */
+.vinc-tipo { width: 100%; }
+.vinc-tipo button { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.vinc-comanda { font-size: 28px; text-align: center; max-width: 200px; }
+.comandas-box { margin-top: 16px; }
+.comandas { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; }
+.comanda-chip { width: 100%; display: grid; justify-items: center; gap: 2px; padding: 10px 6px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface, transparent); color: inherit; cursor: pointer; font: inherit; }
+.comanda-chip small { font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.comanda-chip b { font-family: var(--font-display); font-weight: 900; font-size: 30px; line-height: 1; }
+.comanda-chip .mono { font-size: 11px; color: var(--muted); }
+.comanda-chip:hover { border-color: var(--cobalt); }
+.hh-ler { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.hh-qr--telao svg { width: 120px; height: 120px; }
+.hh-vivo #hhCopo { margin-bottom: 4px; }

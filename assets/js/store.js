@@ -16,7 +16,8 @@
  *   chamar(token, dados)         → chamado criado (só com o sino liberado; erro.code 'BLOQUEADO')
  *   cancelarChamado(token, id)
  *   listSessoes({ desde }) / decidirSessao(id, liberar) / fecharMesa(mesa) / listMesasAbertas()   (equipe)
- *   listEtiquetas() / vincularEtiqueta(codigo, mesa) / desvincularEtiqueta(codigo) (equipe)
+ *   etiquetaInfo(codigo)         → { mesa, comanda } da plaquinha (comanda individual: a plaquinha dada a uma pessoa)
+ *   listEtiquetas() / vincularEtiqueta(codigo, mesa) / vincularComanda(codigo, n) / desvincularEtiqueta(codigo) (equipe)
  *
  *   listFeedback() / createFeedback(d) / updateFeedback(id, patch)
  *   getSettings() / updateSettings(patch)
@@ -44,7 +45,8 @@
  *
  *   Prorrogação (adicional; ajustes em settings.prorrogacao): happy hour que ganha minutos a cada chopp.
  *   todos:   hhStatus() → { disponivel, agora, nome, frase, produto, minutos, rodando, sessao, ultima_sessao, recorde, proxima }
- *   equipe:  hhPainel() (status + config, leituras, historico) / hhComecar(minutos?) / hhSomar(qtd) / hhDesfazer() / hhEncerrar()
+ *   equipe:  hhPainel() (status + config, leituras, historico) / hhComecar(minutos?) / hhSomar(qtd) / hhDesfazer() / hhEncerrar() /
+ *            hhSomarEtiqueta(codigo, forcar) (garçom leu a comanda ou a mesa) / hhDesfazerLeitura(id)
  */
 (function () {
   const cfg = window.NFC_CONFIG;
@@ -633,6 +635,22 @@
       h.sessoes.push({ id: uid(), nome: c.nome, inicio: new Date(ini).toISOString(), fim: new Date(ate).toISOString(), encerrada_em: null, motivo: null,
         leituras: 0, minutos_ganhos: 0, criado_por: 'Agenda', agenda_dia: hoje });
     };
+    // Soma os chopps (as mesmas regras de public.hh_somar_int): teto e horário limite.
+    const hhSomarEm = (db, qtd, { etiqueta = null, mesa = null, comanda = null }) => {
+      const c = hhExigir(db);
+      hhTick(db);
+      const s = hhAberta(db);
+      if (!s) falha(`A ${c.nome} não está rolando agora.`);
+      const q = Math.min(Math.max(Math.round(+qtd || 1), 1), 50);
+      const pedido = q * c.minutos;
+      let m = c.teto > 0 ? Math.min(pedido, Math.max(c.teto - s.minutos_ganhos, 0)) : pedido;
+      const fim = new Date(s.fim).getTime();
+      m = Math.max(Math.round(((Math.min(fim + m * 60e3, hhLimite(c, new Date(s.inicio).getTime())) - fim) / 60e3) * 100) / 100, 0);
+      Object.assign(s, { fim: new Date(fim + m * 60e3).toISOString(), leituras: s.leituras + q, minutos_ganhos: Math.round((s.minutos_ganhos + m) * 100) / 100 });
+      const id = uid();
+      HH(db).leituras.push({ id, sessao_id: s.id, em: nowIso(), qtd: q, minutos: m, por: quem(db), desfeita: false, etiqueta, mesa, comanda });
+      return { leitura_id: id, adicionados: m, travado: m < pedido };
+    };
     const hhStatusDe = (db) => {
       const s = mergeSettings(db.configuracao, true);
       const c = s.prorrogacao;
@@ -657,7 +675,15 @@
         disponivel: true, agora: nowIso(), nome: c.nome, frase: hhFrase(c), produto: c.produto, minutos: c.minutos, teto: c.teto, rodando: !!a,
         sessao: a ? { id: a.id, inicio: a.inicio, fim: a.fim, leituras: a.leituras, minutos_ganhos: a.minutos_ganhos,
           limite_em: lim === Infinity ? null : new Date(lim).toISOString(),
-          ultima: (h.leituras.filter((l) => l.sessao_id === a.id && !l.desfeita).pop() || {}).em || null } : null,
+          ultima: (h.leituras.filter((l) => l.sessao_id === a.id && !l.desfeita).pop() || {}).em || null,
+          ultima_leitura: (({ id, em, qtd, minutos, mesa, comanda }) => (id ? { id, em, qtd, minutos, mesa: mesa || null, comanda: comanda || null } : null))(
+            h.leituras.filter((l) => l.sessao_id === a.id && !l.desfeita).pop() || {}),
+          destaques: Object.values(h.leituras.filter((l) => l.sessao_id === a.id && !l.desfeita && (l.comanda || l.mesa)).reduce((o, l) => {
+            const k = l.comanda ? `c${l.comanda}` : `m${l.mesa}`;
+            o[k] = o[k] || { comanda: l.comanda || null, mesa: l.comanda ? null : l.mesa, qtd: 0 };
+            o[k].qtd += l.qtd;
+            return o;
+          }, {})).sort((x, y) => y.qtd - x.qtd).slice(0, 3) } : null,
         ultima_sessao: u ? { inicio: u.inicio, fim: u.encerrada_em, leituras: u.leituras, minutos_ganhos: u.minutos_ganhos } : null,
         recorde: rec ? { minutos: Math.round(dur(rec) / 60e3), leituras: rec.leituras, em: rec.inicio } : null,
         proxima,
@@ -784,6 +810,10 @@
         const e = read().etiquetas.find((x) => x.codigo === normCodigo(codigo));
         return e ? e.mesa : null;
       },
+      async etiquetaInfo(codigo) {
+        const e = read().etiquetas.find((x) => x.codigo === normCodigo(codigo));
+        return e ? { mesa: e.mesa || null, comanda: e.comanda || null } : null;
+      },
       async sessaoAbrir({ mesa, nome, codigo }) {
         const db = read();
         expira(db);
@@ -869,13 +899,25 @@
         if (!/^[A-Z0-9]{4,16}$/.test(codigo)) throw new Error('Código de plaquinha inválido.');
         const db = read();
         db.etiquetas = db.etiquetas.filter((e) => e.codigo !== codigo);
-        db.etiquetas.push({ codigo, mesa, vinculada_em: nowIso(), vinculada_por: por || null });
+        db.etiquetas.push({ codigo, mesa, comanda: null, vinculada_em: nowIso(), vinculada_por: por || null });
+        write(db);
+      },
+      async vincularComanda(codigo, comanda, por) {
+        codigo = normCodigo(codigo);
+        if (!/^[A-Z0-9]{4,16}$/.test(codigo)) throw new Error('Código de plaquinha inválido.');
+        comanda = Math.round(+comanda);
+        if (!(comanda >= 1 && comanda <= 9999)) throw new Error('Número da comanda inválido (1 a 9999).');
+        const db = read();
+        const outra = db.etiquetas.find((e) => e.comanda === comanda && e.codigo !== codigo);
+        if (outra) throw new Error(`A comanda ${comanda} já está na plaquinha ${outra.codigo}.`);
+        db.etiquetas = db.etiquetas.filter((e) => e.codigo !== codigo);
+        db.etiquetas.push({ codigo, mesa: null, comanda, vinculada_em: nowIso(), vinculada_por: por || null });
         write(db);
       },
       async desvincularEtiqueta(codigo) {
         const db = read();
         const e = db.etiquetas.find((x) => x.codigo === normCodigo(codigo));
-        if (e) Object.assign(e, { mesa: null, vinculada_em: null, vinculada_por: null });
+        if (e) Object.assign(e, { mesa: null, comanda: null, vinculada_em: null, vinculada_por: null });
         write(db);
       },
       async listFeedback() {
@@ -1715,19 +1757,39 @@
       },
       async hhSomar(qtd = 1) {
         const db = read();
-        const c = hhExigir(db);
+        const x = hhSomarEm(db, qtd, {});
+        write(db);
+        return { ...(await this.hhPainel()), ...x };
+      },
+      // Garçom leu a plaquinha (comanda ou mesa) com o celular logado. A mesma em 20 s não conta, a não ser com forcar.
+      async hhSomarEtiqueta(codigo, forcar = false) {
+        const db = read();
+        hhExigir(db);
+        const e = db.etiquetas.find((x) => x.codigo === normCodigo(codigo));
+        if (!e) falha('Esta plaquinha não é deste restaurante.');
+        if (!e.mesa && !e.comanda) falha('Esta plaquinha ainda não está ligada a uma mesa ou comanda.');
+        const extra = { mesa: e.mesa || null, comanda: e.comanda || null };
+        if (!forcar && HH(db).leituras.some((l) => l.etiqueta === e.codigo && !l.desfeita && Date.now() - new Date(l.em) < 20e3)) {
+          return { ...hhStatusDe(db), repetida: true, ...extra };
+        }
+        const x = hhSomarEm(db, 1, { etiqueta: e.codigo, ...extra });
+        write(db);
+        return { ...hhStatusDe(db), ...x, ...extra };
+      },
+      async hhDesfazerLeitura(id) {
+        const db = read();
+        hhExigir(db);
         hhTick(db);
         const s = hhAberta(db);
-        if (!s) falha(`A ${c.nome} não está rolando agora.`);
-        const q = Math.min(Math.max(Math.round(+qtd || 1), 1), 50);
-        const pedido = q * c.minutos;
-        let m = c.teto > 0 ? Math.min(pedido, Math.max(c.teto - s.minutos_ganhos, 0)) : pedido;
-        const fim = new Date(s.fim).getTime();
-        m = Math.max(Math.round(((Math.min(fim + m * 60e3, hhLimite(c, new Date(s.inicio).getTime())) - fim) / 60e3) * 100) / 100, 0);
-        Object.assign(s, { fim: new Date(fim + m * 60e3).toISOString(), leituras: s.leituras + q, minutos_ganhos: Math.round((s.minutos_ganhos + m) * 100) / 100 });
-        HH(db).leituras.push({ id: uid(), sessao_id: s.id, em: nowIso(), qtd: q, minutos: m, por: quem(db), desfeita: false });
+        if (!s) falha('Não tem nada rolando para desfazer.');
+        const l = HH(db).leituras.find((x) => x.id === id && x.sessao_id === s.id && !x.desfeita);
+        if (!l) falha('Esta leitura já foi desfeita.');
+        Object.assign(l, { desfeita: true, desfeita_em: nowIso(), desfeita_por: quem(db) });
+        Object.assign(s, { fim: new Date(new Date(s.fim).getTime() - l.minutos * 60e3).toISOString(), leituras: s.leituras - l.qtd,
+          minutos_ganhos: Math.round((s.minutos_ganhos - l.minutos) * 100) / 100 });
+        hhTick(db);
         write(db);
-        return { ...(await this.hhPainel()), adicionados: m, travado: m < pedido };
+        return hhStatusDe(db);
       },
       async hhDesfazer() {
         const db = read();
@@ -1942,6 +2004,9 @@
       async mesaDaEtiqueta(codigo) {
         return must(await sb.rpc('mesa_da_etiqueta', { p_restaurante: rid, p_codigo: normCodigo(codigo) })) || null;
       },
+      async etiquetaInfo(codigo) {
+        return must(await sb.rpc('etiqueta_info', { p_restaurante: rid, p_codigo: normCodigo(codigo) })) || null;
+      },
       async sessaoAbrir({ mesa, nome, codigo }) {
         return must(await sb.rpc('sessao_abrir', { p_restaurante: rid, p_mesa: mesa, p_nome: nome, p_codigo: codigo || null }));
       },
@@ -1980,12 +2045,17 @@
         return must(await sb.from('mesas_abertas').select('mesa, codigo, aberta_em').eq('restaurante_id', rid));
       },
       async listEtiquetas() {
-        return must(await sb.from('etiquetas').select('codigo, mesa, vinculada_em, vinculada_por, ativada_em').eq('restaurante_id', rid).order('mesa').order('codigo'));
+        return must(await sb.from('etiquetas').select('codigo, mesa, comanda, vinculada_em, vinculada_por, ativada_em').eq('restaurante_id', rid).order('mesa').order('codigo'));
       },
       async vincularEtiqueta(codigo, mesa) {
         codigo = normCodigo(codigo);
         if (!/^[A-Z0-9]{4,16}$/.test(codigo)) throw new Error('Código de plaquinha inválido.');
         must(await sb.rpc('etiqueta_vincular', { p_codigo: codigo, p_mesa: mesa }));
+      },
+      async vincularComanda(codigo, comanda) {
+        codigo = normCodigo(codigo);
+        if (!/^[A-Z0-9]{4,16}$/.test(codigo)) throw new Error('Código de plaquinha inválido.');
+        must(await sb.rpc('etiqueta_comanda', { p_codigo: codigo, p_comanda: Math.round(+comanda) }));
       },
       async desvincularEtiqueta(codigo) {
         must(await sb.rpc('etiqueta_desvincular', { p_codigo: normCodigo(codigo) }));
@@ -2239,6 +2309,12 @@
       },
       async hhSomar(qtd = 1) {
         return must(await sb.rpc('hh_somar', { p_qtd: +qtd || 1 }));
+      },
+      async hhSomarEtiqueta(codigo, forcar = false) {
+        return must(await sb.rpc('hh_somar_etiqueta', { p_codigo: normCodigo(codigo), p_forcar: !!forcar }));
+      },
+      async hhDesfazerLeitura(id) {
+        return must(await sb.rpc('hh_desfazer_leitura', { p_id: id }));
       },
       async hhDesfazer() {
         return must(await sb.rpc('hh_desfazer'));

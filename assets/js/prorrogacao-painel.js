@@ -2,6 +2,8 @@
  * Prorrogação no painel da equipe (adicional): o relógio do happy hour, o botão de "+1 chopp",
  * começar, desfazer e encerrar, os ajustes (nome, frase, minutos por chopp, duração, teto,
  * horário limite e agenda), o link do telão e o QR do garçom, e o histórico.
+ * O garçom soma o chopp lendo a comanda do cliente: pela câmera ("Ler comanda"), encostando o celular
+ * (modo garçom por NFC, no Android) ou lendo a plaquinha com o celular logado (página da mesa).
  */
 (function () {
   const { $, esc, icon, toast, copyText, qrSvg } = UI;
@@ -17,10 +19,122 @@
   const linkGarcom = () => `${origem()}/admin/?chopp=1`;
   const cfgAtual = () => Store.prorrogacao.cfg(ctx.S.settings.prorrogacao);
   const nome = () => cfgAtual().nome;
+  // Código da plaquinha a partir do que o QR ou o NFC leu (…/t/CODIGO, ?tag=CODIGO ou só o código).
+  const codigoDe = (t) => {
+    t = String(t || '').trim();
+    const m = t.match(/\/t\/([A-Za-z0-9-]{4,24})/) || t.match(/[?&]tag=([A-Za-z0-9-]{4,24})/) || t.match(/^([A-Za-z0-9]{4,16})$/);
+    return m ? m[1].toUpperCase().replace(/[^A-Z0-9]/g, '') : null;
+  };
+
+  // O copo animado fica sempre no mesmo elemento: a tela é redesenhada, mas a animação continua.
+  let copoEl = null;
+  let copo = null;
+  function montarCopo() {
+    const lugar = document.getElementById('hhCopo');
+    if (!lugar || lugar === copoEl) return;
+    if (!copoEl) {
+      copoEl = document.createElement('div');
+      copo = PR.copo(copoEl, { tamanho: 'painel' });
+    }
+    copoEl.id = 'hhCopo';
+    lugar.replaceWith(copoEl);
+    copo.atualizar(P.d);
+  }
+
+  // Segunda tela: abre o telão já na TV (Chrome pergunta uma vez se pode gerenciar as janelas).
+  async function abrirNaTV() {
+    const url = `${linkTelao()}?tv=1`;
+    let onde = 'popup,width=1280,height=720';
+    let naTV = false;
+    try {
+      if ('getScreenDetails' in window) {
+        const d = await window.getScreenDetails();
+        const tv = d.screens.find((x) => x !== d.currentScreen) || null;
+        if (tv) {
+          onde = `popup,left=${tv.availLeft},top=${tv.availTop},width=${tv.availWidth},height=${tv.availHeight}`;
+          naTV = true;
+        }
+      }
+    } catch {}
+    const w = window.open(url, 'vtx-telao', onde);
+    if (!w) return toast('O navegador bloqueou a janela. Libere as janelas deste site e tente de novo.', { tone: 'error', ms: 6000 });
+    toast(naTV ? 'Telão aberto na outra tela: toque no botão amarelo dele para pôr em tela cheia.'
+      : 'Telão aberto numa janela nova: arraste para a TV e toque no botão amarelo para pôr em tela cheia.', { tone: 'ok', ms: 7000 });
+  }
+
+  // Comanda lida pelo garçom (câmera ou NFC).
+  async function somarComanda(codigo, forcar = false) {
+    try {
+      const r = await ctx.store.hhSomarEtiqueta(codigo, forcar);
+      const quem = PR.quemTxt(r) || 'Plaquinha';
+      if (r.repetida) {
+        toast(`${quem} acabou de ser lida. Era outro ${cfgAtual().produto}?`, { ms: 7000, action: { label: 'Somar mais 1', run: () => somarComanda(codigo, true) } });
+      } else {
+        if (navigator.vibrate) navigator.vibrate(40);
+        const m = String(+r.adicionados).replace('.', ',');
+        toast(r.travado && !+r.adicionados ? `${quem}: o relógio já está no teto ou no horário limite.` : `${quem}: +${m} min no relógio!`, {
+          tone: 'ok', ms: 6000, action: r.leitura_id ? { label: 'Desfazer', run: () => desfazerLeitura(r.leitura_id) } : undefined,
+        });
+      }
+    } catch (ex) {
+      toast(ex.message || 'Não foi possível somar.', { tone: 'error', ms: 5000 });
+    }
+    await atualizar();
+    ctx.chrome();
+    if (ctx.S.view === 'prorrogacao') ctx.rerender();
+  }
+  async function desfazerLeitura(id) {
+    try {
+      await ctx.store.hhDesfazerLeitura(id);
+      toast('Leitura desfeita.', { tone: 'ok' });
+    } catch (ex) {
+      toast(ex.message || 'Não foi possível desfazer.', { tone: 'error' });
+    }
+    await atualizar();
+    if (ctx.S.view === 'prorrogacao') ctx.rerender();
+  }
+  function lerComanda() {
+    if (!window.Leitor) return toast('Leitor indisponível. Recarregue a página.', { tone: 'error' });
+    Leitor.abrir({
+      titulo: 'Ler a comanda',
+      dica: `Aponte para o QR da comanda (ou da mesa) a cada ${cfgAtual().produto} servido.`,
+      aceitar: (t) => (codigoDe(t) ? null : 'Este QR não é de uma plaquinha.'),
+      pronto: (t) => somarComanda(codigoDe(t)),
+    });
+  }
+  // Modo garçom por NFC (Chrome no Android): com ele ligado, cada comanda encostada soma 1.
+  const temNfc = () => 'NDEFReader' in window;
+  let nfc = null;
+  async function ligarNfc() {
+    if (nfc) {
+      nfc.abort();
+      nfc = null;
+      ctx.rerender();
+      return toast('Modo garçom desligado.');
+    }
+    try {
+      const ctrl = new AbortController();
+      const leitor = new window.NDEFReader();
+      await leitor.scan({ signal: ctrl.signal });
+      nfc = ctrl;
+      leitor.onreading = (ev) => {
+        const rec = ev.message.records.find((r) => r.recordType === 'url' || r.recordType === 'text');
+        const cod = rec ? codigoDe(new TextDecoder(rec.encoding || 'utf-8').decode(rec.data)) : null;
+        if (cod) somarComanda(cod);
+        else toast('Esta plaquinha não tem o link da VTX Tap.', { tone: 'error' });
+      };
+      leitor.onreadingerror = () => toast('Não deu para ler. Encoste de novo, devagar.', { tone: 'error' });
+      toast('Modo garçom ligado: encoste o celular na comanda a cada chopp.', { tone: 'ok', ms: 5000 });
+    } catch (ex) {
+      toast(ex && ex.name === 'NotAllowedError' ? 'Permita o NFC para este site.' : 'Não foi possível ligar o NFC neste aparelho.', { tone: 'error' });
+    }
+    ctx.rerender();
+  }
 
   async function atualizar() {
     try {
       P.d = PR.sincronizar(await ctx.store.hhPainel());
+      if (copo) copo.atualizar(P.d);
     } catch (e) {
       console.error(e);
     }
@@ -35,8 +149,10 @@
     }
     const c = cfgAtual();
     const rod = P.d.rodando;
+    queueMicrotask(montarCopo);
     return `<div class="vhead"><div><h1>${esc(c.nome)}</h1><p>${esc(Store.prorrogacao.frase(c))}</p></div>
-        <span class="fp-status ${rod ? 'is-on' : ''}">${!c.ativo ? 'Desligada' : rod ? 'Rolando agora' : 'Parada'}</span></div>
+        <div class="vhead-actions"><span class="fp-status ${rod ? 'is-on' : ''}">${!c.ativo ? 'Desligada' : rod ? 'Rolando agora' : 'Parada'}</span>
+          ${c.ativo ? `<button type="button" class="btn btn-cobalt btn-sm" data-hh-tv>${icon('external')} Abrir na TV</button>` : ''}</div></div>
       <div class="aj-tabs" role="tablist" aria-label="Seções da ${esc(c.nome)}">
         <button type="button" role="tab" aria-selected="${P.tab === 'vivo'}" data-hh-tab="vivo">Ao vivo</button>
         <button type="button" role="tab" aria-selected="${P.tab === 'ajustes'}" data-hh-tab="ajustes">Ajustes</button>
@@ -56,8 +172,7 @@
     const produto = esc(c.produto);
     const mais = c.minutos === 1 ? '+1 min' : `+${c.minutos} min`;
     const vivo = d.rodando ? `<section class="panel hh-vivo">
-        <p class="hh-rotulo">Acaba em</p>
-        <p class="hh-relogio mono" data-hh-relogio>${PR.relogio(PR.restante(d))}</p>
+        <div id="hhCopo"></div>
         <p class="hh-fim">às <b data-hh-fim>${hora(s.fim)}</b>${s.limite_em ? ` · limite ${hora(s.limite_em)}` : ''}${c.teto ? ` · teto de ${PR.duracao(c.teto)} a mais` : ''}</p>
         <div class="hh-stats">
           <span><b>${s.leituras}</b> ${produto}${s.leituras === 1 ? '' : 's'}</span>
@@ -65,6 +180,10 @@
           <span>começou <b>${hora(s.inicio)}</b></span>
         </div>
         <button type="button" class="btn hh-mais" data-hh-somar="1" ${P.ocupado ? 'disabled' : ''}>${icon('beer')} +1 ${produto} <small>${mais}</small></button>
+        <div class="hh-ler">
+          <button type="button" class="btn btn-line" data-hh-ler>${icon('qr')} Ler comanda</button>
+          ${temNfc() ? `<button type="button" class="btn ${nfc ? 'btn-cobalt' : 'btn-line'}" data-hh-nfc aria-pressed="${!!nfc}">${icon('nfc')} ${nfc ? 'Modo garçom ligado' : 'Modo garçom (NFC)'}</button>` : ''}
+        </div>
         <div class="hh-mais-varios">${[2, 3, 5].map((n) => `<button type="button" class="btn btn-line" data-hh-somar="${n}" ${P.ocupado ? 'disabled' : ''}>+${n}</button>`).join('')}</div>
         <div class="hh-acoes">
           <button type="button" class="btn btn-quiet btn-sm" data-hh-desfazer ${s.leituras ? '' : 'disabled'}>${icon('left')} Desfazer o último</button>
@@ -84,20 +203,23 @@
       <div class="aj-col">
         <section class="panel stack">
           <h3>Telão</h3>
-          <p class="muted">Abra na TV do bar (navegador em tela cheia). Atualiza sozinho.</p>
+          <p class="muted">Com a TV ligada no computador (HDMI, como segunda tela), toque em <b>Abrir na TV</b>: o relógio abre na TV e fica rodando sozinho.
+            Smart TV ou TV box: abra o link abaixo no navegador dela, ou leia o QR com a TV.</p>
+          <button type="button" class="btn btn-cobalt" data-hh-tv>${icon('external')} Abrir na TV</button>
           <div class="dp-link"><b class="mono">${esc(linkTelao())}</b>
-            <a class="btn btn-line btn-sm" href="${esc(linkTelao())}" target="_blank" rel="noopener">${icon('external')} Abrir</a>
             <button type="button" class="btn btn-quiet btn-sm" data-hh-copiar="telao">${icon('copy')} Copiar</button></div>
+          <div class="hh-qr hh-qr--telao">${qrSvg(linkTelao(), { cell: 3 })}</div>
         </section>
         <section class="panel stack">
-          <h3>QR do garçom</h3>
-          <p class="muted">Cole no balcão ou na chopeira. Com o celular logado no painel, ler o QR soma 1 ${produto} no relógio.</p>
+          <h3>Comandas e QR do garçom</h3>
+          <p class="muted">Cada pessoa pode ganhar uma plaquinha como comanda (em Mesas → Comandas individuais). A cada ${produto}, o garçom lê a comanda
+            com o celular logado no painel e o minuto entra no relógio, com o número da comanda no telão. Sem comanda, use o QR abaixo (cole na chopeira).</p>
           <div class="hh-qr">${qrSvg(linkGarcom(), { cell: 4 })}</div>
           <button type="button" class="btn btn-line btn-sm" data-hh-imprimir>${icon('printer')} Imprimir o QR</button>
         </section>
         ${leituras.length ? `<section class="panel stack">
           <h3>Últimas leituras</h3>
-          <ul class="hh-leituras">${leituras.map((l) => `<li class="${l.desfeita ? 'is-desfeita' : ''}"><span>${hora(l.em)} · ${esc(l.por || 'Equipe')}</span>
+          <ul class="hh-leituras">${leituras.map((l) => `<li class="${l.desfeita ? 'is-desfeita' : ''}"><span>${hora(l.em)} · ${esc(l.por || 'Equipe')}${PR.quemTxt(l) ? ` · <b>${esc(PR.quemTxt(l))}</b>` : ''}</span>
             <b>${l.qtd > 1 ? `${l.qtd}× ` : ''}+${String(+l.minutos).replace('.', ',')} min</b>${l.desfeita ? `<small>desfeita${l.desfeita_por ? ` por ${esc(l.desfeita_por)}` : ''}</small>` : ''}</li>`).join('')}</ul>
         </section>` : ''}
       </div>
@@ -170,6 +292,7 @@
     try {
       const r = await fn();
       P.d = PR.sincronizar({ ...P.d, ...r });
+      if (copo) copo.atualizar(P.d);
       if (ok) ok(r);
     } catch (ex) {
       toast(ex.message || 'Não foi possível agora.', { tone: 'error', ms: 5000 });
@@ -222,6 +345,9 @@
     }
     if (t.closest('[data-hh-copiar]')) return copyText(linkTelao()).then((ok) => toast(ok ? 'Link copiado.' : 'Não foi possível copiar.', { tone: ok ? 'ok' : 'error' }));
     if (t.closest('[data-hh-imprimir]')) return imprimirQr();
+    if (t.closest('[data-hh-tv]')) return abrirNaTV();
+    if (t.closest('[data-hh-ler]')) return lerComanda();
+    if (t.closest('[data-hh-nfc]')) return ligarNfc();
   }
   async function onSubmit(e) {
     if (e.target.id !== 'hhAjustes') return;
@@ -252,9 +378,8 @@
   // Relógio: conta a cada segundo sem redesenhar; acaba o tempo → busca de novo.
   function tick() {
     if (ctx.S.view !== 'prorrogacao' || !P.d || !P.d.rodando) return;
-    const el = $('[data-hh-relogio]');
+    montarCopo();
     const r = PR.restante(P.d);
-    if (el) el.textContent = PR.relogio(r);
     if (r <= 0 && !P.ocupado) atualizar().then(() => ctx.rerender());
   }
   // Com a tela aberta, acompanha os chopps dos outros garçons.
