@@ -461,7 +461,7 @@
         ${campoHora('hora', e.hora, 'Início do jogo')}
         <label class="field"><span>Pontos do dia valem</span><select class="input" name="mult">${[1.5, 2, 3].map((m) => `<option value="${m}" ${(+e.mult || 2) === m ? 'selected' : ''}>${multEv(m)}</option>`).join('')}</select></label>
       </div>
-      <small class="help">A escolha do time fecha no início do jogo. Sem hora, fecha no fim do dia.</small>
+      <small class="help">A escolha do time fecha no início do jogo. O resultado pode ser lançado depois disso.</small>
       <div class="vhead-actions">
         <button type="submit" class="btn btn-cobalt btn-sm">Salvar clássico</button>
         <button type="button" class="btn btn-quiet btn-sm" data-fp-evento="fechar">Cancelar</button>
@@ -991,6 +991,9 @@
     const pr = t.closest('[data-fp-premio]');
     if (pr) {
       const v = pr.dataset.fpPremio;
+      // Troca de prêmio: o formulário aberto é de outro (não pode ser lido para o novo ao redesenhar).
+      const aberto = $('#fpPremioForm');
+      if (aberto) aberto.remove();
       P.premioEdit = v === 'fechar' ? null : v === 'novo' ? { nome: '', descricao: '', pontos: '', imagem: '', ativo: true, ordem: 0, nivel_min: null } : { ...(P.premios || []).find((p) => p.id === v) };
       ctx.rerender();
       if (P.premioEdit) setTimeout(() => { const i = $('#fpPremioForm [name=nome]'); i && i.focus(); }, 60);
@@ -999,6 +1002,8 @@
     const ev = t.closest('[data-fp-evento]');
     if (ev) {
       const v = ev.dataset.fpEvento;
+      const aberto = $('#fpEvento');
+      if (aberto) aberto.remove();
       P.eventoEdit = v === 'fechar' ? null : v === 'novo' ? { times: ['', ''], data: '', hora: '', mult: 2, nome: '' } : { ...(P.eventos || []).find((x) => x.id === v) };
       ctx.rerender();
       if (P.eventoEdit) setTimeout(() => { const i = $('#fpEvento [name=time]'); i && i.focus(); }, 60);
@@ -1257,6 +1262,7 @@
         const v = (n) => f.elements[n];
         const d = dataIso(v('data').value);
         if (!d) throw new Error('Informe o dia do jogo (dd/mm/aaaa).');
+        if (!v('hora').value.trim()) throw new Error('Informe a hora do jogo: a escolha do time fecha nessa hora.');
         if (!horaOk(v('hora').value.trim())) throw new Error('Hora inválida. Use hh:mm.');
         await ctx.store.fidEventoSalvar({ id: P.eventoEdit.id || null, nome: v('nome').value, data: d, hora: v('hora').value.trim(),
           mult: +v('mult').value, times: [...f.querySelectorAll('[name=time]')].map((x) => x.value) });

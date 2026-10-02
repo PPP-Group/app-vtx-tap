@@ -2538,6 +2538,7 @@ begin
       select m.cpf, sum(m.pontos)::int as pontos
         from public.fid_movimentos m
        where m.restaurante_id = p_restaurante and m.tipo not in ('resgate', 'transferencia') and not (m.tipo = 'estorno' and m.resgate_id is not null)
+         and not (m.tipo = 'validade' and m.por = 'Validade (transferência)')
        group by m.cpf having sum(m.pontos) > 0),
     pos as (
       select g.cpf, g.pontos, rank() over (order by g.pontos desc) as pos,
@@ -3284,21 +3285,36 @@ language sql stable security definer set search_path = public as $$
 $$;
 
 -- Vence os pontos do cliente (FIFO: as saídas gastam primeiro os pontos mais antigos). Devolve quantos venceram.
+-- A parte que veio de transferência recebida vence com por = 'Validade (transferência)': como a transferência
+-- não conta no ranking, o vencimento dela também não desconta do ranking.
 create or replace function public.fid_vencer(p_restaurante uuid, p_cpf text) returns int
 language plpgsql security definer set search_path = public as $$
 declare iv interval := public.fid_validade(p_restaurante); desde timestamptz := public.fid_validade_desde(p_restaurante);
-  saldo int; ganhos int; saidas int; v int;
+  saldo int; restante int; m record; usado int; v_tr int := 0; v_out int := 0; total int;
 begin
   if iv is null then return 0; end if;
   select pontos into saldo from public.fid_clientes where restaurante_id = p_restaurante and cpf = p_cpf for update;
   if not found or saldo <= 0 then return 0; end if;
-  select coalesce(sum(pontos) filter (where pontos > 0 and greatest(criado_em, coalesce(desde, criado_em)) + iv <= now()), 0),
-         coalesce(-sum(pontos) filter (where pontos < 0), 0)
-    into ganhos, saidas from public.fid_movimentos where restaurante_id = p_restaurante and cpf = p_cpf;
-  v := least(ganhos - saidas, saldo);
-  if v <= 0 then return 0; end if;
-  perform public.fid_mover(p_restaurante, p_cpf, 'validade', -v, 'Pontos vencidos', null, null, null, null, 'Validade');
-  return v;
+  select coalesce(-sum(pontos) filter (where pontos < 0), 0) into restante
+    from public.fid_movimentos where restaurante_id = p_restaurante and cpf = p_cpf;
+  for m in select pontos, tipo, greatest(criado_em, coalesce(desde, criado_em)) + iv as vence
+             from public.fid_movimentos where restaurante_id = p_restaurante and cpf = p_cpf and pontos > 0 order by 3, id loop
+    exit when m.vence > now();
+    usado := least(restante, m.pontos);
+    restante := restante - usado;
+    if m.tipo = 'transferencia' then v_tr := v_tr + m.pontos - usado; else v_out := v_out + m.pontos - usado; end if;
+  end loop;
+  total := least(v_tr + v_out, saldo);
+  if total <= 0 then return 0; end if;
+  v_tr := least(v_tr, total);
+  v_out := total - v_tr;
+  if v_out > 0 then
+    perform public.fid_mover(p_restaurante, p_cpf, 'validade', -v_out, 'Pontos vencidos', null, null, null, null, 'Validade');
+  end if;
+  if v_tr > 0 then
+    perform public.fid_mover(p_restaurante, p_cpf, 'validade', -v_tr, 'Pontos vencidos (recebidos por transferência)', null, null, null, null, 'Validade (transferência)');
+  end if;
+  return total;
 end $$;
 
 -- Próximos pontos a vencer (nos próximos 30 dias): { pontos, em }. null = nada vencendo.
@@ -3435,6 +3451,7 @@ begin
   select pin_hash into h from private.fid_pins where restaurante_id = v_r and cpf = v_cpf;
   if h is null or extensions.crypt(p_pin, h) <> h then return jsonb_build_object('status', 'erro', 'mensagem', 'PIN incorreto.'); end if;
   perform public.equipe_limpar_tentativas('fid-pin:' || v_r || ':' || v_cpf);
+  perform public.equipe_limpar_tentativas('fid-pin-dia:' || v_r || ':' || v_cpf);
   d := public.fid_destino(v_r, p_destino);
   if d.cpf is null then return jsonb_build_object('status', 'erro', 'mensagem', 'Não achamos ninguém no clube com esse CPF ou código.'); end if;
   if d.cpf = v_cpf then return jsonb_build_object('status', 'erro', 'mensagem', 'Esse é você. Digite o CPF ou o código de outra pessoa.'); end if;
@@ -3569,7 +3586,8 @@ begin
   if coalesce(array_length(v_times, 1), 0) not between 2 and 4 then raise exception 'Informe os dois times (até quatro).'; end if;
   if coalesce(p ->> 'data', '') !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' then raise exception 'Informe o dia do jogo.'; end if;
   v_data := (p ->> 'data')::date;
-  if v_hora is not null and v_hora !~ '^[0-2][0-9]:[0-5][0-9]$' then raise exception 'Hora inválida (ex.: 16:00).'; end if;
+  if v_hora is null then raise exception 'Informe a hora do jogo: a escolha do time fecha nessa hora.'; end if;
+  if v_hora !~ '^([01][0-9]|2[0-3]):[0-5][0-9]$' then raise exception 'Hora inválida (ex.: 16:00).'; end if;
   if v_nome = '' then v_nome := left(array_to_string(v_times, ' x '), 60); end if;
   if coalesce(p ->> 'id', '') ~ '^[0-9a-f-]{36}$' then
     select * into e from public.fid_eventos where id = (p ->> 'id')::uuid and restaurante_id = r for update;
