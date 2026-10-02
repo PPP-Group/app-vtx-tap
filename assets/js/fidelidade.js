@@ -354,7 +354,7 @@
       ${podio(ranking.top, true)}
       ${resto.length ? `<ol class="rk-lista">${resto.map((x) => `<li class="${x.voce ? 'is-voce' : ''}"><span class="rk-pos">${x.pos}º</span><span class="pd-av">${inicialDe(x.nome)}</span><b>${esc(x.nome)}${x.voce ? ' <em>(você)</em>' : ''}</b><span class="rk-pts">${num(x.pontos)} pts</span></li>`).join('')}</ol>` : ''}
       ${eu && eu.pos && eu.pos > 10 ? `<p class="note">${icon('trophy')}<span>Você está em <b>${eu.pos}º lugar</b>, com ${num(eu.pontos)} pontos.</span></p>` : ''}
-      <p class="muted fid-rank-regra">Contam todos os pontos ganhos (compras, bônus e indicações). Trocar pontos por prêmios não tira ninguém do ranking${prog.validade && prog.validade.ativo ? '; pontos vencidos saem' : ''}. Transferências não contam.</p>
+      <p class="muted fid-rank-regra">Contam todos os pontos ganhos (compras, bônus e indicações). Trocar pontos por prêmios não tira ninguém do ranking${prog.validade && prog.validade.ativo ? '; pontos vencidos saem' : ''}. Pontos transferidos saem do ranking de quem manda e entram no de quem recebe.</p>
       <button type="button" class="btn btn-quiet btn-block" data-fid-ir="${S.cpf && S.nome ? 'conta' : 'inicio'}">Voltar</button>
     </div>`;
   }

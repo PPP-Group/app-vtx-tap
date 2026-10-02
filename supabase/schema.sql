@@ -2537,8 +2537,7 @@ begin
   return (with ganhos as (
       select m.cpf, sum(m.pontos)::int as pontos
         from public.fid_movimentos m
-       where m.restaurante_id = p_restaurante and m.tipo not in ('resgate', 'transferencia') and not (m.tipo = 'estorno' and m.resgate_id is not null)
-         and not (m.tipo = 'validade' and m.por = 'Validade (transferência)')
+       where m.restaurante_id = p_restaurante and m.tipo <> 'resgate' and not (m.tipo = 'estorno' and m.resgate_id is not null)
        group by m.cpf having sum(m.pontos) > 0),
     pos as (
       select g.cpf, g.pontos, rank() over (order by g.pontos desc) as pos,
@@ -3262,7 +3261,8 @@ end $$;
 --   aniversario   { ativo, mult (pontos x no mês do aniversário), bonus (pontos de presente, 1 vez por ano) }
 --                 e prêmios marcados como "presente de aniversário" (só no mês, 1 vez por ano, podem custar 0);
 --   transferencia { ativo, minimo, maximoDia (0 = sem limite) }: o cliente manda pontos para outro cliente
---                 (achado pelo CPF ou pelo código de indicação), confirmando com o PIN. Não mexe no ranking;
+--                 (achado pelo CPF ou pelo código de indicação), confirmando com o PIN. Sai do ranking de quem
+--                 manda e entra no de quem recebe;
 --   validade      { ativo, quantidade, unidade 'meses'|'dias', desde 'AAAA-MM-DD' }: pontos ganhos há mais
 --                 tempo que isso vencem (os mais antigos primeiro). Descontam do saldo e do ranking.
 --                 "desde" = dia em que a regra foi ligada: o que foi ganho antes conta a partir daí;
@@ -3285,36 +3285,22 @@ language sql stable security definer set search_path = public as $$
 $$;
 
 -- Vence os pontos do cliente (FIFO: as saídas gastam primeiro os pontos mais antigos). Devolve quantos venceram.
--- A parte que veio de transferência recebida vence com por = 'Validade (transferência)': como a transferência
--- não conta no ranking, o vencimento dela também não desconta do ranking.
+-- Os pontos vencidos saem do saldo e do ranking.
 create or replace function public.fid_vencer(p_restaurante uuid, p_cpf text) returns int
 language plpgsql security definer set search_path = public as $$
 declare iv interval := public.fid_validade(p_restaurante); desde timestamptz := public.fid_validade_desde(p_restaurante);
-  saldo int; restante int; m record; usado int; v_tr int := 0; v_out int := 0; total int;
+  saldo int; ganhos int; saidas int; v int;
 begin
   if iv is null then return 0; end if;
   select pontos into saldo from public.fid_clientes where restaurante_id = p_restaurante and cpf = p_cpf for update;
   if not found or saldo <= 0 then return 0; end if;
-  select coalesce(-sum(pontos) filter (where pontos < 0), 0) into restante
-    from public.fid_movimentos where restaurante_id = p_restaurante and cpf = p_cpf;
-  for m in select pontos, tipo, greatest(criado_em, coalesce(desde, criado_em)) + iv as vence
-             from public.fid_movimentos where restaurante_id = p_restaurante and cpf = p_cpf and pontos > 0 order by 3, id loop
-    exit when m.vence > now();
-    usado := least(restante, m.pontos);
-    restante := restante - usado;
-    if m.tipo = 'transferencia' then v_tr := v_tr + m.pontos - usado; else v_out := v_out + m.pontos - usado; end if;
-  end loop;
-  total := least(v_tr + v_out, saldo);
-  if total <= 0 then return 0; end if;
-  v_tr := least(v_tr, total);
-  v_out := total - v_tr;
-  if v_out > 0 then
-    perform public.fid_mover(p_restaurante, p_cpf, 'validade', -v_out, 'Pontos vencidos', null, null, null, null, 'Validade');
-  end if;
-  if v_tr > 0 then
-    perform public.fid_mover(p_restaurante, p_cpf, 'validade', -v_tr, 'Pontos vencidos (recebidos por transferência)', null, null, null, null, 'Validade (transferência)');
-  end if;
-  return total;
+  select coalesce(sum(pontos) filter (where pontos > 0 and greatest(criado_em, coalesce(desde, criado_em)) + iv <= now()), 0),
+         coalesce(-sum(pontos) filter (where pontos < 0), 0)
+    into ganhos, saidas from public.fid_movimentos where restaurante_id = p_restaurante and cpf = p_cpf;
+  v := least(ganhos - saidas, saldo);
+  if v <= 0 then return 0; end if;
+  perform public.fid_mover(p_restaurante, p_cpf, 'validade', -v, 'Pontos vencidos', null, null, null, null, 'Validade');
+  return v;
 end $$;
 
 -- Próximos pontos a vencer (nos próximos 30 dias): { pontos, em }. null = nada vencendo.
