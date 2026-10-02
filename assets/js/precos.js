@@ -13,13 +13,13 @@
 (function () {
   const SERVICOS = [
     { id: 'pagina', nome: 'Página da mesa e cardápio', preco: 49, desc: 'Cardápio, Wi-Fi, avaliação no Google, comentários e informações do restaurante.' },
-    { id: 'garcom', nome: 'Chamar o garçom', preco: 69, desc: 'O sino na página da mesa e as abas Chamados e Salão do painel.' },
+    { id: 'garcom', nome: 'Chamar o garçom', preco: 19, desc: 'O sino na página da mesa e as abas Chamados e Salão do painel.' },
     { id: 'fidelidade', nome: 'Programa de fidelidade', preco: 199, desc: 'Pontos pela nota fiscal, prêmios, níveis, indicação e ranking.' },
     { id: 'delivery', nome: 'Delivery', preco: 149, desc: 'Pedidos para entrega com taxa por distância, cozinha e acompanhamento do pedido.' },
   ];
   // Desconto por quantidade de serviços; os quatro juntos têm preço fechado.
   const DESCONTO = { 2: 0.1, 3: 0.15 };
-  const TODOS = 399;
+  const TODOS = 349;
   const DOMINIO_MES = 19;
   // Conferência automática da nota na SEFAZ (fidelidade): o restaurante liga se quiser e paga por nota conferida.
   const SEFAZ_NOTA = 0.25;

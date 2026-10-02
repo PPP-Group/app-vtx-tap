@@ -1,23 +1,26 @@
 /*
- * PDF das plaquinhas para a gráfica: uma plaquinha por página, no tamanho exato de um
- * cartão de crédito (ISO/IEC 7810 ID-1: 85,60 × 53,98 mm, cantos com raio de 3,18 mm).
+ * PDF das plaquinhas para a gráfica, no tamanho exato de um cartão de crédito
+ * (ISO/IEC 7810 ID-1: 85,60 × 53,98 mm, cantos com raio de 3,18 mm), impresso dos dois lados:
+ * para cada plaquinha, uma página com a FRENTE (deitada) e a seguinte com o VERSO (em pé).
  *
- * Layout: fundo branco com um contorno fininho por dentro, divisória no meio exato do cartão
- * (os dois em roxo claro, ou nos tons da cor do restaurante no personalizado). À esquerda, o QR
- * centralizado, com uma logo no meio e o miolo dos três quadrados de canto em roxo claro.
- * À direita, centralizados na mesma linha: o ícone de NFC grande, "Aproxime o celular" e o @.
- * O código da plaquinha sai pequeno, em pé na lateral direita (lido de cima para baixo).
+ * Os dois lados têm o mesmo conteúdo, na identidade visual da Vortex:
+ *   - o QR com a logo no meio (miolo dos três quadrados de canto na cor de destaque);
+ *   - no personalizado, o nome do restaurante escrito (a logo dele já está no meio do QR);
+ *   - uma faixa no gradiente da cor de destaque com as ondas de NFC, "Aproxime o celular",
+ *     a dica de ler o QR e "feito por" com a logo da VTX Tap em uma cor (branca ou noite,
+ *     para contrastar com a faixa);
+ *   - o código da plaquinha, pequeno.
+ * Frente: QR à esquerda, faixa à direita (onde fica o chip). Verso: QR em cima, faixa embaixo.
  *
  * Dois modelos:
- *   'padrao'        → logo da VTX Tap no meio do QR.
- *   'personalizado' → "personalizado básico": logo do restaurante no meio do QR, e os detalhes
- *                     em roxo claro passam para a cor do restaurante (tons claros dela).
- *   Nos dois, a logo da VTX Tap pequenininha fica em cima do @. Sem logo do restaurante,
- *                     sai igual ao padrão.
+ *   'padrao'        → logo da VTX Tap no meio do QR e faixa no gradiente do bloco roxo da marca.
+ *   'personalizado' → "personalizado simples": logo e nome do restaurante, faixa na cor dele.
+ *                     Sem logo do restaurante, sai igual ao padrão.
  *
- * Qualidade de impressão: QR, ícone de NFC e textos em vetor (nítidos em qualquer tamanho),
- * textos na fonte Sora embutida no PDF, logos na resolução original. O QR tem correção de
- * erro alta (H) para continuar lendo com a logo no meio.
+ * Qualidade de impressão: QR, faixa, anéis e ondas em vetor; textos pequenos em Sora embutida
+ * no PDF; títulos em Big Shoulders Display rasterizados a 1.000 dpi (a fonte só existe como
+ * webfont na página); logos na resolução original. O QR tem correção de erro alta (H) para
+ * continuar lendo com a logo no meio.
  */
 (function () {
   // Textos e medidas da plaquinha. Troque aqui para mudar em todas as próximas.
@@ -25,12 +28,12 @@
     largura: 85.6,
     altura: 53.98,
     raio: 3.18,
-    rodape: '@vortexsoftwareco',
-    titulo: 'Aproxime o celular',
+    titulo: ['Aproxime', 'o celular'],
+    dica: 'ou aponte a câmera para o QR Code',
+    feito: 'feito por',
   };
-  const TINTA = '#1C2733';
-  // Cores de destaque. Padrão: roxo claro da VTX. Personalizado básico: derivadas da cor do restaurante.
-  const PALETA_VTX = { forte: '#7D27FC', claro: '#C9B3FF', fundo: '#F6F1FF', qr: '#A987FF' };
+  const NOITE = '#140B33';
+  const COR_CODIGO = '#B7BCC6';
   const hexRgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
   const rgbHex = (c) => '#' + c.map((v) => Math.round(Math.min(255, Math.max(0, v))).toString(16).padStart(2, '0')).join('');
   const misturar = (h, alvo, t) => rgbHex(hexRgb(h).map((v, i) => v + (hexRgb(alvo)[i] - v) * t));
@@ -38,35 +41,43 @@
     const [r, g, b] = hexRgb(h).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; });
     return 0.2126 * r + 0.7152 * g + 0.0722 * b;
   };
+  /* Cores de um lado da plaquinha.
+     Padrão: o gradiente do bloco roxo da marca, texto branco e o ponto das ondas em noite.
+     Personalizado: a cor do restaurante descendo para um tom mais escuro dela. Em cor clara demais
+     (amarelo, por exemplo), texto, ondas e logo passam para noite. */
+  const PALETA_VTX = { faixa: ['#7D27FC', '#5B14C9', '#3C0A8E'], tinta: '#FFFFFF', ponto: NOITE, olho: '#7D27FC', nome: NOITE, clara: false };
   function paleta(cor) {
     if (!/^#[0-9a-f]{6}$/i.test(cor || '')) return PALETA_VTX;
-    // Miolo dos quadrados do QR: a própria cor; escurecida só se for clara demais para o leitor achar o canto.
-    let qr = cor;
-    for (let i = 0; i < 12 && luz(qr) > 0.3; i++) qr = misturar(qr, '#000000', 0.12);
-    return { forte: cor, claro: misturar(cor, '#ffffff', 0.62), fundo: misturar(cor, '#ffffff', 0.92), qr };
+    const clara = luz(cor) > 0.4;
+    // Cor clara escurece pouco no degradê (escurecer amarelo demais vira oliva).
+    const escuro = misturar(cor, '#000000', clara ? 0.16 : 0.38);
+    // Miolo dos cantos do QR: a cor escurecida até o leitor achar o canto com folga.
+    let olho = cor;
+    for (let i = 0; i < 20 && luz(olho) > 0.18; i++) olho = misturar(olho, '#000000', 0.1);
+    return {
+      faixa: [cor, misturar(cor, '#000000', clara ? 0.07 : 0.18), escuro],
+      tinta: clara ? NOITE : '#FFFFFF',
+      ponto: clara ? cor : escuro,
+      olho,
+      nome: misturar(cor, '#000000', 0.5),
+      clara,
+    };
   }
-  const COR_CODIGO = '#B7BCC6';   // código da plaquinha, cinza clarinho, em pé na lateral direita
   const JSPDF = 'https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js';
   const SVG2PDF = 'https://cdn.jsdelivr.net/npm/svg2pdf.js@2.2.4/dist/svg2pdf.umd.min.js';
   // Sora (SIL OFL, assets/fonts/OFL.txt), embutida no PDF.
-  const FONTES = { extrabold: '/assets/fonts/Sora-ExtraBold.ttf', semibold: '/assets/fonts/Sora-SemiBold.ttf', light: '/assets/fonts/Sora-Light.ttf' };
-  const LOGO_VTX = '/admin/icons/icon-512.png';          // marca quadrada (miolo do QR)
-  const LOGO_VTX_TEXTO = '/assets/img/vtx-tap-escuro.png'; // logo com texto (ao lado do @)
+  const FONTES = { semibold: '/assets/fonts/Sora-SemiBold.ttf', light: '/assets/fonts/Sora-Light.ttf' };
+  const TITULO_FONTE = '"Big Shoulders Display"';
+  const LOGO_VTX = '/admin/icons/icon-512.png';            // marca quadrada (miolo do QR)
+  const LOGO_VTX_BRANCO = '/assets/img/vtx-tap-branco.png'; // "feito por" sobre faixa escura
+  const LOGO_VTX_NOITE = '/assets/img/vtx-tap-noite.png';   // "feito por" sobre faixa clara
 
-  /* Ícone de NFC: círculo com as ondas e o celular chegando perto, com o símbolo de NFC na tela. */
-  // Símbolo de NFC (ícone "nfc" do Material Icons, licença Apache 2.0), 24 × 24.
-  const NFC_SIMBOLO = 'M20 2H4c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 18H4V4h16v16zM18 6h-5c-1.1 0-2 .9-2 2v2.28c-.6.35-1 .98-1 1.72 0 1.1.9 2 2 2s2-.9 2-2c0-.74-.4-1.38-1-1.72V8h3v8H8V8h2V6H6v12h12V6z';
-  const NFC = (pal) => ({
-    w: 64, h: 48,
-    svg: `<g fill="none" stroke="${TINTA}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-      <circle cx="17" cy="19" r="13" stroke="${pal.claro}" fill="${pal.fundo}"/>
-      <path d="M13 13.5a8 8 0 0 1 0 11" stroke="${pal.forte}"/><path d="M17.5 10.5a12.5 12.5 0 0 1 0 17" stroke="${pal.forte}"/><path d="M9 16a4 4 0 0 1 0 6" stroke="${pal.forte}"/>
-      <g transform="rotate(14 42 24)"><rect x="32" y="5" width="19" height="36" rx="3.5" fill="#fff"/><path d="M39 8.5h5"/><circle cx="41.5" cy="36.5" r="1.2" fill="${TINTA}" stroke="none"/>
-        <g transform="translate(34.9 15.9) scale(0.55)" fill="${pal.forte}" stroke="none"><path d="${NFC_SIMBOLO}"/></g></g>
-    </g>`,
+  /* Ondas de NFC: o ponto de origem e três arcos (caixa 48 × 48). */
+  const ONDAS = (tinta, ponto) => ({
+    w: 48, h: 48,
+    svg: `<g fill="none" stroke="${tinta}" stroke-width="4.2" stroke-linecap="round"><circle cx="12" cy="24" r="4.2" fill="${ponto}" stroke="none"/>
+      <path d="M20 15.5a12 12 0 0 1 0 17"/><path d="M27 10a19.5 19.5 0 0 1 0 28"/><path d="M34 4.5a27 27 0 0 1 0 39"/></g>`,
   });
-  const NFC_W = 64;
-  const NFC_H = 48;
 
   const carregarScript = (src) =>
     new Promise((ok, falha) => {
@@ -96,7 +107,7 @@
     return btoa(bin);
   }
 
-  // Ícone em vetor no PDF (svg2pdf.js), na posição e no tamanho pedidos.
+  // SVG em vetor no PDF (svg2pdf.js), na posição e no tamanho pedidos.
   async function svgNoPdf(doc, { w, h, svg }, x, y, largura, altura) {
     const el = new DOMParser().parseFromString(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}">${svg}</svg>`, 'image/svg+xml').documentElement;
     const f = (window.svg2pdf && (window.svg2pdf.svg2pdf || window.svg2pdf)) || null;
@@ -120,46 +131,40 @@
     }
   }
 
-  // QR em vetor: cada sequência de módulos escuros de uma linha vira um retângulo.
-  // O miolo 3 × 3 dos três quadrados de canto sai em roxo claro; o meio fica livre para a logo.
-  function desenharQr(doc, texto, x, y, lado, livre, corMiolo) {
-    if (typeof window.qrcode !== 'function') throw new Error('Gerador de QR indisponível. Confira a internet.');
-    const qr = window.qrcode(0, 'H');
-    qr.addData(texto);
-    qr.make();
-    const n = qr.getModuleCount();
-    const m = lado / n;
-    const cantos = [[0, 0], [0, n - 7], [n - 7, 0]];
-    const miolo = (r, c) => cantos.some(([r0, c0]) => r >= r0 + 2 && r <= r0 + 4 && c >= c0 + 2 && c <= c0 + 4);
-    // Área do meio reservada para a logo (em módulos), centralizada.
-    const k = Math.round(n * livre);
-    const ini0 = Math.floor((n - k) / 2);
-    const noMeio = (r, c) => r >= ini0 && r < ini0 + k && c >= ini0 && c < ini0 + k;
-    const escuro = (r, c) => qr.isDark(r, c) && !miolo(r, c) && !noMeio(r, c);
-    doc.setFillColor(TINTA);
-    for (let r = 0; r < n; r++) {
-      let c = 0;
-      while (c < n) {
-        if (!escuro(r, c)) { c++; continue; }
-        const ini = c;
-        while (c < n && escuro(r, c)) c++;
-        // Leve sobreposição para não aparecer fresta entre as linhas.
-        doc.rect(x + ini * m, y + r * m, (c - ini) * m + 0.01, m + 0.02, 'F');
-      }
-    }
-    doc.setFillColor(corMiolo);
-    cantos.forEach(([r0, c0]) => doc.rect(x + (c0 + 2) * m, y + (r0 + 2) * m, 3 * m, 3 * m, 'F'));
-    return { x: x + ini0 * m, y: y + ini0 * m, lado: k * m };
+  /* Título em Big Shoulders Display 900, caixa alta, como imagem a 40 px/mm (~1.000 dpi).
+     tamanho: corpo da fonte em mm. Devolve a largura em mm. alinhar: 'esquerda' | 'centro'. */
+  const PX_MM = 40;
+  function titulo(doc, linhas, x, y, { tamanho, cor, alinhar = 'esquerda', entrelinha = 0.9 }) {
+    const c = document.createElement('canvas');
+    const ctx = c.getContext('2d');
+    const fonte = `900 ${tamanho * PX_MM}px ${TITULO_FONTE}, 'Arial Narrow', Impact, sans-serif`;
+    ctx.font = fonte;
+    const ls = linhas.map((l) => l.toLocaleUpperCase('pt-BR'));
+    const w = Math.ceil(Math.max(...ls.map((l) => ctx.measureText(l).width))) + 4;
+    const passo = tamanho * entrelinha * PX_MM;
+    const folga = tamanho * 0.3 * PX_MM; // espaço em cima para acento de maiúscula (Ô, É)
+    c.width = w;
+    c.height = Math.ceil(folga + passo * (ls.length - 1) + tamanho * 1.05 * PX_MM);
+    ctx.font = fonte;
+    ctx.fillStyle = cor;
+    ctx.textBaseline = 'alphabetic';
+    ls.forEach((l, i) => {
+      const lw = ctx.measureText(l).width;
+      ctx.fillText(l, alinhar === 'centro' ? (w - lw) / 2 : 0, folga + tamanho * 0.82 * PX_MM + i * passo);
+    });
+    const wmm = c.width / PX_MM;
+    doc.addImage(c.toDataURL('image/png'), 'PNG', alinhar === 'centro' ? x - wmm / 2 : x, y - folga / PX_MM, wmm, c.height / PX_MM, undefined, 'FAST');
+    return wmm;
   }
 
-  function texto(doc, t, x, y, { tamanho, cor = TINTA, espaco = 0, alinhar = 'centro', angulo = 0, peso = 'extrabold' } = {}) {
+  function texto(doc, t, x, y, { tamanho, cor, espaco = 0, alinhar = 'esquerda', angulo = 0, peso = 'light' } = {}) {
     doc.setFont('Sora', peso);
     doc.setFontSize(tamanho);
     doc.setTextColor(cor);
     doc.setCharSpace(espaco);
     const w = doc.getTextWidth(t) + espaco * (t.length - 1);
     if (angulo) doc.text(t, x, y, { angle: angulo });
-    else doc.text(t, alinhar === 'direita' ? x - w : x - w / 2, y);
+    else doc.text(t, alinhar === 'centro' ? x - w / 2 : x, y);
     doc.setCharSpace(0);
     return w;
   }
@@ -172,9 +177,154 @@
     doc.addImage(img.url, 'PNG', x + (w - iw) / 2, y + (h - ih) / 2, iw, ih, alias, 'FAST');
   }
 
+  /* QR em vetor. Cada sequência de módulos escuros de uma linha vira um retângulo; os três
+     quadrados de canto saem com contorno arredondado em noite e o miolo na cor de destaque.
+     O meio (26% do lado) fica livre para a logo. Devolve a caixa do meio. */
+  function desenharQr(doc, url, x, y, lado, corOlho) {
+    if (typeof window.qrcode !== 'function') throw new Error('Gerador de QR indisponível. Confira a internet.');
+    const qr = window.qrcode(0, 'H');
+    qr.addData(url);
+    qr.make();
+    const n = qr.getModuleCount();
+    const m = lado / n;
+    const cantos = [[0, 0], [0, n - 7], [n - 7, 0]];
+    const noCanto = (r, c) => cantos.some(([r0, c0]) => r >= r0 && r < r0 + 7 && c >= c0 && c < c0 + 7);
+    const k = Math.round(n * 0.26);
+    const ini0 = Math.floor((n - k) / 2);
+    const noMeio = (r, c) => r >= ini0 && r < ini0 + k && c >= ini0 && c < ini0 + k;
+    const escuro = (r, c) => qr.isDark(r, c) && !noCanto(r, c) && !noMeio(r, c);
+    doc.setFillColor(NOITE);
+    for (let r = 0; r < n; r++) {
+      let c = 0;
+      while (c < n) {
+        if (!escuro(r, c)) { c++; continue; }
+        const ini = c;
+        while (c < n && escuro(r, c)) c++;
+        // Leve sobreposição para não aparecer fresta entre as linhas.
+        doc.rect(x + ini * m, y + r * m, (c - ini) * m + 0.01, m + 0.02, 'F');
+      }
+    }
+    cantos.forEach(([r0, c0]) => {
+      doc.setDrawColor(NOITE);
+      doc.setLineWidth(m);
+      doc.roundedRect(x + (c0 + 0.5) * m, y + (r0 + 0.5) * m, 6 * m, 6 * m, 1.6 * m, 1.6 * m, 'S');
+      doc.setFillColor(corOlho);
+      doc.roundedRect(x + (c0 + 2) * m, y + (r0 + 2) * m, 3 * m, 3 * m, 0.8 * m, 0.8 * m, 'F');
+    });
+    return { x: x + ini0 * m, y: y + ini0 * m, lado: k * m };
+  }
+
+  /* Faixa: retângulo com os cantos do lado de fora arredondados, gradiente a 150° e os anéis da
+     marca sangrando de um canto. lado: 'direita' (frente) ou 'baixo' (verso). */
+  function faixaSvg(w, h, pal, lado, R) {
+    const r = PLACA.raio;
+    const forma = lado === 'direita'
+      ? `M0 0H${w - r}A${r} ${r} 0 0 1 ${w} ${r}V${h - r}A${r} ${r} 0 0 1 ${w - r} ${h}H0Z`
+      : `M0 0H${w}V${h - r}A${r} ${r} 0 0 1 ${w - r} ${h}H${r}A${r} ${r} 0 0 1 0 ${h - r}Z`;
+    const [cx, cy] = lado === 'direita' ? [w, h] : [0, h];
+    const anel = pal.clara ? NOITE : '#FFFFFF';
+    // Raios e opacidades dos três anéis (proporções do grafismo do manual).
+    const aneis = [[0.34, 0.06, 0.16], [0.555, 0.06, 0.08], [0.775, 0.06, 0.045]]
+      .map(([k, e, o]) => `<circle cx="${cx}" cy="${cy}" r="${R * k}" fill="none" stroke="${anel}" stroke-opacity="${o}" stroke-width="${R * e}"/>`).join('');
+    return {
+      w, h,
+      svg: `<defs><linearGradient id="g" x1="0" y1="0" x2="0.5" y2="0.87"><stop offset="0" stop-color="${pal.faixa[0]}"/><stop offset=".55" stop-color="${pal.faixa[1]}"/><stop offset="1" stop-color="${pal.faixa[2]}"/></linearGradient>
+        <clipPath id="c"><path d="${forma}"/></clipPath></defs>
+        <path d="${forma}" fill="url(#g)"/><g clip-path="url(#c)">${aneis}</g>`,
+    };
+  }
+
+  /* "feito por" + logo da VTX Tap em uma cor. x é a borda esquerda, ou o centro quando centro = true. */
+  function feitoPor(doc, logo, x, yMeio, cor, { centro = false } = {}) {
+    const lh = 3.6;
+    const lw = logo ? (logo.w / logo.h) * lh : 0;
+    doc.setFont('Sora', 'light');
+    doc.setFontSize(4.2);
+    const tw = doc.getTextWidth(PLACA.feito);
+    const total = tw + 1.2 + lw;
+    const x0 = centro ? x - total / 2 : x;
+    texto(doc, PLACA.feito, x0, yMeio + 0.55, { tamanho: 4.2, cor });
+    if (logo) doc.addImage(logo.url, 'PNG', x0 + tw + 1.2, yMeio - lh / 2, lw, lh, cor === NOITE ? 'vtx-noite' : 'vtx-branco', 'FAST');
+  }
+
+  // Logo no meio do QR: a da VTX Tap ocupa a caixa; a do restaurante vai sobre um fundo branco arredondado.
+  function logoNoQr(doc, meio, logo, ehVtx, alias) {
+    if (!logo) return;
+    const f = meio.lado * 0.06;
+    if (!ehVtx) {
+      doc.setFillColor('#FFFFFF');
+      doc.roundedRect(meio.x, meio.y, meio.lado, meio.lado, 1, 1, 'F');
+    }
+    imagemNaCaixa(doc, logo, meio.x + f, meio.y + f, meio.lado - 2 * f, meio.lado - 2 * f, alias);
+  }
+
+  /* Frente, deitada: QR à esquerda, faixa à direita sobre o chip. */
+  async function frente(doc, it, ctx) {
+    const { L, A, pal, logoMeio, ehVtx, aliasLogo, logoFeito, nome } = ctx;
+    doc.setFillColor('#FFFFFF');
+    doc.roundedRect(0, 0, L, A, PLACA.raio, PLACA.raio, 'F');
+
+    const fw = 34.4;
+    const fx = L - fw;
+    await svgNoPdf(doc, faixaSvg(fw, A, pal, 'direita', 31.1), fx, 0, fw, A);
+
+    // QR (menor quando o nome do restaurante vai em cima dele), centralizado na parte branca.
+    const qr = nome ? 37.2 : 40.4;
+    const qx = (fx - qr) / 2 + 0.6;
+    const qy = nome ? 9.6 : (A - qr) / 2;
+    if (nome) titulo(doc, [nome], fx / 2 + 0.6, 3.6, { tamanho: 3.4, cor: pal.nome, alinhar: 'centro' });
+    logoNoQr(doc, desenharQr(doc, it.url, qx, qy, qr, pal.olho), logoMeio, ehVtx, aliasLogo);
+
+    // Código em pé na borda esquerda, lido de baixo para cima.
+    doc.setFont('Sora', 'semibold');
+    doc.setFontSize(4.6);
+    const wc = doc.getTextWidth(it.codigo) + 0.45 * (it.codigo.length - 1);
+    texto(doc, it.codigo, 2.9, (A + wc) / 2, { tamanho: 4.6, cor: COR_CODIGO, espaco: 0.45, angulo: 90, peso: 'semibold' });
+
+    // Faixa: ondas, título em duas linhas, dica do QR e "feito por" no pé.
+    const px = fx + 3.8;
+    await svgNoPdf(doc, ONDAS(pal.tinta, pal.ponto), px, 4.6, 6.2, 6.2);
+    titulo(doc, PLACA.titulo, px, 12.2, { tamanho: 6.2, cor: pal.tinta });
+    const dica = PLACA.dica.split(' para ');
+    texto(doc, dica[0], px, 27.6, { tamanho: 5.1, cor: pal.tinta });
+    texto(doc, 'para ' + dica[1], px, 29.9, { tamanho: 5.1, cor: pal.tinta });
+    feitoPor(doc, logoFeito, px, A - 5.7, pal.tinta);
+  }
+
+  /* Verso, em pé: QR em cima, faixa embaixo. Mesmo conteúdo da frente. */
+  async function verso(doc, it, ctx) {
+    const { L, A, pal, logoMeio, ehVtx, aliasLogo, logoFeito, nome } = ctx;
+    // No verso a página é em pé: largura A, altura L.
+    const W = A;
+    const H = L;
+    doc.setFillColor('#FFFFFF');
+    doc.roundedRect(0, 0, W, H, PLACA.raio, PLACA.raio, 'F');
+
+    const fh = 27;
+    const fy = H - fh;
+    await svgNoPdf(doc, faixaSvg(W, fh, pal, 'baixo', 28.3), 0, fy, W, fh);
+
+    const qr = nome ? 39.2 : 42;
+    const qx = (W - qr) / 2;
+    const qy = nome ? 10 : 7.4;
+    if (nome) titulo(doc, [nome], W / 2, 3.8, { tamanho: 3.8, cor: pal.nome, alinhar: 'centro' });
+    logoNoQr(doc, desenharQr(doc, it.url, qx, qy, qr, pal.olho), logoMeio, ehVtx, aliasLogo);
+
+    doc.setFont('Sora', 'semibold');
+    doc.setFontSize(4.6);
+    const wc = doc.getTextWidth(it.codigo) + 0.45 * (it.codigo.length - 1);
+    texto(doc, it.codigo, W / 2 - wc / 2, qy + qr + 3.2, { tamanho: 4.6, cor: COR_CODIGO, espaco: 0.45, peso: 'semibold' });
+
+    await svgNoPdf(doc, ONDAS(pal.tinta, pal.ponto), W / 2 - 2.7, fy + 3, 5.4, 5.4);
+    titulo(doc, [PLACA.titulo.join(' ')], W / 2, fy + 9.2, { tamanho: 6, cor: pal.tinta, alinhar: 'centro' });
+    texto(doc, PLACA.dica, W / 2, fy + 18.6, { tamanho: 4.8, cor: pal.tinta, alinhar: 'centro' });
+    feitoPor(doc, logoFeito, W / 2, H - 4.4, pal.tinta, { centro: true });
+  }
+
   /**
-   * Gera e baixa o PDF: uma página do tamanho de um cartão de crédito por plaquinha.
-   * @param {{codigo: string, url: string, logo?: string, cor?: string}[]} itens  logo e cor (#rrggbb) do restaurante (modelo personalizado)
+   * Gera e baixa o PDF: para cada plaquinha, a frente (página deitada) e o verso (página em pé),
+   * no tamanho de um cartão de crédito.
+   * @param {{codigo: string, url: string, logo?: string, cor?: string, nome?: string}[]} itens  logo, cor (#rrggbb) e nome do restaurante (modelo personalizado)
    * @param {string} nomeArquivo
    * @param {{modelo?: 'padrao'|'personalizado'}} opcoes
    */
@@ -182,11 +332,12 @@
     if (!itens.length) throw new Error('Nenhuma plaquinha para gerar.');
     if (!window.jspdf) await carregarScript(JSPDF);
     if (!window.svg2pdf) await carregarScript(SVG2PDF);
+    try { await document.fonts.load(`900 100px ${TITULO_FONTE}`); } catch { /* sem a webfont, o título sai na fonte de reserva */ }
     const { jsPDF } = window.jspdf;
     const L = PLACA.largura;
     const A = PLACA.altura;
     const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [L, A], compress: true, putOnlyUsedFonts: true });
-    doc.setProperties({ title: nomeArquivo.replace(/\.pdf$/, ''), creator: 'Central de plaquinhas', subject: `Cartão ${L} × ${A} mm, cantos com raio de ${PLACA.raio} mm` });
+    doc.setProperties({ title: nomeArquivo.replace(/\.pdf$/, ''), creator: 'Central de plaquinhas', subject: `Cartão ${L} × ${A} mm, frente e verso, cantos com raio de ${PLACA.raio} mm` });
 
     for (const [peso, url] of Object.entries(FONTES)) {
       const nome = url.split('/').pop();
@@ -194,76 +345,28 @@
       doc.addFont(nome, 'Sora', peso);
     }
     const vtx = await logoPng(LOGO_VTX);
-    const vtxTexto = await logoPng(LOGO_VTX_TEXTO);
+    const vtxBranco = await logoPng(LOGO_VTX_BRANCO);
+    const vtxNoite = await logoPng(LOGO_VTX_NOITE);
     const logos = {};
     if (modelo === 'personalizado') {
       for (const u of new Set(itens.map((it) => it.logo).filter(Boolean))) logos[u] = await logoPng(u);
     }
 
-    // Medidas (mm). A divisória fica no meio exato do cartão; cada metade é centralizada nela.
-    const divX = L / 2;
-    const qr = 32;                     // lado do QR, centralizado na metade esquerda
-    const qrX = (divX - qr) / 2;
-    const qrY = (A - qr) / 2;
-    const codX = L - 5;                // código em pé na lateral direita (as letras ficam à direita desta linha)
-    const dirCx = (divX + L) / 2;      // centro da metade direita: ícone, título e @ alinhados nele
-    const nfcW = 25;                   // ícone de NFC, grande e no centro
-    const nfcH = (nfcW * NFC_H) / NFC_W;
-    const logoH = 3.4;                 // logo da VTX Tap em cima do @ (personalizado)
-    // Bloco da direita: ícone, 2,5 de espaço, título (2 linhas), 3 de espaço, [logo + 1,2], @.
-    const blocoH = nfcH + 2.5 + 8.4 + 3 + (vtxTexto ? logoH + 1.2 : 0) + 1.9;
-    const nfcY = (A - blocoH) / 2;
-
     for (const [i, it] of itens.entries()) {
+      const logoRest = modelo === 'personalizado' && it.logo && logos[it.logo];
+      const pal = logoRest ? paleta(it.cor) : PALETA_VTX;
+      const ctx = {
+        L, A, pal,
+        logoMeio: logoRest || vtx,
+        ehVtx: !logoRest,
+        aliasLogo: logoRest ? 'logo-' + it.logo : 'logo-vtx',
+        logoFeito: pal.tinta === NOITE ? vtxNoite : vtxBranco,
+        nome: logoRest ? String(it.nome || '').trim() : '',
+      };
       if (i) doc.addPage([L, A], 'landscape');
-      // Cartão branco com os cantos arredondados (a faca de corte segue o mesmo raio).
-      doc.setFillColor('#FFFFFF');
-      doc.roundedRect(0, 0, L, A, PLACA.raio, PLACA.raio, 'F');
-
-      // Esquerda: QR com a logo no meio (padrão: VTX Tap; personalizado: a do restaurante).
-      const logoMeio = (modelo === 'personalizado' && it.logo && logos[it.logo]) || vtx;
-      const pal = modelo === 'personalizado' ? paleta(it.cor) : PALETA_VTX;
-      // Contorno fininho por dentro do cartão, na cor de destaque (roxo claro ou a cor do restaurante).
-      const bordaIn = 1.8;
-      doc.setDrawColor(pal.claro);
-      doc.setLineWidth(0.3);
-      doc.roundedRect(bordaIn, bordaIn, L - 2 * bordaIn, A - 2 * bordaIn, PLACA.raio - 1, PLACA.raio - 1, 'S');
-      const meio = desenharQr(doc, it.url, qrX, qrY, qr, 0.26, pal.qr);
-      if (logoMeio) {
-        const f = meio.lado * 0.08;
-        doc.setFillColor('#FFFFFF');
-        doc.roundedRect(meio.x, meio.y, meio.lado, meio.lado, 1, 1, 'F');
-        imagemNaCaixa(doc, logoMeio, meio.x + f, meio.y + f, meio.lado - 2 * f, meio.lado - 2 * f, logoMeio === vtx ? 'logo-vtx' : 'logo-' + it.logo);
-      }
-
-      // Divisória em roxo claro
-      doc.setDrawColor(pal.claro);
-      doc.setLineWidth(0.6);
-      doc.setLineCap('round');
-      doc.line(divX, 9, divX, A - 9);
-
-      // Direita: ícone de NFC grande e centralizado, com o título logo embaixo.
-      await svgNoPdf(doc, NFC(pal), dirCx - nfcW / 2, nfcY, nfcW, nfcH);
-      // Título em duas linhas ("Aproxime" / "o celular").
-      const [l1, ...resto] = PLACA.titulo.split(' ');
-      const tY = nfcY + nfcH + 2.5;
-      texto(doc, l1, dirCx, tY + 3.6, { tamanho: 11.5 });
-      texto(doc, resto.join(' '), dirCx, tY + 8.4, { tamanho: 11.5 });
-
-      // Logo da VTX Tap pequena e o @ embaixo, alinhados com o título (nos dois modelos).
-      let rodY = tY + 8.4 + 3 + 1.9;
-      if (vtxTexto) {
-        const w = (vtxTexto.w / vtxTexto.h) * logoH;
-        doc.addImage(vtxTexto.url, 'PNG', dirCx - w / 2, tY + 8.4 + 3, w, logoH, 'logo-vtx-texto', 'FAST');
-        rodY += logoH + 1.2;
-      }
-      texto(doc, PLACA.rodape, dirCx, rodY, { tamanho: 5, peso: 'light' });
-
-      // Código em pé na lateral direita, pequeno, lido de cima para baixo.
-      doc.setFont('Sora', 'semibold');
-      doc.setFontSize(5.5);
-      const wc = doc.getTextWidth(it.codigo) + 0.3 * (it.codigo.length - 1);
-      texto(doc, it.codigo, codX, (A - wc) / 2, { tamanho: 5.5, cor: COR_CODIGO, espaco: 0.3, angulo: -90, peso: 'semibold' });
+      await frente(doc, it, ctx);
+      doc.addPage([A, L], 'portrait');
+      await verso(doc, it, ctx);
     }
 
     doc.save(nomeArquivo);

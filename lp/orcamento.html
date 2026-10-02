@@ -123,11 +123,11 @@
   .op b { font-weight: 600; }
   .op small { color: var(--muted); font-size: 13.5px; overflow-wrap: anywhere; }
   .placas { display: grid; gap: 10px; grid-template-columns: minmax(0, 1fr); }
-  /* Padrão e personalizada básica lado a lado; sob demanda embaixo, na largura toda (foto à esquerda, texto à direita). */
+  /* Padrão e personalizada simples lado a lado; sob demanda embaixo, na largura toda (foto à esquerda, texto à direita). */
   @media (min-width: 560px) {
     .placas { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .placa-op--larga { grid-column: 1 / -1; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 14px; align-items: center; }
-    .placa-op--larga img { grid-row: 1 / span 2; margin-bottom: 0; }
+    .placa-op--larga .placa-lados { grid-row: 1 / span 2; }
     .placa-op--larga .op-top { align-self: end; }
     .placa-op--larga small { align-self: start; }
   }
@@ -137,6 +137,16 @@
   .placa-op:has(input:focus-visible) { outline: 3px solid var(--roxo); outline-offset: 2px; }
   .placa-op input { position: absolute; top: 10px; right: 10px; width: 20px; height: 20px; margin: 0; accent-color: var(--roxo); z-index: 1; }
   .placa-op img { width: 100%; height: auto; margin-bottom: 4px; border-radius: 5px; box-shadow: 0 6px 18px rgba(20, 11, 51, .18); }
+  /* Frente e verso: a frente (deitada) aparece; passando o mouse, com o foco ou tocando, vira o verso (em pé). */
+  .placa-lados { position: relative; display: block; }
+  .placa-op .placa-lados img { box-shadow: none; border-radius: 0; margin: 0; filter: drop-shadow(0 6px 14px rgba(20, 11, 51, .18)); transition: opacity .35s ease, transform .35s ease; }
+  .placa-lados .placa-verso { position: absolute; inset: 0; opacity: 0; transform: rotateY(-12deg) scale(.96); }
+  .placa-op:hover .placa-frente, .placa-op:focus-within .placa-frente { opacity: 0; transform: rotateY(12deg) scale(.96); }
+  .placa-op:hover .placa-verso, .placa-op:focus-within .placa-verso { opacity: 1; transform: none; }
+  .placa-lados::after { content: 'frente · passe o mouse'; white-space: nowrap; position: absolute; left: 6px; bottom: 6px; padding: 2px 8px; border-radius: 999px; background: rgba(20, 11, 51, .72); color: #fff; font: 600 10.5px var(--mono); letter-spacing: .04em; pointer-events: none; }
+  .placa-op:hover .placa-lados::after, .placa-op:focus-within .placa-lados::after { content: 'verso'; }
+  @media (hover: none) { .placa-lados::after { content: 'frente · toque para virar'; } }
+  @media (prefers-reduced-motion: reduce) { .placa-lados img { transition: none; transform: none !important; } }
   .placa-op b { font-weight: 600; }
   .placa-op small { color: var(--muted); font-size: 13px; }
   .placa-op .preco { font-family: var(--mono); font-weight: 600; font-size: 14px; color: var(--roxo-ink); white-space: nowrap; }
@@ -204,6 +214,12 @@
   .condicoes ul { margin: 0; padding-left: 1.1em; display: grid; gap: 6px; }
   .rodape { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; justify-content: space-between; color: var(--muted); font-size: 14px; }
   .rodape a { color: var(--roxo-ink); font-weight: 600; }
+  /* Endosso da marca-mãe (manual de marca): produto VTX assina com "uma solução VORTEX". */
+  .rodape-marca { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+  .rodape-marca .endosso { height: 14px; width: auto; }
+  .rodape-marca .endosso-link { display: inline-flex; line-height: 0; }
+  .rodape a { text-decoration: none; }
+  .rodape a:hover { text-decoration: none; opacity: .8; }
   .logo-claro { display: none; }
   :root[data-theme="dark"] .logo-escuro { display: none; }
   :root[data-theme="dark"] .logo-claro { display: inline; }
@@ -293,15 +309,15 @@
           <div class="bloco-h"><h3>Plaquinhas <span class="tipo tipo--unico">Pagamento único</span></h3></div>
           <div class="placas" role="radiogroup" aria-label="Modelo da plaquinha">
             <label class="placa-op"><input type="radio" name="placa" id="plPadrao" value="padrao" checked>
-              <img src="/assets/img/placas/placa-padrao.webp" width="1200" height="757" alt="Plaquinha padrão: QR Code com a logo da VTX Tap à esquerda e, à direita, o ícone de NFC com Aproxime o celular">
+              <span class="placa-lados"><img class="placa-frente" src="/assets/img/placas/placa-padrao.webp?v=3" width="1200" height="757" alt="Frente da plaquinha padrão, deitada: QR Code com a logo da VTX Tap e, à direita, a faixa roxa com Aproxime o celular, a dica do QR e feito por VTX Tap"><img class="placa-verso" src="/assets/img/placas/placa-padrao-verso.webp?v=3" width="1200" height="757" alt="Verso da plaquinha padrão, em pé: o QR Code em cima e a faixa roxa embaixo"></span>
               <span class="op-top"><b>Padrão</b><span class="preco" id="precoPadrao"></span></span>
-              <small>Tamanho de cartão de crédito, com NFC e QR Code. Logo da VTX Tap no meio do QR.</small></label>
+              <small>Tamanho de cartão de crédito, com NFC e QR Code, impressa na frente (deitada) e no verso (em pé). Logo da VTX Tap no meio do QR.</small></label>
             <label class="placa-op"><input type="radio" name="placa" id="plBasica" value="basica">
-              <img src="/assets/img/placas/placa-personalizada-basica.webp" width="1200" height="757" alt="Plaquinha personalizada básica: a logo do restaurante no meio do QR e os detalhes na cor do restaurante">
-              <span class="op-top"><b>Personalizada básica</b><span class="preco" id="precoBasica"></span></span>
-              <small>Você envia a logo: ela vai no meio do QR, e os detalhes saem na cor do restaurante. R$ 20 a mais por plaquinha.</small></label>
+              <span class="placa-lados"><img class="placa-frente" src="/assets/img/placas/placa-personalizada-basica.webp?v=3" width="1200" height="757" alt="Frente da plaquinha personalizada, deitada: o nome do restaurante, o QR Code com o espaço da logo dele no meio e a faixa na cor do restaurante"><img class="placa-verso" src="/assets/img/placas/placa-personalizada-basica-verso.webp?v=3" width="1200" height="757" alt="Verso da plaquinha personalizada, em pé: o nome do restaurante, o QR Code e a faixa na cor dele"></span>
+              <span class="op-top"><b>Personalizada simples</b><span class="preco" id="precoBasica"></span></span>
+              <small>Você envia a logo: ela vai no meio do QR, o nome do restaurante vai escrito e a faixa sai na cor dele, frente e verso. R$ 10 a mais por plaquinha.</small></label>
             <label class="placa-op placa-op--larga"><input type="radio" name="placa" id="plDemanda" value="demanda">
-              <img src="/assets/img/placas/placa-sob-demanda.webp" width="1200" height="757" alt="Exemplo de plaquinha sob demanda, com arte própria do restaurante em fundo verde e dourado">
+              <span class="placa-lados"><img class="placa-frente" src="/assets/img/placas/placa-sob-demanda.webp?v=3" width="1200" height="757" alt="Exemplo de plaquinha sob demanda, frente deitada: arte própria de um restaurante em verde e dourado, com o QR Code numa placa creme"><img class="placa-verso" src="/assets/img/placas/placa-sob-demanda-verso.webp?v=3" width="1200" height="757" alt="Exemplo de plaquinha sob demanda, verso em pé, com a mesma arte"></span>
               <span class="op-top"><b>Personalizada sob demanda</b><span class="preco">Sob consulta</span></span>
               <small>Você manda a arte ou conta como quer. Nosso time avalia e faz o orçamento. Imagem ilustrativa.</small></label>
           </div>
@@ -396,11 +412,11 @@
       </div>
       <div class="tabela-wrap">
         <table>
-          <thead><tr><th>Plaquinhas (valor único, por unidade)</th><th class="v">Padrão</th><th class="v">Personalizada básica</th></tr></thead>
+          <thead><tr><th>Plaquinhas (valor único, por unidade)</th><th class="v">Padrão</th><th class="v">Personalizada simples</th></tr></thead>
           <tbody id="tabPlacas"></tbody>
         </table>
       </div>
-      <p class="muted">A implantação inclui o cadastro do restaurante, o cardápio montado, as mesas e áreas, a instalação das plaquinhas no local e 1 hora de treinamento da equipe. A personalizada básica usa a logo e a cor do restaurante; a sob demanda segue a arte que você mandar.</p>
+      <p class="muted">A implantação inclui o cadastro do restaurante, o cardápio montado, as mesas e áreas, a instalação das plaquinhas no local e 1 hora de treinamento da equipe. A personalizada simples usa a logo e a cor do restaurante; a sob demanda segue a arte que você mandar.</p>
     </div>
 
     <div class="grupo-tab">
@@ -436,7 +452,7 @@
   </div>
 
   <footer class="rodape">
-    <span><img class="logo-escuro" src="/assets/img/vtx-tap-escuro.png" alt="VTX Tap" width="110" height="51"><img class="logo-claro" src="/assets/img/vtx-tap.png" alt="" width="110" height="51"></span>
+    <span class="rodape-marca"><img class="logo-escuro" src="/assets/img/vtx-tap-escuro.png" alt="VTX Tap" width="110" height="51"><img class="logo-claro" src="/assets/img/vtx-tap.png" alt="" width="110" height="51"><a class="endosso-link" href="https://vortexsystems.tech" target="_blank" rel="noopener" aria-label="Uma solução Vortex: abrir o site da Vortex"><img class="logo-escuro endosso" src="/assets/img/marca/endosso-cor.svg" alt="" width="108" height="14"><img class="logo-claro endosso" src="/assets/img/marca/endosso-negativo.svg" alt="" width="108" height="14"></a></span>
     <span>Fale com a gente: <a href="https://instagram.com/vortexsoftwareco" target="_blank" rel="noopener">@vortexsoftwareco</a></span>
   </footer>
 </div>
@@ -451,7 +467,8 @@
   (function () {
     const INTERNO = false;
     const $ = (s) => document.getElementById(s);
-    const brl = (v) => 'R$ ' + Math.round(v).toLocaleString('pt-BR');
+    // Inteiro sem centavos (R$ 349); com centavos quando houver (R$ 19,90).
+    const brl = (v) => { const c = Math.round(v * 100) / 100; return 'R$ ' + c.toLocaleString('pt-BR', { minimumFractionDigits: c % 1 ? 2 : 0, maximumFractionDigits: 2 }); };
     // Mensalidades vêm de /assets/js/precos.js (a mesma tabela do painel e do banco).
     const PRECO = { fidSetup: 490, domSetup: 190, domMes: Precos.DOMINIO_MES, domAno: 90 };
     Precos.SERVICOS.forEach((s) => {
@@ -463,14 +480,14 @@
     $('economiaTodos').textContent = `Economia de ${brl(todos.economia)}/mês`;
     // Plaquinha padrão: preço por unidade conforme a quantidade.
     const FAIXAS = [
-      { de: 1, ate: 19, valor: 59 },
-      { de: 20, ate: 49, valor: 52 },
-      { de: 50, ate: 99, valor: 45 },
-      { de: 100, ate: Infinity, valor: 42 },
+      { de: 1, ate: 19, valor: 19.9 },
+      { de: 20, ate: 49, valor: 17.9 },
+      { de: 50, ate: 99, valor: 15.9 },
+      { de: 100, ate: Infinity, valor: 14.9 },
     ];
     const precoPlaca = (q) => FAIXAS.find((f) => q >= f.de && q <= f.ate).valor;
-    // Personalizada básica: o preço da padrão + R$ 20 por plaquinha. Sob demanda: orçamento.
-    const PLACA_BASICA = 20;
+    // Personalizada simples: o preço da padrão + R$ 10 por plaquinha (R$ 29,90 a R$ 24,90). Sob demanda: orçamento.
+    const PLACA_BASICA = 10;
     function implantacao(m) {
       if (m <= 20) return { valor: 590, porte: 'até 20 mesas' };
       if (m <= 50) return { valor: 890, porte: '21 a 50 mesas' };
@@ -512,7 +529,7 @@
       let totPlacas = 0;
       if (placa !== 'demanda') {
         totPlacas = q * puPlaca;
-        u.push(linha(`${q} plaquinhas ${placa === 'basica' ? 'personalizadas básicas' : 'padrão'} × ${brl(puPlaca)}`, brl(totPlacas)));
+        u.push(linha(`${q} plaquinhas ${placa === 'basica' ? 'personalizadas simples' : 'padrão'} × ${brl(puPlaca)}`, brl(totPlacas)));
         totU += totPlacas;
       } else {
         u.push(linha(`${q} plaquinhas sob demanda`, '<span class="consulta">sob consulta</span>'));

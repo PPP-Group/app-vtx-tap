@@ -124,8 +124,8 @@ create table if not exists private.equipe_senha (
 -- ---------------------------------------------------------------------------
 -- Plano contratado: serviços (página + cardápio, chamar o garçom, fidelidade),
 -- mesas, domínio e contrato. Sem plano definido = tudo liberado, como antes.
--- A mensalidade segue a tabela de preços (assets/js/precos.js): 49 + 69 + 199 + 149,
--- 2 serviços −10%, 3 −15% (arredondado para terminar em 9), os quatro por R$ 399.
+-- A mensalidade segue a tabela de preços (assets/js/precos.js): 49 + 19 + 199 + 149,
+-- 2 serviços −10%, 3 −15% (arredondado para terminar em 9), os quatro por R$ 349.
 -- ---------------------------------------------------------------------------
 alter table public.restaurantes add column if not exists plano jsonb;
 
@@ -170,11 +170,11 @@ declare
   soma numeric := 0; n int := 0; total numeric;
 begin
   if coalesce(sv ->> 'pagina', '') = 'true' then soma := soma + 49; n := n + 1; end if;
-  if coalesce(sv ->> 'garcom', '') = 'true' then soma := soma + 69; n := n + 1; end if;
+  if coalesce(sv ->> 'garcom', '') = 'true' then soma := soma + 19; n := n + 1; end if;
   if coalesce(sv ->> 'fidelidade', '') = 'true' then soma := soma + 199; n := n + 1; end if;
   if coalesce(sv ->> 'delivery', '') = 'true' then soma := soma + 149; n := n + 1; end if;
   total := case
-    when n = 4 then 399
+    when n = 4 then 349
     when n = 3 then least(soma, floor(soma * 0.85 / 10) * 10 + 9)
     when n = 2 then least(soma, floor(soma * 0.90 / 10) * 10 + 9)
     else soma end;
