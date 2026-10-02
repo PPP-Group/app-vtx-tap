@@ -44,12 +44,12 @@
       $('#tlSub').innerHTML = `Acaba às <b>${hora(s.fim)}</b>${s.limite_em ? ` · no máximo até ${hora(s.limite_em)}` : ''}`;
       $('#tlStats').innerHTML = `<span><b>${s.leituras}</b> ${esc(produto)}${s.leituras === 1 ? '' : 's'}</span><span><b>+${PR.duracao(s.minutos_ganhos)}</b> de happy hour ganhos</span>`;
       const d = (s.destaques || []).filter((x) => x.qtd > 0);
-      $('#tlDestaques').innerHTML = d.length ? `Quem mais prorrogou: ${d.map((x, i) => `<span class="tl-dest">${['🥇', '🥈', '🥉'][i]} ${esc(PR.quemTxt(x))} <b>${x.qtd}</b></span>`).join('')}` : '';
+      $('#tlDestaques').innerHTML = d.length ? `Quem mais prorrogou: ${d.map((x, i) => `<span class="tl-dest"><i>${i + 1}º</i> ${esc(PR.quemTxt(x))} <b>${x.qtd}</b></span>`).join('')}` : '';
     } else {
       tl.dataset.estado = 'parado';
       const u = st.ultima_sessao;
       const recente = u && Date.now() - new Date(u.fim).getTime() < 3 * 3600e3;
-      $('#tlSub').innerHTML = st.proxima ? `Próximo happy hour: <b>${quando(st.proxima)}</b>` : recente ? 'Acabou! Valeu, galera.' : 'Fique de olho: o próximo happy hour vem aí.';
+      $('#tlSub').innerHTML = st.proxima ? `Próximo happy hour: <b>${quando(st.proxima)}</b>` : recente ? 'Acabou. Valeu, galera.' : 'Fique de olho: o próximo happy hour vem aí.';
       $('#tlStats').innerHTML = recente ? `<span>Último: <b>${plural(u.leituras, esc(produto))}</b></span><span><b>+${PR.duracao(u.minutos_ganhos)}</b> de prorrogação</span>` : '';
       $('#tlDestaques').textContent = '';
     }

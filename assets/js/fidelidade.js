@@ -35,7 +35,6 @@
   const pts = (n) => `${num(n)} ${Math.abs(n) === 1 ? 'ponto' : 'pontos'}`;
   const dataCurta = (iso) => new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
   const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
-  const mesesOpts = (sel) => `<option value="">Escolha o mês</option>${MESES.map((m, i) => `<option value="${i + 1}" ${+sel === i + 1 ? 'selected' : ''}>${m[0].toUpperCase() + m.slice(1)}</option>`).join('')}`;
   // "sáb, 05/10 às 16h"
   const DSEM = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
   const quandoEvento = (e) => {
@@ -105,6 +104,11 @@
   const ir = (tela) => { if (tela !== 'valor') pararOcr(); S.tela = tela; render(); corpo().scrollTop = 0; };
 
   const aniv = () => prog.aniversario && prog.aniversario.ativo ? prog.aniversario : null;
+  // Campo de data do aniversário (dia, mês e ano), até hoje.
+  const hojeIso = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+  const campoNasc = (id, attrs = '') => `<input class="input" id="${id}" type="date" min="1900-01-01" max="${hojeIso()}" autocomplete="bday" ${attrs}>`;
+  // Quem já tinha cadastro e ainda não informou o aniversário completo: pergunta uma vez (dá para pular).
+  const anivPulado = () => { try { return localStorage.getItem('fid-aniv-pular:' + S.cpf) === '1'; } catch { return false; } };
   function anivTexto() {
     const a = aniv();
     if (!a) return '';
@@ -217,7 +221,7 @@
     const falta = p.pontos - saldo;
     let acao = '';
     if (comBotao) {
-      if (c && !c.aniversario_mes) acao = '<small class="muted">Informe o mês do seu aniversário acima para liberar.</small>';
+      if (c && !c.aniversario_mes) acao = '<small class="muted">Informe o seu aniversário acima para liberar.</small>';
       else if (c && !c.aniversariante) acao = `<small class="muted">Disponível em ${esc(MESES[c.aniversario_mes - 1])}, o mês do seu aniversário.</small>`;
       else if (c && (c.presentes_ano || []).includes(p.id)) acao = '<small class="muted">Você já pegou este presente este ano.</small>';
       else if (falta > 0) acao = `<small class="muted">Faltam ${pts(falta)}</small>`;
@@ -265,7 +269,7 @@
       <label class="field"><span>Nome completo</span><input class="input" id="fcNome" autocomplete="name" maxlength="80" data-foco required></label>
       <label class="field"><span>E-mail</span><input class="input" id="fcEmail" type="email" autocomplete="email" maxlength="120" required></label>
       <label class="field"><span>Celular com DDD</span><input class="input" id="fcTel" type="tel" inputmode="tel" autocomplete="tel" maxlength="16" placeholder="(31) 99999-9999" required></label>
-      <label class="field"><span>Mês do seu aniversário</span><select class="input" id="fcAniv" required>${mesesOpts(null)}</select>
+      <label class="field"><span>Data do seu aniversário</span>${campoNasc('fcAniv', 'required')}
         ${anivTexto() ? `<small class="help">${esc(anivTexto())}.</small>` : ''}</label>
       <label class="field"><span>Crie um PIN de 4 números</span><input class="input mono pin-input" id="fcPin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="new-password" required>
         <small class="help">Você usa o PIN para trocar os pontos por prêmios.</small></label>
@@ -289,9 +293,9 @@
         ${notasPend ? `<p>${notasPend} ${notasPend === 1 ? 'nota em conferência' : 'notas em conferência'}</p>` : ''}
       </div>
       ${c && c.aniversariante && aniv() ? `<p class="note fid-aniv">${icon('gift')}<span><b>Feliz aniversário!</b> ${esc(anivTexto())}.</span></p>` : ''}
-      ${c && !c.aniversario_mes && aniv() ? `<form class="fid-aniv-form" id="fidAnivForm" novalidate>
-        <label class="field"><span>Quando é o seu aniversário? No mês dele você ganha presente.</span><select class="input" id="fidAnivMes">${mesesOpts(null)}</select></label>
-        <button type="submit" class="btn btn-line btn-sm">Salvar</button></form>` : ''}
+      ${c && !c.nascimento && !anivPulado() ? `<form class="fid-aniv-form" id="fidAnivForm" novalidate>
+        <label class="field"><span>Quando é o seu aniversário?${aniv() ? ' No mês dele você ganha presente.' : ''}${c.aniversario_mes ? ` Complete com o dia e o ano (${esc(MESES[c.aniversario_mes - 1])}).` : ''}</span>${campoNasc('fidAnivMes')}</label>
+        <div class="fid-aniv-acoes"><button type="submit" class="btn btn-line btn-sm">Salvar</button><button type="button" class="link" data-fid-aniv-pular>Agora não</button></div></form>` : ''}
       ${c && c.a_vencer ? `<p class="note fid-vence">${icon('clock')}<span><b>${pts(c.a_vencer.pontos)}</b> ${c.a_vencer.pontos === 1 ? 'vence' : 'vencem'} em ${dataCurta(c.a_vencer.em)}. Troque antes!</span></p>` : ''}
       ${meuNivel()}
       ${agora ? `<p class="note fid-agora">${icon('sparkle')}<span><b>Agora vale ${agora.mult === 2 ? 'o dobro' : `${String(agora.mult).replace('.', ',')}x`}!</b>${agora.nome ? ` ${esc(agora.nome)}.` : ''}</span></p>` : ''}
@@ -729,6 +733,10 @@
 
   function onClick(e) {
     const t = e.target;
+    if (t.closest('[data-fid-aniv-pular]')) {
+      try { localStorage.setItem('fid-aniv-pular:' + S.cpf, '1'); } catch {}
+      return render();
+    }
     const irPara = t.closest('[data-fid-ir]');
     if (irPara) {
       S.aviso = null;
@@ -806,12 +814,12 @@
         if (!F.cpfValido(cpf)) return erro('CPF inválido. Confira os números.');
         await entrarCpf(cpf);
       } else if (f.id === 'fidCadForm') {
-        if (!$('#fcAniv').value) return erro('Escolha o mês do seu aniversário.');
+        if (!$('#fcAniv').value) return erro('Informe a data do seu aniversário.');
         if (!$('#fcAceite').checked) return erro('Para participar, aceite o regulamento e o uso dos dados.');
         const r = await store.fidCadastrar({
           cpf: S.cpf, nome: $('#fcNome').value, email: $('#fcEmail').value, telefone: $('#fcTel').value,
           pin: $('#fcPin').value, marketing: $('#fcMkt').checked, indicacao: $('#fcInd') ? $('#fcInd').value : null,
-          aniversario: +$('#fcAniv').value,
+          aniversario: $('#fcAniv').value,
         });
         if (r.status !== 'ok') {
           if (r.existe) { S.aviso = 'Este CPF já tem cadastro.'; return ir('inicio'); }
@@ -841,12 +849,12 @@
         if (depois === 'torcer') return torcer();
         ir(depois === 'resgatar' && S.premio ? 'resgatar' : ['indicar', 'transferir'].includes(depois) ? depois : 'conta');
       } else if (f.id === 'fidAnivForm') {
-        const mes = +$('#fidAnivMes').value;
-        if (!mes) return toast('Escolha o mês.', { tone: 'error' });
-        const r = await store.fidDefinirAniversario(S.token, mes);
+        const data = $('#fidAnivMes').value;
+        if (!data) return toast('Informe a data do seu aniversário.', { tone: 'error' });
+        const r = await store.fidDefinirAniversario(S.token, data);
         if (r.status !== 'ok') return toast(r.mensagem || 'Não foi possível salvar.', { tone: 'error', ms: 4500 });
         await atualizarConta();
-        toast('Aniversário salvo!', { tone: 'ok' });
+        toast('Aniversário salvo.', { tone: 'ok' });
         render();
       } else if (f.id === 'fidTrDestForm') {
         const destino = $('#fidTrDest').value.trim();

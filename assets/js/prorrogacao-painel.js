@@ -72,7 +72,7 @@
       } else {
         if (navigator.vibrate) navigator.vibrate(40);
         const m = String(+r.adicionados).replace('.', ',');
-        toast(r.travado && !+r.adicionados ? `${quem}: o relógio já está no teto ou no horário limite.` : `${quem}: +${m} min no relógio!`, {
+        toast(r.travado && !+r.adicionados ? `${quem}: o relógio já está no teto ou no horário limite.` : `${quem}: +${m} min no relógio.`, {
           tone: 'ok', ms: 6000, action: r.leitura_id ? { label: 'Desfazer', run: () => desfazerLeitura(r.leitura_id) } : undefined,
         });
       }
@@ -305,7 +305,7 @@
     return acao(() => ctx.store.hhSomar(qtd), (r) => {
       if (navigator.vibrate) navigator.vibrate(40);
       const m = String(+r.adicionados).replace('.', ',');
-      toast(r.travado ? (+r.adicionados ? `+${m} min: chegou no teto ou no horário limite.` : 'O relógio já está no teto ou no horário limite.') : `+${m} min no relógio!`,
+      toast(r.travado ? (+r.adicionados ? `+${m} min: chegou no teto ou no horário limite.` : 'O relógio já está no teto ou no horário limite.') : `+${m} min no relógio.`,
         { tone: r.travado ? 'ink' : 'ok' });
     });
   }
@@ -333,7 +333,7 @@
     if (s) return somar(+s.dataset.hhSomar);
     if (t.closest('[data-hh-comecar]')) {
       const min = +($('#hhMin') || {}).value || null;
-      return acao(() => ctx.store.hhComecar(min), () => toast(`${nome()} começou!`, { tone: 'ok' }));
+      return acao(() => ctx.store.hhComecar(min), () => toast(`${nome()} começou.`, { tone: 'ok' }));
     }
     if (t.closest('[data-hh-desfazer]')) {
       if (!confirm('Desfazer a última leitura? Os minutos dela saem do relógio.')) return;

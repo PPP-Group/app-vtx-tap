@@ -1281,6 +1281,8 @@ alter table public.fid_clientes add column if not exists niveis_bonus text[] not
 -- Mês do aniversário (pedido no cadastro) e o ano em que o bônus de aniversário já foi pago.
 alter table public.fid_clientes add column if not exists aniversario_mes smallint check (aniversario_mes between 1 and 12);
 alter table public.fid_clientes add column if not exists aniversario_ano int;
+-- Data completa do aniversário (dia, mês e ano). O mês continua em aniversario_mes (bônus e presente do mês).
+alter table public.fid_clientes add column if not exists nascimento date;
 create index if not exists fid_clientes_indicado_idx on public.fid_clientes (restaurante_id, indicado_por);
 
 create table if not exists private.fid_pins (
@@ -1681,7 +1683,24 @@ begin
   return v_token;
 end $$;
 
+-- Data do aniversário vinda do app como AAAAMMDD (o mês sozinho, 1 a 12, não é data).
+-- Inválida, antes de 1900 ou no futuro: null.
+create or replace function public.fid_nascimento(p int) returns date
+language plpgsql stable set search_path = public as $$
+declare d date;
+begin
+  if p is null or p < 19000101 or p > 99991231 then return null; end if;
+  begin
+    d := to_date(p::text, 'YYYYMMDD');
+  exception when others then
+    return null;
+  end;
+  if to_char(d, 'YYYYMMDD') <> p::text or d > current_date then return null; end if;
+  return d;
+end $$;
+
 drop function if exists public.fid_cadastrar(uuid, text, text, text, text, text, boolean, text);
+-- p_aniversario: a data AAAAMMDD (o app antigo ainda manda só o mês, 1 a 12).
 create or replace function public.fid_cadastrar(p_restaurante uuid, p_cpf text, p_nome text, p_email text, p_telefone text,
   p_pin text, p_marketing boolean default false, p_indicacao text default null, p_aniversario int default null) returns jsonb
 language plpgsql security definer set search_path = public as $$
@@ -1704,7 +1723,8 @@ begin
     when char_length(v_email) > 120 or v_email !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' then 'E-mail inválido.'
     when v_tel !~ '^[1-9][0-9]{9,10}$' then 'Telefone inválido. Use DDD + número.'
     when coalesce(p_pin, '') !~ '^[0-9]{4}$' then 'O PIN tem 4 números.'
-    when p_aniversario is null or p_aniversario not between 1 and 12 then 'Escolha o mês do seu aniversário.'
+    when p_aniversario is null or (p_aniversario not between 1 and 12 and public.fid_nascimento(p_aniversario) is null)
+      then 'Informe a data do seu aniversário.'
   end;
   if erro is not null then return jsonb_build_object('status', 'erro', 'mensagem', erro); end if;
   if not public.equipe_pode_tentar('fid-cadastro:' || public.ip_do_pedido(), 40, 60) then
@@ -1723,8 +1743,10 @@ begin
     v_codigo := public.novo_codigo(6);
     exit when not exists (select 1 from public.fid_clientes where restaurante_id = p_restaurante and codigo = v_codigo);
   end loop;
-  insert into public.fid_clientes (restaurante_id, cpf, nome, email, telefone, codigo, indicado_por, marketing, aniversario_mes)
-  values (p_restaurante, v_cpf, v_nome, v_email, v_tel, v_codigo, v_indicador, coalesce(p_marketing, false), p_aniversario);
+  insert into public.fid_clientes (restaurante_id, cpf, nome, email, telefone, codigo, indicado_por, marketing, aniversario_mes, nascimento)
+  values (p_restaurante, v_cpf, v_nome, v_email, v_tel, v_codigo, v_indicador, coalesce(p_marketing, false),
+          case when p_aniversario between 1 and 12 then p_aniversario else extract(month from public.fid_nascimento(p_aniversario))::int end,
+          public.fid_nascimento(p_aniversario));
   insert into private.fid_pins (restaurante_id, cpf, pin_hash)
   values (p_restaurante, v_cpf, extensions.crypt(p_pin, extensions.gen_salt('bf')));
   -- Indicação paga no cadastro (padrão) ou só na primeira compra, conforme as regras.
@@ -1789,7 +1811,7 @@ begin
   return jsonb_build_object('status', 'ok',
     'cpf', cli.cpf, 'nome', cli.nome, 'email', cli.email, 'telefone', cli.telefone, 'pontos', cli.pontos,
     'codigo', cli.codigo, 'marketing', cli.marketing, 'criado_em', cli.criado_em,
-    'aniversario_mes', cli.aniversario_mes,
+    'aniversario_mes', cli.aniversario_mes, 'nascimento', cli.nascimento,
     'aniversariante', cli.aniversario_mes = extract(month from now() at time zone public.fid_fuso(v_r)),
     'a_vencer', public.fid_a_vencer(v_r, v_cpf),
     'torcidas', coalesce((select jsonb_object_agg(t.evento_id, t.time) from public.fid_torcidas t
@@ -2192,9 +2214,17 @@ begin
   if v_nome !~ '^\S{2,}( \S+)+$' then raise exception 'Informe o nome completo.'; end if;
   if char_length(v_email) > 120 or v_email !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' then raise exception 'E-mail inválido.'; end if;
   if v_tel !~ '^[1-9][0-9]{9,10}$' then raise exception 'Telefone inválido. Use DDD + número.'; end if;
-  if p_aniversario is not null and p_aniversario not between 1 and 12 then raise exception 'Mês do aniversário inválido.'; end if;
+  if p_aniversario is not null and p_aniversario not between 1 and 12 and public.fid_nascimento(p_aniversario) is null then
+    raise exception 'Data do aniversário inválida.';
+  end if;
+  -- p_aniversario: a data AAAAMMDD (ou só o mês, 1 a 12, do painel antigo).
   update public.fid_clientes set nome = v_nome, email = v_email, telefone = v_tel, marketing = coalesce(p_marketing, marketing),
-         aniversario_mes = coalesce(p_aniversario, aniversario_mes)
+         aniversario_mes = case when p_aniversario between 1 and 12 then p_aniversario
+                                when public.fid_nascimento(p_aniversario) is not null then extract(month from public.fid_nascimento(p_aniversario))::int
+                                else aniversario_mes end,
+         nascimento = case when public.fid_nascimento(p_aniversario) is not null then public.fid_nascimento(p_aniversario)
+                           when p_aniversario between 1 and 12 and extract(month from nascimento) <> p_aniversario then null
+                           else nascimento end
    where restaurante_id = r and cpf = p_cpf;
   if not found then raise exception 'Cliente não encontrado.'; end if;
 end $$;
@@ -3376,15 +3406,29 @@ begin
   return b;
 end $$;
 
--- Cliente que se cadastrou antes de o mês ser pedido informa o mês (uma vez; depois só a equipe muda).
+-- Cliente que se cadastrou antes informa o aniversário (uma vez; depois só a equipe muda).
+-- p_mes: a data AAAAMMDD; quem já tinha o mês salvo completa com o dia e o ano do mesmo mês.
+-- (O app antigo ainda manda só o mês, 1 a 12.)
 create or replace function public.fid_definir_aniversario(p_token uuid, p_mes int) returns jsonb
 language plpgsql security definer set search_path = public as $$
-declare v_r uuid; v_cpf text;
+declare v_r uuid; v_cpf text; d date := public.fid_nascimento(p_mes); cli public.fid_clientes;
 begin
   select s.restaurante_id, s.cpf into v_r, v_cpf from private.fid_sessoes s
    where s.token_hash = public.hash_token(p_token) and s.criado_em > now() - interval '180 days';
   if v_r is null then return jsonb_build_object('status', 'sem_sessao'); end if;
-  if p_mes is null or p_mes not between 1 and 12 then return jsonb_build_object('status', 'erro', 'mensagem', 'Escolha o mês.'); end if;
+  select * into cli from public.fid_clientes where restaurante_id = v_r and cpf = v_cpf;
+  if d is not null then
+    if cli.nascimento is not null then
+      return jsonb_build_object('status', 'erro', 'mensagem', 'O seu aniversário já está salvo. Para mudar, fale com a equipe.');
+    end if;
+    if cli.aniversario_mes is not null and cli.aniversario_mes <> extract(month from d) then
+      return jsonb_build_object('status', 'erro', 'mensagem', 'O mês não bate com o aniversário que já está salvo. Para corrigir, fale com a equipe.');
+    end if;
+    update public.fid_clientes set nascimento = d, aniversario_mes = extract(month from d)::int where restaurante_id = v_r and cpf = v_cpf;
+    perform public.fid_bonus_aniversario(v_r, v_cpf);
+    return jsonb_build_object('status', 'ok');
+  end if;
+  if p_mes is null or p_mes not between 1 and 12 then return jsonb_build_object('status', 'erro', 'mensagem', 'Informe a data do seu aniversário.'); end if;
   update public.fid_clientes set aniversario_mes = p_mes where restaurante_id = v_r and cpf = v_cpf and aniversario_mes is null;
   if not found then return jsonb_build_object('status', 'erro', 'mensagem', 'O mês do aniversário já está salvo. Para mudar, fale com a equipe.'); end if;
   perform public.fid_bonus_aniversario(v_r, v_cpf);
@@ -3668,7 +3712,7 @@ declare f text;
 begin
   -- Internas (chamadas por outras funções).
   foreach f in array array['public.fid_vencer(uuid, text)', 'public.fid_vencer_todos()', 'public.fid_a_vencer(uuid, text)',
-      'public.fid_bonus_aniversario(uuid, text)', 'public.fid_destino(uuid, text)', 'public.fid_validade(uuid)',
+      'public.fid_bonus_aniversario(uuid, text)', 'public.fid_destino(uuid, text)', 'public.fid_validade(uuid)', 'public.fid_nascimento(int)',
       'public.fid_validade_desde(uuid)', 'public.fid_evento_fecha(public.fid_eventos)', 'public.fid_eventos_publicos(uuid)'] loop
     execute format('revoke execute on function %s from public, anon, authenticated', f);
   end loop;

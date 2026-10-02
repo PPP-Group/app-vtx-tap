@@ -35,9 +35,10 @@ body.telao {
 .tl-recorde { margin: 0; font-size: clamp(14px, 1.6vw, 24px); opacity: .7; }
 
 .tl-destaques { margin: 0; display: flex; justify-content: center; flex-wrap: wrap; gap: .3em 1.2em; font-size: clamp(14px, 1.9vw, 30px); opacity: .9; }
-.tl-dest b { font-family: var(--font-display); font-weight: 900; color: #ffcf3f; margin-left: .2em; }
-.tl-tela-cheia.is-chamando { right: 50%; bottom: 50%; transform: translate(50%, 50%); font-size: clamp(18px, 2.4vw, 34px); padding: .7em 1.4em; background: #ffcf3f; color: #1a1205; border: 0; font-weight: 800; box-shadow: 0 0 0 0 rgba(255, 207, 63, .6); animation: tl-chama 1.6s ease-out infinite; }
-@keyframes tl-chama { to { box-shadow: 0 0 0 28px rgba(255, 207, 63, 0); } }
+.tl-dest i { font-style: normal; font-family: var(--font-display); font-weight: 900; color: #FFC61A; margin-right: .2em; }
+.tl-dest b { font-family: var(--font-display); font-weight: 900; color: #FFC61A; margin-left: .2em; }
+.tl-tela-cheia.is-chamando { right: 50%; bottom: 50%; transform: translate(50%, 50%); font-size: clamp(18px, 2.4vw, 34px); padding: .7em 1.4em; background: #FFC61A; color: #140B33; border: 0; font-weight: 800; box-shadow: 0 0 0 0 rgba(255, 198, 26, .6); animation: tl-chama 1.6s ease-out infinite; }
+@keyframes tl-chama { to { box-shadow: 0 0 0 28px rgba(255, 198, 26, 0); } }
 .tl-tela-cheia {
   position: absolute; right: 16px; bottom: 16px;
   font: inherit; font-size: 14px; color: #fff; background: rgba(255, 255, 255, .12);

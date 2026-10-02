@@ -32,7 +32,7 @@
  *   cliente: fidPrograma() / fidConsultar(cpf) / fidIndicador(codigo) / fidCadastrar(dados) /
  *            fidEntrar(cpf, pin) / fidConta(token) / fidSair(token) /
  *            fidNotaSituacao({ cpf, qr }) / fidRegistrarNota({ cpf, qr, valor }) / fidSefaz({ cpf, qr }) / fidRanking(token) / fidResgatar(token, premioId) /
- *            fidDefinirAniversario(token, mes) / fidTransferirDestino(token, cpfOuCodigo) / fidTransferir(token, cpfOuCodigo, pontos, pin) /
+ *            fidDefinirAniversario(token, "AAAA-MM-DD") / fidTransferirDestino(token, cpfOuCodigo) / fidTransferir(token, cpfOuCodigo, pontos, pin) /
  *            fidTorcer(token, eventoId, time)
  *            → sempre { status, ... } (status 'erro' traz a mensagem)
  *   equipe:  fidResumo() / fidPendencias() / fidClientes(busca) / fidCliente(cpf) / fidRecentes() /
@@ -68,6 +68,16 @@
     validade: { ativo: false, quantidade: 12, unidade: 'meses', desde: null },
   };
   const soDigitos = (s) => String(s || '').replace(/\D/g, '');
+  // Aniversário: a data "AAAA-MM-DD" (campo de data) vira AAAAMMDD para o banco (public.fid_nascimento).
+  // Só o mês (1 a 12) continua aceito. Data inválida, antes de 1900 ou no futuro: null.
+  const nascimentoDe = (v) => {
+    const m = String(v || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return null;
+    const d = new Date(+m[1], +m[2] - 1, +m[3]);
+    if (d.getFullYear() !== +m[1] || d.getMonth() !== +m[2] - 1 || d.getDate() !== +m[3] || +m[1] < 1900 || d > new Date()) return null;
+    return { data: `${m[1]}-${m[2]}-${m[3]}`, mes: +m[2], num: +(m[1] + m[2] + m[3]) };
+  };
+  const aniversarioNum = (v) => (nascimentoDe(v) ? nascimentoDe(v).num : +v >= 1 && +v <= 12 ? +v : null);
   function cpfValido(c) {
     c = soDigitos(c);
     if (!/^\d{11}$/.test(c) || /^(\d)\1{10}$/.test(c)) return false;
@@ -1045,7 +1055,7 @@
       async fidCadastrar({ cpf, nome, email, telefone, pin, marketing, indicacao, aniversario }) {
         const db = read();
         if (!noAr(db)) return { status: 'inativo' };
-        aniversario = Math.round(+aniversario);
+        const nasc = nascimentoDe(aniversario);
         cpf = soDigitos(cpf);
         nome = String(nome || '').replace(/\s+/g, ' ').trim().slice(0, 80);
         email = String(email || '').trim().toLowerCase();
@@ -1056,7 +1066,7 @@
           : email.length > 120 || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) ? 'E-mail inválido.'
           : !/^[1-9]\d{9,10}$/.test(telefone) ? 'Telefone inválido. Use DDD + número.'
           : !/^\d{4}$/.test(pin || '') ? 'O PIN tem 4 números.'
-          : !(aniversario >= 1 && aniversario <= 12) ? 'Escolha o mês do seu aniversário.' : null;
+          : !nasc ? 'Informe a data do seu aniversário.' : null;
         if (erro) return { status: 'erro', mensagem: erro };
         const f = F(db);
         if (cliDe(db, cpf)) return { status: 'erro', mensagem: 'Este CPF já tem cadastro. Entre com o seu PIN.', existe: true };
@@ -1071,7 +1081,7 @@
         let codigo;
         do codigo = Array.from({ length: 6 }, () => ALF[Math.floor(Math.random() * ALF.length)]).join('');
         while (f.clientes.some((x) => x.codigo === codigo));
-        f.clientes.push({ cpf, nome, email, telefone, pontos: 0, codigo, indicado_por, bonus_indicacao: false, marketing: !!marketing, aniversario_mes: aniversario, aniversario_ano: null, criado_em: nowIso() });
+        f.clientes.push({ cpf, nome, email, telefone, pontos: 0, codigo, indicado_por, bonus_indicacao: false, marketing: !!marketing, aniversario_mes: nasc.mes, nascimento: nasc.data, aniversario_ano: null, criado_em: nowIso() });
         f.pins[cpf] = await hashTxt(cpf + ':' + pin);
         if (regras(db).indicacao.quando !== 'compra') bonusIndicacao(db, cpf);
         f.xml.filter((x) => x.cpf === cpf).forEach((x) => autoCreditar(db, x.chave));
@@ -1377,11 +1387,13 @@
         const db = read();
         const cpf = sessaoDe(db, token);
         if (!cpf) return { status: 'sem_sessao' };
-        mes = Math.round(+mes);
-        if (!(mes >= 1 && mes <= 12)) return { status: 'erro', mensagem: 'Escolha o mês.' };
+        // A data completa (quem já tinha o mês salvo completa com o dia e o ano do mesmo mês).
+        const nasc = nascimentoDe(mes);
+        if (!nasc) return { status: 'erro', mensagem: 'Informe a data do seu aniversário.' };
         const c = cliDe(db, cpf);
-        if (c.aniversario_mes) return { status: 'erro', mensagem: 'O mês do aniversário já está salvo. Para mudar, fale com a equipe.' };
-        c.aniversario_mes = mes;
+        if (c.nascimento) return { status: 'erro', mensagem: 'O seu aniversário já está salvo. Para mudar, fale com a equipe.' };
+        if (c.aniversario_mes && c.aniversario_mes !== nasc.mes) return { status: 'erro', mensagem: 'O mês não bate com o aniversário que já está salvo. Para corrigir, fale com a equipe.' };
+        Object.assign(c, { nascimento: nasc.data, aniversario_mes: nasc.mes });
         bonusAniversario(db, cpf);
         write(db);
         return { status: 'ok' };
@@ -1625,9 +1637,10 @@
         if (!/^\S{2,}( \S+)+$/.test(nome)) falha('Informe o nome completo.');
         if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) falha('E-mail inválido.');
         if (!/^[1-9]\d{9,10}$/.test(telefone)) falha('Telefone inválido. Use DDD + número.');
-        if (aniversario != null && aniversario !== '' && !(+aniversario >= 1 && +aniversario <= 12)) falha('Mês do aniversário inválido.');
-        Object.assign(c, { nome, email, telefone, marketing: marketing == null ? c.marketing : !!marketing,
-          aniversario_mes: aniversario != null && aniversario !== '' ? +aniversario : c.aniversario_mes || null });
+        const nasc = aniversario != null && aniversario !== '' ? nascimentoDe(aniversario) : null;
+        if (aniversario != null && aniversario !== '' && !nasc) falha('Data do aniversário inválida.');
+        Object.assign(c, { nome, email, telefone, marketing: marketing == null ? c.marketing : !!marketing },
+          nasc ? { nascimento: nasc.data, aniversario_mes: nasc.mes } : {});
         write(db);
       },
       async fidEventos() {
@@ -2108,11 +2121,11 @@
       async fidCadastrar({ cpf, nome, email, telefone, pin, marketing, indicacao, aniversario }) {
         return must(await sb.rpc('fid_cadastrar', {
           p_restaurante: rid, p_cpf: soDigitos(cpf), p_nome: nome, p_email: email, p_telefone: telefone,
-          p_pin: pin, p_marketing: !!marketing, p_indicacao: indicacao || null, p_aniversario: +aniversario || null,
+          p_pin: pin, p_marketing: !!marketing, p_indicacao: indicacao || null, p_aniversario: aniversarioNum(aniversario),
         }));
       },
       async fidDefinirAniversario(token, mes) {
-        return must(await sb.rpc('fid_definir_aniversario', { p_token: token, p_mes: +mes || null }));
+        return must(await sb.rpc('fid_definir_aniversario', { p_token: token, p_mes: aniversarioNum(mes) }));
       },
       async fidTransferirDestino(token, destino) {
         return must(await sb.rpc('fid_transferir_destino', { p_token: token, p_destino: destino }));
@@ -2293,7 +2306,7 @@
       },
       async fidEditarCliente(cpf, { nome, email, telefone, marketing, aniversario }) {
         must(await sb.rpc('fid_editar_cliente', { p_cpf: cpf, p_nome: nome, p_email: email, p_telefone: telefone, p_marketing: marketing == null ? null : !!marketing,
-          p_aniversario: +aniversario || null }));
+          p_aniversario: aniversarioNum(aniversario) }));
       },
       async fidEventos() {
         return must(await sb.rpc('fid_eventos_lista'));
@@ -2353,7 +2366,7 @@
       async fidExportar() {
         const todos = [];
         for (let de = 0; ; de += 1000) {
-          const parte = must(await sb.from('fid_clientes').select('cpf, nome, email, telefone, pontos, codigo, marketing, criado_em')
+          const parte = must(await sb.from('fid_clientes').select('cpf, nome, email, telefone, pontos, codigo, marketing, aniversario_mes, nascimento, criado_em')
             .eq('restaurante_id', rid).order('criado_em').range(de, de + 999));
           todos.push(...parte);
           if (parte.length < 1000) return todos;

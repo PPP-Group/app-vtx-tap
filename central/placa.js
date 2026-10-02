@@ -11,6 +11,8 @@
  *     para contrastar com a faixa);
  *   - o código da plaquinha, pequeno.
  * Frente: QR à esquerda, faixa à direita (onde fica o chip). Verso: QR em cima, faixa embaixo.
+ * A faixa tem a mesma medida nos dois lados (PLACA.faixa × a largura do cartão) e cai no mesmo lugar
+ * quando a plaquinha é virada: frente e verso se encaixam.
  *
  * Dois modelos:
  *   'padrao'        → logo da VTX Tap no meio do QR e faixa no gradiente do bloco roxo da marca.
@@ -28,6 +30,9 @@
     largura: 85.6,
     altura: 53.98,
     raio: 3.18,
+    // Faixa (onde fica o chip): o mesmo retângulo nos dois lados, 34,4 mm do comprimento × a altura toda.
+    // Na frente fica à direita; no verso, embaixo. Virando a plaquinha, as duas faixas se encaixam.
+    faixa: 34.4,
     titulo: ['Aproxime', 'o celular'],
     dica: 'ou aponte a câmera para o QR Code',
     feito: 'feito por',
@@ -264,7 +269,7 @@
     doc.setFillColor('#FFFFFF');
     doc.roundedRect(0, 0, L, A, PLACA.raio, PLACA.raio, 'F');
 
-    const fw = 34.4;
+    const fw = PLACA.faixa;
     const fx = L - fw;
     await svgNoPdf(doc, faixaSvg(fw, A, pal, 'direita', 31.1), fx, 0, fw, A);
 
@@ -300,13 +305,14 @@
     doc.setFillColor('#FFFFFF');
     doc.roundedRect(0, 0, W, H, PLACA.raio, PLACA.raio, 'F');
 
-    const fh = 27;
+    const fh = PLACA.faixa;
     const fy = H - fh;
-    await svgNoPdf(doc, faixaSvg(W, fh, pal, 'baixo', 28.3), 0, fy, W, fh);
+    await svgNoPdf(doc, faixaSvg(W, fh, pal, 'baixo', 31.1), 0, fy, W, fh);
 
-    const qr = nome ? 39.2 : 42;
+    // QR e código na parte branca (51,2 mm de altura).
+    const qr = nome ? 35 : 39;
     const qx = (W - qr) / 2;
-    const qy = nome ? 10 : 7.4;
+    const qy = nome ? 8.4 : 4.6;
     if (nome) titulo(doc, [nome], W / 2, 3.8, { tamanho: 3.8, cor: pal.nome, alinhar: 'centro' });
     logoNoQr(doc, desenharQr(doc, it.url, qx, qy, qr, pal.olho), logoMeio, ehVtx, aliasLogo);
 
@@ -315,10 +321,10 @@
     const wc = doc.getTextWidth(it.codigo) + 0.45 * (it.codigo.length - 1);
     texto(doc, it.codigo, W / 2 - wc / 2, qy + qr + 3.2, { tamanho: 4.6, cor: COR_CODIGO, espaco: 0.45, peso: 'semibold' });
 
-    await svgNoPdf(doc, ONDAS(pal.tinta, pal.ponto), W / 2 - 2.7, fy + 3, 5.4, 5.4);
-    titulo(doc, [PLACA.titulo.join(' ')], W / 2, fy + 9.2, { tamanho: 6, cor: pal.tinta, alinhar: 'centro' });
-    texto(doc, PLACA.dica, W / 2, fy + 18.6, { tamanho: 4.8, cor: pal.tinta, alinhar: 'centro' });
-    feitoPor(doc, logoFeito, W / 2, H - 4.4, pal.tinta, { centro: true });
+    await svgNoPdf(doc, ONDAS(pal.tinta, pal.ponto), W / 2 - 2.9, fy + 4.4, 5.8, 5.8);
+    titulo(doc, [PLACA.titulo.join(' ')], W / 2, fy + 12.6, { tamanho: 6, cor: pal.tinta, alinhar: 'centro' });
+    texto(doc, PLACA.dica, W / 2, fy + 22.4, { tamanho: 4.8, cor: pal.tinta, alinhar: 'centro' });
+    feitoPor(doc, logoFeito, W / 2, H - 5.6, pal.tinta, { centro: true });
   }
 
   /**

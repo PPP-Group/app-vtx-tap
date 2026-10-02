@@ -676,7 +676,7 @@
     if (hh.rodando && s) {
       const minha = (s.destaques || []).findIndex((x) => (comanda && x.comanda === comanda) || (!comanda && mesa && x.mesa === mesa));
       info = `<b>${s.leituras}</b> ${esc(hh.produto)}${s.leituras === 1 ? '' : 's'} · acaba às <b>${hhHora(s.fim)}</b>`
-        + (minha >= 0 ? ` · ${['🥇', '🥈', '🥉'][minha]} ${comanda ? 'sua comanda' : 'sua mesa'} é a ${minha + 1}ª que mais prorrogou` : '');
+        + (minha >= 0 ? ` · ${comanda ? 'sua comanda' : 'sua mesa'} é a ${minha + 1}ª que mais prorrogou` : '');
     }
     el.querySelector('.hh-mesa-info').innerHTML = info;
     if (hhCopo) hhCopo.atualizar(hh);
