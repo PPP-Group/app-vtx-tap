@@ -103,12 +103,17 @@
   .hero-fotos { position: relative; height: clamp(400px, 58vw, 580px); max-width: 560px; width: 100%; justify-self: center; }
   .hero-fotos .fone { position: absolute; width: min(50%, 270px); }
   .hero-fotos .fone:nth-child(1) { left: 6%; bottom: -60px; transform: rotate(-6deg); z-index: 2; }
-  .hero-fotos .fone:nth-child(2) { right: 6%; bottom: -110px; transform: rotate(5deg); }
+  /* A plaquinha (verso, em pé) no lugar do segundo celular: é o produto que o cliente toca na mesa. */
+  .hero-placa { position: absolute; right: 2%; bottom: 46px; width: min(48%, 262px); z-index: 3; transform: perspective(1100px) rotateY(-16deg) rotateX(4deg) rotate(5deg); transform-origin: 40% 60%; filter: drop-shadow(0 26px 34px rgba(0, 0, 0, .45)); animation: placa-flutua 6s ease-in-out infinite; }
+  .hero-placa img { display: block; width: 100%; height: auto; border-radius: 6% / 3.8%; }
+  .hero-placa::after { content: ''; position: absolute; inset: 0; border-radius: 6% / 3.8%; background: linear-gradient(115deg, rgba(255, 255, 255, .28) 0%, rgba(255, 255, 255, 0) 38%); pointer-events: none; }
+  @keyframes placa-flutua { 0%, 100% { translate: 0 0; } 50% { translate: 0 -10px; } }
+  @media (prefers-reduced-motion: reduce) { .hero-placa { animation: none; } }
   .hero-etq { position: absolute; z-index: 3; display: inline-flex; align-items: center; gap: 8px; padding: 9px 14px; border-radius: 14px; background: #fff; color: var(--noite); font-weight: 700; font-size: 14px; box-shadow: 0 12px 30px rgba(0, 0, 0, .3); }
   .hero-etq small { display: block; font-weight: 500; color: #625A80; font-size: 12px; }
   .hero-etq .pt { font: 900 24px var(--display); color: var(--roxo); }
   .hero-etq--a { left: 0; top: 16%; }
-  .hero-etq--b { right: 0; top: 30%; }
+  .hero-etq--b { right: 34%; top: 8%; }
 
   /* Mockups: iPhone (moldura, Dynamic Island, barra de status) e notebook (tela com borda, câmera e base).
      Tudo em proporção à largura do aparelho (cqw), então funciona em qualquer tamanho. */
@@ -235,7 +240,45 @@
   /* Plaquinhas */
   .placas { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
   .placa { display: grid; gap: 10px; align-content: start; padding: 16px; border-radius: 22px; background: var(--surface); border: 1px solid var(--line); }
-  .placa img { border-radius: 6px; box-shadow: 0 10px 24px rgba(20, 11, 51, .18); }
+  .placa .placa-lados { position: relative; display: block; }
+  .placa .placa-lados img { display: block; width: 100%; height: auto; filter: drop-shadow(0 8px 16px rgba(20, 11, 51, .18)); transition: opacity .35s ease, transform .35s ease; }
+  .placa .placa-verso { position: absolute; inset: 0; opacity: 0; transform: rotateY(-12deg) scale(.96); }
+  .placa:hover .placa-frente, .placa:focus-within .placa-frente { opacity: 0; transform: rotateY(12deg) scale(.96); }
+  .placa:hover .placa-verso, .placa:focus-within .placa-verso { opacity: 1; transform: none; }
+  .placa .placa-lados::after { content: 'frente · passe o mouse'; white-space: nowrap; position: absolute; left: 6px; bottom: 6px; padding: 2px 8px; border-radius: 999px; background: rgba(20, 11, 51, .72); color: #fff; font: 600 10.5px var(--mono); pointer-events: none; }
+  .placa:hover .placa-lados::after, .placa:focus-within .placa-lados::after { content: 'verso'; }
+  @media (hover: none) { .placa .placa-lados::after { content: 'frente · toque para virar'; } }
+
+  /* Plaquinha em 3D: frente deitada de um lado, verso em pé do outro. O usuário arrasta para girar. */
+  .c3 { display: grid; gap: 22px 40px; align-items: center; padding: clamp(18px, 4vw, 40px); border-radius: 32px; background: var(--noite); color: var(--noite-ink); position: relative; overflow: hidden; }
+  .c3::before { content: ''; position: absolute; width: 640px; aspect-ratio: 1; right: -260px; top: -260px; border-radius: 50%; pointer-events: none;
+    background: radial-gradient(circle, transparent 0 31%, rgba(125, 39, 252, .28) 31% 37%, transparent 37% 53%, rgba(125, 39, 252, .12) 53% 59%, transparent 59% 75%, rgba(125, 39, 252, .06) 75% 81%, transparent 81%); }
+  @media (min-width: 880px) { .c3 { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); } }
+  .c3 > * { position: relative; }
+  .c3-palco { perspective: 1400px; display: grid; place-items: center; padding: clamp(30px, 6vw, 70px) 6px; cursor: grab; touch-action: pan-y; user-select: none; -webkit-user-select: none; border-radius: 22px; outline-offset: 4px; }
+  .c3-palco:active { cursor: grabbing; }
+  .c3-palco:focus-visible { outline: 3px solid var(--lilas); }
+  .c3-cartao { --rx: -8deg; --ry: -24deg; --rz: 0deg; position: relative; width: min(100%, 540px); aspect-ratio: 1712 / 1080; transform-style: preserve-3d; transform: scale(var(--s, 1)) rotateZ(var(--rz)) rotateX(var(--rx)) rotateY(var(--ry)); }
+  .c3-cartao.anima { transition: transform .9s cubic-bezier(.2, .8, .2, 1); }
+  .c3-face, .c3-borda { position: absolute; inset: 0; border-radius: 3.7% / 5.9%; }
+  .c3-face { overflow: hidden; backface-visibility: hidden; -webkit-backface-visibility: hidden; background: #fff; }
+  .c3-frente { transform: translateZ(2.5px); }
+  .c3-verso { transform: rotateY(180deg) translateZ(2.5px); }
+  .c3-face img { position: absolute; display: block; pointer-events: none; }
+  .c3-frente img { inset: 0; width: 100%; height: 100%; }
+  /* O verso é impresso em pé: a arte gira 90° dentro do cartão deitado. */
+  .c3-verso img { width: 63.08%; height: 158.52%; left: 18.46%; top: -29.26%; transform: rotate(90deg); }
+  .c3-borda { background: #DCD6EA; transform: translateZ(var(--z)); }
+  .c3-brilho { position: absolute; inset: 0; pointer-events: none; background: linear-gradient(var(--brilho, 115deg), rgba(255, 255, 255, .34) 0%, rgba(255, 255, 255, 0) 42%); mix-blend-mode: soft-light; }
+  .c3-txt { display: grid; gap: 14px; align-content: center; }
+  .c3-txt h3 { font: 900 34px/1 var(--display); text-transform: uppercase; margin: 0; }
+  .c3-txt p { margin: 0; color: var(--noite-2); }
+  .c3-botoes { display: flex; gap: 10px; flex-wrap: wrap; }
+  .c3-btn { color: #fff; }
+  .c3-btn[aria-pressed="true"] { background: #fff; color: var(--noite); border-color: #fff; }
+  .c3-dica { font: 500 12.5px var(--mono); letter-spacing: .04em; color: var(--lilas) !important; }
+  .c3-sub { font: 900 26px/1 var(--display); text-transform: uppercase; margin: 8px 0 0; }
+  @media (prefers-reduced-motion: reduce) { .c3-cartao.anima { transition: none; } }
   .placa p { color: var(--muted); font-size: 14.5px; }
 
   /* Preços */
@@ -280,6 +323,12 @@
   .rodape { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; justify-content: space-between; color: var(--muted); font-size: 14px; }
   .rodape a { color: var(--roxo-ink); font-weight: 600; }
   .rodape nav { display: flex; gap: 16px; flex-wrap: wrap; }
+  /* Endosso da marca-mãe (manual de marca): produto VTX assina com "uma solução VORTEX". */
+  .rodape-marca { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+  .rodape-marca .endosso { height: 14px; width: auto; }
+  .rodape-marca .endosso-link { display: inline-flex; line-height: 0; }
+  .rodape a { text-decoration: none; }
+  .rodape a:hover { text-decoration: none; opacity: .8; }
 
   /* CTA fixo no celular */
   .cta-fixo { position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); z-index: 30; display: none; gap: 8px; padding: 8px; border-radius: 999px; background: var(--noite); box-shadow: 0 14px 34px rgba(20, 11, 51, .4); transform: translateY(140%); opacity: 0; visibility: hidden; pointer-events: none; transition: transform .25s, opacity .25s, visibility .25s; }
@@ -356,7 +405,7 @@
     </div>
     <div class="hero-fotos" aria-hidden="true">
       <span class="fone"><span class="fone-tela"><span class="fone-status" aria-hidden="true"><span>9:41</span><svg><use href="#i-status"/></svg></span><img src="/assets/img/lp/fid-conta.webp" width="600" height="1299" alt="" fetchpriority="high"></span></span>
-      <span class="fone"><span class="fone-tela"><span class="fone-status" aria-hidden="true"><span>9:41</span><svg><use href="#i-status"/></svg></span><img src="/assets/img/lp/dl-menu.webp" width="600" height="1299" alt=""></span></span>
+      <span class="hero-placa"><img src="/assets/img/placas/cartao-vtx-verso.webp" width="1080" height="1712" alt="" fetchpriority="high"></span>
       <span class="hero-etq hero-etq--a"><span class="pt">+13</span><span>pontos<small>nota fiscal lida</small></span></span>
       <span class="hero-etq hero-etq--b"><svg width="20" height="20" style="color:#1B7F52"><use href="#i-moto"/></svg><span>Pedido #4<small>R$ 0 de comissão</small></span></span>
     </div>
@@ -536,16 +585,34 @@
     </figure>
   </section>
 
-  <section class="sec rev" aria-labelledby="placasTitulo">
+  <section class="sec rev" id="plaquinhas" aria-labelledby="placasTitulo">
     <div class="sec-h">
       <p class="kicker">As plaquinhas</p>
       <h2 id="placasTitulo">Pequenas, bonitas, com NFC e QR</h2>
-      <p>Instaladas pela nossa equipe. Três modelos, do padrão à arte do seu restaurante.</p>
+      <p>Do tamanho de um cartão de crédito, impressas dos dois lados e instaladas pela nossa equipe. Gire a plaquinha para ver a frente e o verso.</p>
     </div>
+    <div class="c3">
+      <div class="c3-palco" id="c3Palco" tabindex="0" role="img" aria-roledescription="plaquinha em 3D" aria-label="Plaquinha padrão da VTX Tap. Frente deitada: QR Code com a logo da VTX Tap e a faixa roxa com Aproxime o celular. Verso em pé: o QR Code em cima e a faixa embaixo. Arraste ou use as setas para girar.">
+        <div class="c3-cartao" id="c3Cartao">
+          <span class="c3-borda" style="--z:-1.5px"></span><span class="c3-borda" style="--z:-.5px"></span><span class="c3-borda" style="--z:.5px"></span><span class="c3-borda" style="--z:1.5px"></span>
+          <div class="c3-face c3-frente"><img src="/assets/img/placas/cartao-vtx-frente.webp" width="1712" height="1080" alt="" draggable="false"><span class="c3-brilho"></span></div>
+          <div class="c3-face c3-verso"><img src="/assets/img/placas/cartao-vtx-verso.webp" width="1080" height="1712" alt="" draggable="false"><span class="c3-brilho"></span></div>
+        </div>
+      </div>
+      <div class="c3-txt">
+        <h3>Padrão</h3>
+        <p>Frente deitada, verso em pé. Os dois lados têm o QR Code com a logo da VTX Tap, o convite para aproximar o celular e a dica de ler o QR. O NFC fica embaixo da faixa roxa.</p>
+        <div class="c3-botoes" role="group" aria-label="Lado da plaquinha">
+          <button type="button" class="btn btn-linha c3-btn" data-lado="frente" aria-pressed="true">Frente</button>
+          <button type="button" class="btn btn-linha c3-btn" data-lado="verso" aria-pressed="false">Verso</button>
+        </div>
+        <p class="c3-dica">Arraste a plaquinha para girar.</p>
+      </div>
+    </div>
+    <h3 class="c3-sub">Exemplos de artes personalizáveis</h3>
     <div class="placas">
-      <article class="placa"><img src="/assets/img/placas/placa-padrao.webp" width="1200" height="757" alt="Plaquinha padrão" loading="lazy"><h3>Padrão</h3><p>Tamanho de cartão, NFC e QR Code, logo da VTX Tap no QR.</p></article>
-      <article class="placa"><img src="/assets/img/placas/placa-personalizada-basica.webp" width="1200" height="757" alt="Plaquinha personalizada básica" loading="lazy"><h3>Personalizada básica</h3><p>A sua logo no meio do QR e os detalhes na cor do restaurante.</p></article>
-      <article class="placa"><img src="/assets/img/placas/placa-sob-demanda.webp" width="1200" height="757" alt="Plaquinha sob demanda com arte própria" loading="lazy"><h3>Sob demanda</h3><p>Você manda a arte ou conta como quer, e a gente faz. Imagem ilustrativa.</p></article>
+      <article class="placa"><span class="placa-lados"><img class="placa-frente" src="/assets/img/placas/placa-personalizada-basica.webp?v=3" width="1200" height="757" alt="Frente da plaquinha personalizada: o nome do restaurante, o QR Code com o espaço da logo dele no meio e a faixa na cor do restaurante" loading="lazy"><img class="placa-verso" src="/assets/img/placas/placa-personalizada-basica-verso.webp?v=3" width="1200" height="757" alt="Verso da plaquinha personalizada, em pé, com o nome, o QR Code e a faixa na cor do restaurante" loading="lazy"></span><h3>Personalizada simples</h3><p>A sua logo no meio do QR, o nome do restaurante escrito e a faixa na cor dele, na frente e no verso.</p></article>
+      <article class="placa"><span class="placa-lados"><img class="placa-frente" src="/assets/img/placas/placa-sob-demanda.webp?v=3" width="1200" height="757" alt="Exemplo de plaquinha sob demanda: arte de um restaurante em verde e dourado, com o QR Code numa placa creme" loading="lazy"><img class="placa-verso" src="/assets/img/placas/placa-sob-demanda-verso.webp?v=3" width="1200" height="757" alt="Verso do exemplo sob demanda, em pé, com a mesma arte" loading="lazy"></span><h3>Sob demanda</h3><p>A arte é do seu restaurante: você manda ou conta como quer, e a gente faz. O QR, o convite para aproximar e o código continuam garantidos. Imagem ilustrativa.</p></article>
     </div>
   </section>
 
@@ -601,7 +668,7 @@
   </section>
 
   <footer class="rodape">
-    <span><img class="logo-escuro" src="/assets/img/vtx-tap-escuro.png" alt="VTX Tap" width="104" height="48"><img class="logo-claro" src="/assets/img/vtx-tap.png" alt="" width="104" height="48"></span>
+    <span class="rodape-marca"><img class="logo-escuro" src="/assets/img/vtx-tap-escuro.png" alt="VTX Tap" width="104" height="48"><img class="logo-claro" src="/assets/img/vtx-tap.png" alt="" width="104" height="48"><a class="endosso-link" href="https://vortexsystems.tech" target="_blank" rel="noopener" aria-label="Uma solução Vortex: abrir o site da Vortex"><img class="logo-escuro endosso" src="/assets/img/marca/endosso-cor.svg" alt="" width="108" height="14"><img class="logo-claro endosso" src="/assets/img/marca/endosso-negativo.svg" alt="" width="108" height="14"></a></span>
     <nav aria-label="Rodapé"><a data-precos href="/orcamento">Orçamento</a><a href="#duvidas">Dúvidas</a><a href="https://instagram.com/vortexsoftwareco" target="_blank" rel="noopener">@vortexsoftwareco</a></nav>
   </footer>
 </main>
@@ -621,6 +688,60 @@
     const $ = (s) => document.getElementById(s);
     const brl = (v) => 'R$ ' + Math.round(v).toLocaleString('pt-BR');
     document.querySelectorAll('[data-contato]').forEach((a) => { a.href = CONTATO; a.target = '_blank'; a.rel = 'noopener'; });
+
+    // Plaquinha em 3D: arrastar gira (com um pouco de inércia), as setas também; os botões levam à frente ou ao verso.
+    (function () {
+      const palco = $('c3Palco'), cartao = $('c3Cartao');
+      if (!palco || !cartao) return;
+      const parado = matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const botoes = [...document.querySelectorAll('.c3-btn')];
+      let rx = -8, ry = -24, rz = 0, vx = 0, vy = 0, arrastando = false, x0 = 0, y0 = 0, tocou = false, t = 0, raf = 0;
+      const aplicar = () => {
+        cartao.style.setProperty('--rx', rx + 'deg'); cartao.style.setProperty('--ry', ry + 'deg'); cartao.style.setProperty('--rz', rz + 'deg');
+        cartao.style.setProperty('--brilho', (115 + ry * 0.6) + 'deg');
+        const verso = Math.cos((ry * Math.PI) / 180) * Math.cos((rx * Math.PI) / 180) < 0;
+        botoes.forEach((b) => b.setAttribute('aria-pressed', String((b.dataset.lado === 'verso') === verso)));
+      };
+      const laco = () => {
+        if (!arrastando) {
+          if (!tocou && !parado) { t += 0.012; ry = -24 + Math.sin(t) * 16; rx = -8 + Math.sin(t * 0.7) * 4; }
+          else { ry += vy; rx = Math.max(-70, Math.min(70, rx + vx)); vy *= 0.94; vx *= 0.94; }
+        }
+        aplicar();
+        if (arrastando || (!tocou && !parado) || Math.abs(vx) + Math.abs(vy) > 0.02) raf = requestAnimationFrame(laco); else raf = 0;
+      };
+      const ligar = () => { if (!raf) raf = requestAnimationFrame(laco); };
+      palco.addEventListener('pointerdown', (e) => {
+        tocou = true; arrastando = true; x0 = e.clientX; y0 = e.clientY; vx = vy = 0; rz = 0; cartao.style.setProperty('--s', '1');
+        cartao.classList.remove('anima'); palco.setPointerCapture(e.pointerId); ligar();
+      });
+      palco.addEventListener('pointermove', (e) => {
+        if (!arrastando) return;
+        const dx = e.clientX - x0, dy = e.clientY - y0; x0 = e.clientX; y0 = e.clientY;
+        vy = dx * 0.5; vx = -dy * 0.5; ry += vy; rx = Math.max(-70, Math.min(70, rx + vx));
+      });
+      const soltar = () => { arrastando = false; };
+      palco.addEventListener('pointerup', soltar);
+      palco.addEventListener('pointercancel', soltar);
+      palco.addEventListener('keydown', (e) => {
+        const passo = { ArrowLeft: [0, -15], ArrowRight: [0, 15], ArrowUp: [10, 0], ArrowDown: [-10, 0] }[e.key];
+        if (!passo) return;
+        e.preventDefault(); tocou = true; rz = 0; cartao.style.setProperty('--s', '1'); cartao.classList.add('anima');
+        rx = Math.max(-70, Math.min(70, rx + passo[0])); ry += passo[1]; aplicar();
+      });
+      botoes.forEach((b) => b.addEventListener('click', () => {
+        tocou = true; vx = vy = 0; cartao.classList.add('anima');
+        // Vai para a volta mais próxima: a frente em 0°; o verso em 180°, girado 90° para ler em pé.
+        const alvo = b.dataset.lado === 'verso' ? 180 : 0;
+        ry = alvo + Math.round((ry - alvo) / 360) * 360; rx = 0; rz = b.dataset.lado === 'verso' ? -90 : 0;
+        // Em pé, o cartão fica mais alto que largo: encolhe para caber no palco.
+        cartao.style.setProperty('--s', b.dataset.lado === 'verso' ? '.72' : '1');
+        aplicar();
+      }));
+      aplicar();
+      // Só anima enquanto aparece na tela.
+      new IntersectionObserver(([en]) => { if (en.isIntersecting) ligar(); else { cancelAnimationFrame(raf); raf = 0; } }).observe(palco);
+    })();
     // Local (/lp/) o simulador é orcamento.html; publicado, é /orcamento.
     if (location.pathname.startsWith('/lp/')) document.querySelectorAll('[data-precos]').forEach((a) => (a.href = '/lp/orcamento.html'));
 

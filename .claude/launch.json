@@ -4,8 +4,26 @@
     {
       "name": "plataforma-nfc",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "5500"],
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "5500"
+      ],
       "port": 5500
+    },
+    {
+      "name": "site-vortex",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "C:/Users/pedro/OneDrive/Documentos/Vortex/vortex-site",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5199"
+      ],
+      "port": 5199
     }
   ]
 }

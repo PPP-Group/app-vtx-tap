@@ -356,6 +356,9 @@ img, svg { display: block; }
 .vtx-logo { display: inline-block; line-height: 0; }
 .vtx-logo img { height: 100%; width: auto; }
 .vtx-logo .vtx-claro { display: none; }
+/* Endosso da marca-mãe nas telas de entrada (manual de marca: "uma solução VORTEX", 12px de altura no mínimo). */
+.vtx-logo.endosso { display: flex; justify-content: center; }
+.vtx-logo.endosso img { height: 14px; width: auto; }
 :root[data-theme="dark"] .vtx-logo .vtx-escuro { display: none; }
 :root[data-theme="dark"] .vtx-logo .vtx-claro { display: inline; }
 @media (prefers-color-scheme: dark) {
