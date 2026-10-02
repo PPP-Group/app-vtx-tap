@@ -1,0 +1,69 @@
+/* Telão da Prorrogação: relógio do happy hour em tela cheia (TV do bar). */
+html, body.telao { height: 100%; }
+body.telao {
+  margin: 0;
+  background: radial-gradient(120% 90% at 50% 0%, color-mix(in oklab, var(--cobalt) 38%, #0C0820) 0%, #0C0820 62%, #06040f 100%);
+  color: #fff;
+  overflow: hidden;
+}
+.tl {
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  padding: clamp(16px, 3vw, 48px);
+  box-sizing: border-box;
+  text-align: center;
+  position: relative;
+}
+.tl-topo { display: flex; align-items: center; justify-content: center; gap: 14px; min-height: 48px; }
+.tl-logo { width: clamp(40px, 5vw, 72px); height: clamp(40px, 5vw, 72px); border-radius: 50%; overflow: hidden; background: rgba(255, 255, 255, .1); }
+.tl-logo img { width: 100%; height: 100%; object-fit: cover; }
+.tl-rest { margin: 0; font-weight: 600; font-size: clamp(16px, 2vw, 28px); opacity: .85; }
+.tl-centro { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 0; position: relative; }
+.tl-nome {
+  margin: 0;
+  font-family: var(--font-display); font-weight: 900; text-transform: uppercase; line-height: .9;
+  font-size: clamp(40px, 8vw, 140px); letter-spacing: .01em;
+}
+.tl-frase { margin: .4em 0 0; font-size: clamp(16px, 2.4vw, 36px); opacity: .8; max-width: 26em; }
+.tl-relogio {
+  margin: .12em 0 0;
+  font-family: var(--font-display); font-weight: 900; font-variant-numeric: tabular-nums; line-height: .9;
+  font-size: clamp(96px, 24vw, 420px);
+  text-shadow: 0 0 .25em color-mix(in oklab, var(--cobalt) 70%, transparent);
+}
+.tl-sub { margin: .3em 0 0; font-size: clamp(16px, 2.6vw, 40px); opacity: .9; }
+.tl-sub b { color: #fff; }
+.tl-rodape { display: grid; gap: 8px; }
+.tl-stats { margin: 0; display: flex; justify-content: center; flex-wrap: wrap; gap: .4em 1.6em; font-size: clamp(16px, 2.4vw, 36px); }
+.tl-stats b { font-family: var(--font-display); font-weight: 900; font-size: 1.3em; }
+.tl-recorde { margin: 0; font-size: clamp(14px, 1.6vw, 24px); opacity: .7; }
+
+.tl[data-estado="parado"] .tl-relogio, .tl[data-estado="off"] .tl-relogio { opacity: .35; text-shadow: none; }
+.tl.is-final[data-estado="rodando"] .tl-relogio { color: #ff6b6b; animation: tl-pulso 1s ease-in-out infinite; }
+@keyframes tl-pulso { 50% { transform: scale(1.04); } }
+
+/* "+1 min" a cada chopp */
+.tl-flash {
+  position: absolute; left: 50%; top: 50%; margin: 0; pointer-events: none;
+  font-family: var(--font-display); font-weight: 900; font-size: clamp(48px, 10vw, 180px);
+  color: #ffd84d; text-shadow: 0 0 .3em rgba(255, 216, 77, .6);
+  opacity: 0; transform: translate(-50%, -20%) scale(.6);
+}
+.tl-flash.is-on { animation: tl-flash 2.2s ease-out forwards; }
+@keyframes tl-flash {
+  0% { opacity: 0; transform: translate(-50%, -20%) scale(.6); }
+  15% { opacity: 1; transform: translate(-50%, -60%) scale(1.1); }
+  70% { opacity: 1; transform: translate(-50%, -90%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -130%) scale(1); }
+}
+.tl-tela-cheia {
+  position: absolute; right: 16px; bottom: 16px;
+  font: inherit; font-size: 14px; color: #fff; background: rgba(255, 255, 255, .12);
+  border: 1px solid rgba(255, 255, 255, .25); border-radius: 999px; padding: 8px 14px; cursor: pointer;
+}
+.tl-tela-cheia[hidden] { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .tl.is-final .tl-relogio, .tl-flash.is-on { animation: none; }
+  .tl-flash.is-on { opacity: 1; transform: translate(-50%, -90%); }
+}

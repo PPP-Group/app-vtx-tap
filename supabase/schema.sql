@@ -107,6 +107,8 @@ alter table public.restaurantes add column if not exists modulos jsonb not null 
 alter table public.restaurantes add column if not exists fidelidade jsonb;
 -- Configuração do delivery (faixas de taxa, pedido mínimo, pagamentos…).
 alter table public.restaurantes add column if not exists delivery jsonb;
+-- Prorrogação (adicional): nome, frase, minutos por chopp, duração, teto, horário limite e agenda.
+alter table public.restaurantes add column if not exists prorrogacao jsonb;
 alter table public.restaurantes enable row level security;
 revoke all on public.restaurantes from anon;
 
@@ -142,6 +144,8 @@ begin
       'delivery', coalesce(s ->> 'delivery', '') = 'true'),
     'mesas', least(greatest(coalesce(public.num_ou(p ->> 'mesas', 20), 20), 1), 500)::int,
     'dominio', case when p ->> 'dominio' in ('proprio', 'registro') then p ->> 'dominio' else 'sub' end,
+    -- Adicionais (cobrados à parte, fora do desconto de combo).
+    'adicionais', jsonb_build_object('prorrogacao', coalesce(p -> 'adicionais' ->> 'prorrogacao', '') = 'true'),
     'contrato', case when p ->> 'contrato' = '12' then 12 else 6 end,
     'inicio', case when coalesce(p ->> 'inicio', '') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' then p ->> 'inicio' end,
     'definido', true);
@@ -157,9 +161,14 @@ create or replace function public.plano_de(p_restaurante uuid) returns jsonb
 language sql stable security definer set search_path = public as $$
   select case when plano is null then jsonb_build_object(
       'servicos', jsonb_build_object('pagina', true, 'garcom', true, 'fidelidade', coalesce(modulos ->> 'fidelidade', '') = 'true', 'delivery', false),
-      'mesas', 500, 'dominio', 'sub', 'contrato', 6, 'inicio', null, 'definido', false)
-    else plano end
+      'mesas', 500, 'dominio', 'sub', 'adicionais', jsonb_build_object('prorrogacao', false), 'contrato', 6, 'inicio', null, 'definido', false)
+    else jsonb_build_object('adicionais', jsonb_build_object('prorrogacao', false)) || plano end
   from public.restaurantes where id = p_restaurante;
+$$;
+
+-- Preço mensal de cada adicional (o mesmo de Precos.ADICIONAIS). Prorrogação: preço ainda a definir.
+create or replace function public.adicional_preco(p_adicional text) returns numeric language sql immutable as $$
+  select (case p_adicional when 'prorrogacao' then 0 else 0 end)::numeric;
 $$;
 
 -- Mensalidade do plano, em reais.
@@ -178,12 +187,18 @@ begin
     when n = 3 then least(soma, floor(soma * 0.85 / 10) * 10 + 9)
     when n = 2 then least(soma, floor(soma * 0.90 / 10) * 10 + 9)
     else soma end;
-  return total + (case when p ->> 'dominio' in ('proprio', 'registro') then 19 else 0 end);
+  return total + (case when p ->> 'dominio' in ('proprio', 'registro') then 19 else 0 end)
+    + (case when coalesce(p -> 'adicionais' ->> 'prorrogacao', '') = 'true' then public.adicional_preco('prorrogacao') else 0 end);
 end $$;
 
 create or replace function public.plano_tem(p_restaurante uuid, p_servico text) returns boolean
 language sql stable security definer set search_path = public as $$
   select coalesce(public.plano_de(p_restaurante) -> 'servicos' ->> p_servico, '') = 'true';
+$$;
+
+create or replace function public.plano_adicional(p_restaurante uuid, p_adicional text) returns boolean
+language sql stable security definer set search_path = public as $$
+  select coalesce(public.plano_de(p_restaurante) -> 'adicionais' ->> p_adicional, '') = 'true';
 $$;
 
 -- Histórico das mudanças de plano (feitas pela central ou pelo próprio restaurante).
@@ -275,7 +290,9 @@ language sql stable security definer set search_path = public as $$
   select jsonb_build_object('id', id, 'slug', slug, 'nome', nome, 'restaurante', restaurante,
     'wifi', wifi, 'cardapio', cardapio, 'mesas', mesas, 'widgets', widgets,
     'modulos', modulos, 'fidelidade', fidelidade, 'delivery', delivery,
-    'plano', jsonb_build_object('servicos', public.plano_de(id) -> 'servicos', 'mesas', public.plano_de(id) -> 'mesas'))
+    'plano', jsonb_build_object('servicos', public.plano_de(id) -> 'servicos', 'mesas', public.plano_de(id) -> 'mesas',
+      'adicionais', public.plano_de(id) -> 'adicionais'),
+    'prorrogacao', prorrogacao)
   from public.restaurantes where slug = lower(btrim(p_slug)) and ativo;
 $$;
 
@@ -370,6 +387,9 @@ begin
   if p_patch ? 'delivery' and (jsonb_typeof(p_patch -> 'delivery') <> 'object' or not public.plano_tem(r, 'delivery')) then
     raise exception 'O delivery não está no plano deste restaurante. Mude o plano na aba Plano.';
   end if;
+  if p_patch ? 'prorrogacao' and (jsonb_typeof(p_patch -> 'prorrogacao') <> 'object' or not public.plano_adicional(r, 'prorrogacao')) then
+    raise exception 'A Prorrogação é um adicional e não está no plano deste restaurante. Contrate na aba Plano.';
+  end if;
   if p_patch ? 'mesas' and coalesce(public.num_ou(p_patch -> 'mesas' ->> 'total', 0), 0) > (public.plano_de(r) ->> 'mesas')::int then
     raise exception 'Seu plano tem % mesas. Para usar mais, aumente as mesas na aba Plano.', public.plano_de(r) ->> 'mesas';
   end if;
@@ -380,7 +400,8 @@ begin
     mesas       = case when p_patch ? 'mesas'       then p_patch -> 'mesas'       else mesas end,
     widgets     = case when p_patch ? 'widgets'     then p_patch -> 'widgets'     else widgets end,
     fidelidade  = case when p_patch ? 'fidelidade'  then f                        else fidelidade end,
-    delivery    = case when p_patch ? 'delivery'    then p_patch -> 'delivery'    else delivery end
+    delivery    = case when p_patch ? 'delivery'    then p_patch -> 'delivery'    else delivery end,
+    prorrogacao = case when p_patch ? 'prorrogacao' then p_patch -> 'prorrogacao' else prorrogacao end
   where id = r;
   -- Regras novas: atualiza o nível guardado de cada cliente (o bônus de nível sai na próxima compra).
   if p_patch ? 'fidelidade' then
@@ -2216,7 +2237,9 @@ create or replace function public.plano_alterar_central(p_restaurante uuid, p_pl
 language plpgsql security definer set search_path = public as $$
 begin
   if not public.eh_operador() then raise exception 'Acesso negado.'; end if;
-  return public.plano_aplicar(p_restaurante, p_plano, 'central',
+  -- Central antiga (sem os adicionais na tela): mantém os que o restaurante já tem.
+  return public.plano_aplicar(p_restaurante,
+    p_plano || jsonb_build_object('adicionais', coalesce(p_plano -> 'adicionais', public.plano_de(p_restaurante) -> 'adicionais')), 'central',
     coalesce((select email from auth.users where id = auth.uid()), 'central'));
 end $$;
 
@@ -2233,7 +2256,7 @@ begin
       from (select * from public.plano_mudancas where restaurante_id = r order by criado_em desc limit 20) m), '[]'::jsonb));
 end $$;
 
--- Upsell/downsell pelo próprio restaurante: muda serviços e mesas; domínio e contrato ficam com a central.
+-- Upsell/downsell pelo próprio restaurante: muda serviços, adicionais e mesas; domínio e contrato ficam com a central.
 create or replace function public.meu_plano_alterar(p_plano jsonb) returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare r uuid := public.meu_restaurante(); atual jsonb;
@@ -2242,7 +2265,7 @@ begin
   if not public.eu_admin() then raise exception 'Só o administrador do restaurante pode mudar o plano.'; end if;
   atual := public.plano_de(r);
   return public.plano_aplicar(r, jsonb_build_object('servicos', p_plano -> 'servicos', 'mesas', p_plano -> 'mesas',
-    'dominio', atual -> 'dominio', 'contrato', atual -> 'contrato', 'inicio', atual -> 'inicio'),
+    'adicionais', coalesce(p_plano -> 'adicionais', atual -> 'adicionais'), 'dominio', atual -> 'dominio', 'contrato', atual -> 'contrato', 'inicio', atual -> 'inicio'),
     'restaurante', coalesce(public.fid_quem(), 'Equipe'));
 end $$;
 
@@ -2267,6 +2290,7 @@ begin
     'public.fid_conferir_xml(text)', 'public.fid_auto_creditar(text)', 'public.fid_chave_problema(uuid, text)',
     'public.fid_nova_sessao(uuid, text)', 'public.fid_quem()',
     'public.plano_normalizar(jsonb)', 'public.plano_de(uuid)', 'public.plano_preco(jsonb)', 'public.plano_tem(uuid, text)',
+    'public.plano_adicional(uuid, text)', 'public.adicional_preco(text)',
     'public.plano_aplicar(uuid, jsonb, text, text)', 'public.implantacao_faixa(int)', 'public.implantacao_paga(uuid)',
     'public.taxa_mesas(uuid, jsonb)'] loop
     execute format('revoke execute on function %s from public, anon, authenticated', f);
@@ -3215,7 +3239,9 @@ language sql stable security definer set search_path = public as $$
   select jsonb_build_object('id', r.id, 'slug', r.slug, 'nome', r.nome, 'restaurante', r.restaurante,
     'wifi', r.wifi, 'cardapio', r.cardapio, 'mesas', r.mesas, 'widgets', r.widgets,
     'modulos', r.modulos, 'fidelidade', r.fidelidade, 'delivery', r.delivery,
-    'plano', jsonb_build_object('servicos', public.plano_de(r.id) -> 'servicos', 'mesas', public.plano_de(r.id) -> 'mesas'),
+    'plano', jsonb_build_object('servicos', public.plano_de(r.id) -> 'servicos', 'mesas', public.plano_de(r.id) -> 'mesas',
+      'adicionais', public.plano_de(r.id) -> 'adicionais'),
+    'prorrogacao', r.prorrogacao,
     'dominio', (select d.dominio from public.dominios d where d.restaurante_id = r.id and d.status = 'ativo'))
   from public.restaurantes r where r.slug = lower(btrim(p_slug)) and r.ativo;
 $$;
@@ -3671,4 +3697,268 @@ begin
   end if;
 exception when others then
   raise notice 'pg_cron indisponível: os pontos vencem quando o cliente usa a conta (%).', sqlerrm;
+end $$;
+
+-- ============================================================================
+-- Prorrogação (adicional): happy hour que cresce a cada chopp, inspirado no Budclock.
+-- O happy hour começa com um cronômetro (ex.: 60 min). Cada chopp servido, o garçom
+-- lê o QR da Prorrogação (ou toca em "+1" no painel) e o relógio ganha mais 1 minuto.
+-- Acaba quando o tempo zera. O restaurante personaliza nome, frase, minutos por chopp,
+-- duração, teto, horário limite e a agenda (dias e hora em que começa sozinho).
+-- ============================================================================
+create table if not exists public.hh_sessoes (
+  id             uuid primary key default gen_random_uuid(),
+  restaurante_id uuid not null references public.restaurantes (id) on delete cascade,
+  nome           text not null default 'Prorrogação' check (char_length(nome) <= 40),
+  inicio         timestamptz not null default now(),
+  fim            timestamptz not null,
+  encerrada_em   timestamptz,
+  motivo         text check (motivo in ('tempo', 'equipe')),
+  leituras       int not null default 0,
+  minutos_ganhos numeric(8, 2) not null default 0,
+  criado_por     text check (char_length(criado_por) <= 60),
+  -- Dia da agenda que esta sessão cumpre (a agenda começa uma vez por dia).
+  agenda_dia     date
+);
+create unique index if not exists hh_sessoes_aberta_idx on public.hh_sessoes (restaurante_id) where encerrada_em is null;
+create unique index if not exists hh_sessoes_agenda_idx on public.hh_sessoes (restaurante_id, agenda_dia) where agenda_dia is not null;
+create index if not exists hh_sessoes_rest_idx on public.hh_sessoes (restaurante_id, inicio desc);
+
+create table if not exists public.hh_leituras (
+  id             uuid primary key default gen_random_uuid(),
+  sessao_id      uuid not null references public.hh_sessoes (id) on delete cascade,
+  restaurante_id uuid not null references public.restaurantes (id) on delete cascade,
+  em             timestamptz not null default now(),
+  qtd            int not null check (qtd between 1 and 50),
+  minutos        numeric(8, 2) not null default 0,
+  por            text check (char_length(por) <= 60),
+  desfeita       boolean not null default false,
+  desfeita_em    timestamptz,
+  desfeita_por   text check (char_length(desfeita_por) <= 60)
+);
+create index if not exists hh_leituras_sessao_idx on public.hh_leituras (sessao_id, em desc);
+
+alter table public.hh_sessoes enable row level security;
+alter table public.hh_leituras enable row level security;
+revoke all on public.hh_sessoes from anon, authenticated;
+revoke all on public.hh_leituras from anon, authenticated;
+
+-- Configuração arrumada (valores válidos, com os padrões).
+create or replace function public.hh_cfg(p_restaurante uuid) returns jsonb
+language sql stable security definer set search_path = public as $$
+  select jsonb_build_object(
+    'ativo', coalesce(c ->> 'ativo', '') = 'true',
+    'nome', coalesce(nullif(left(btrim(c ->> 'nome'), 40), ''), 'Prorrogação'),
+    -- Sem frase própria: "Cada chopp é mais 1 minuto de happy hour" (com o item e os minutos dos ajustes).
+    'frase', coalesce(nullif(left(btrim(c ->> 'frase'), 120), ''),
+      'Cada ' || coalesce(nullif(left(btrim(c ->> 'produto'), 30), ''), 'chopp') || ' é mais ' || m
+        || case when m = 1 then ' minuto' else ' minutos' end || ' de happy hour'),
+    'produto', coalesce(nullif(left(btrim(c ->> 'produto'), 30), ''), 'chopp'),
+    'duracao', least(greatest(coalesce(public.num_ou(c ->> 'duracao', 60), 60), 5), 600)::int,
+    'minutos', m,
+    'teto', least(greatest(coalesce(public.num_ou(c ->> 'teto', 0), 0), 0), 1440)::int,
+    'limite', case when coalesce(c ->> 'limite', '') ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$' then c ->> 'limite' end,
+    'agenda', jsonb_build_object(
+      'ativo', coalesce(c -> 'agenda' ->> 'ativo', '') = 'true',
+      'dias', coalesce((select jsonb_agg(distinct d::int) from jsonb_array_elements_text(
+                 case when jsonb_typeof(c -> 'agenda' -> 'dias') = 'array' then c -> 'agenda' -> 'dias' else '[]'::jsonb end) d
+               where d ~ '^[0-6]$'), '[]'::jsonb),
+      'hora', case when coalesce(c -> 'agenda' ->> 'hora', '') ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$' then c -> 'agenda' ->> 'hora' else '18:00' end))
+  from (select prorrogacao as c from public.restaurantes where id = p_restaurante) x,
+       lateral (select least(greatest(coalesce(public.num_ou(x.c ->> 'minutos', 1), 1), 1), 30)::int as m) y;
+$$;
+
+-- Horário limite (o relógio nunca passa dele): a primeira vez que dá aquela hora depois do início.
+create or replace function public.hh_limite(p_restaurante uuid, p_inicio timestamptz) returns timestamptz
+language plpgsql stable security definer set search_path = public as $$
+declare l text := public.hh_cfg(p_restaurante) ->> 'limite'; tz text := public.fid_fuso(p_restaurante); t timestamptz;
+begin
+  if l is null then return 'infinity'::timestamptz; end if;
+  t := ((p_inicio at time zone tz)::date + l::time) at time zone tz;
+  if t <= p_inicio then t := t + interval '1 day'; end if;
+  return t;
+end $$;
+
+-- Fecha a sessão cujo tempo acabou e começa a da agenda. Chamada por todas as funções da Prorrogação.
+create or replace function public.hh_tick(p_restaurante uuid) returns void
+language plpgsql security definer set search_path = public as $$
+declare
+  c jsonb := public.hh_cfg(p_restaurante); tz text := public.fid_fuso(p_restaurante);
+  agora timestamp := now() at time zone public.fid_fuso(p_restaurante); ini timestamptz; ate timestamptz; aberta uuid;
+begin
+  update public.hh_sessoes set encerrada_em = fim, motivo = 'tempo'
+   where restaurante_id = p_restaurante and encerrada_em is null and fim <= now();
+  if c is null or not public.plano_adicional(p_restaurante, 'prorrogacao') or not (c ->> 'ativo')::boolean
+     or not (c -> 'agenda' ->> 'ativo')::boolean or not (c -> 'agenda' -> 'dias') @> to_jsonb(extract(dow from agora)::int) then
+    return;
+  end if;
+  if exists (select 1 from public.hh_sessoes where restaurante_id = p_restaurante and agenda_dia = agora::date) then return; end if;
+  ini := (agora::date + (c -> 'agenda' ->> 'hora')::time) at time zone tz;
+  ate := least(ini + make_interval(mins => (c ->> 'duracao')::int), public.hh_limite(p_restaurante, ini));
+  if now() < ini or now() >= ate then return; end if;
+  select id into aberta from public.hh_sessoes where restaurante_id = p_restaurante and encerrada_em is null and agenda_dia is null;
+  if aberta is not null then
+    -- A equipe já começou na mão: essa vale como a de hoje.
+    update public.hh_sessoes set agenda_dia = agora::date where id = aberta;
+  else
+    insert into public.hh_sessoes (restaurante_id, nome, inicio, fim, criado_por, agenda_dia)
+    values (p_restaurante, c ->> 'nome', ini, ate, 'Agenda', agora::date)
+    on conflict do nothing;
+  end if;
+end $$;
+
+-- Situação para o telão, a página da mesa e o painel (sem login).
+create or replace function public.hh_status(p_restaurante uuid) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  c jsonb; s public.hh_sessoes; u public.hh_sessoes; lim timestamptz; prox timestamptz;
+  tz text := public.fid_fuso(p_restaurante); agora timestamp := now() at time zone public.fid_fuso(p_restaurante);
+begin
+  if not public.restaurante_ativo(p_restaurante) or not public.plano_adicional(p_restaurante, 'prorrogacao') then
+    return jsonb_build_object('disponivel', false);
+  end if;
+  c := public.hh_cfg(p_restaurante);
+  if not (c ->> 'ativo')::boolean then return jsonb_build_object('disponivel', false); end if;
+  perform public.hh_tick(p_restaurante);
+  select * into s from public.hh_sessoes where restaurante_id = p_restaurante and encerrada_em is null;
+  if s.id is not null then lim := public.hh_limite(p_restaurante, s.inicio); end if;
+  select * into u from public.hh_sessoes where restaurante_id = p_restaurante and encerrada_em is not null order by encerrada_em desc limit 1;
+  if (c -> 'agenda' ->> 'ativo')::boolean then
+    select min(((agora::date + d) + (c -> 'agenda' ->> 'hora')::time) at time zone tz) into prox
+      from generate_series(0, 7) d
+     where (c -> 'agenda' -> 'dias') @> to_jsonb(extract(dow from agora::date + d)::int)
+       and ((agora::date + d) + (c -> 'agenda' ->> 'hora')::time) at time zone tz > now()
+       and not exists (select 1 from public.hh_sessoes x where x.restaurante_id = p_restaurante and x.agenda_dia = agora::date + d);
+  end if;
+  return jsonb_build_object('disponivel', true, 'agora', now(),
+    'nome', c -> 'nome', 'frase', c -> 'frase', 'produto', c -> 'produto', 'minutos', c -> 'minutos', 'teto', c -> 'teto',
+    'rodando', s.id is not null,
+    'sessao', case when s.id is not null then jsonb_build_object('id', s.id, 'inicio', s.inicio, 'fim', s.fim,
+        'leituras', s.leituras, 'minutos_ganhos', s.minutos_ganhos,
+        'limite_em', case when lim = 'infinity' then null else lim end,
+        'ultima', (select max(em) from public.hh_leituras where sessao_id = s.id and not desfeita)) end,
+    'ultima_sessao', case when u.id is not null then jsonb_build_object('inicio', u.inicio, 'fim', u.encerrada_em,
+        'leituras', u.leituras, 'minutos_ganhos', u.minutos_ganhos) end,
+    'recorde', (select jsonb_build_object('minutos', round(extract(epoch from (x.encerrada_em - x.inicio)) / 60), 'leituras', x.leituras, 'em', x.inicio)
+                  from public.hh_sessoes x where x.restaurante_id = p_restaurante and x.encerrada_em is not null
+                 order by x.encerrada_em - x.inicio desc limit 1),
+    'proxima', prox);
+end $$;
+
+-- A equipe só usa com o adicional contratado e ligado.
+create or replace function public.hh_exigir(p_restaurante uuid) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare c jsonb;
+begin
+  if p_restaurante is null then raise exception 'Acesso negado.'; end if;
+  if not public.plano_adicional(p_restaurante, 'prorrogacao') then
+    raise exception 'A Prorrogação é um adicional e não está no plano deste restaurante. Contrate na aba Plano.';
+  end if;
+  c := public.hh_cfg(p_restaurante);
+  if not (c ->> 'ativo')::boolean then raise exception 'Ligue a Prorrogação nos ajustes dela antes de usar.'; end if;
+  return c;
+end $$;
+
+-- Painel: situação, ajustes, últimas leituras e histórico.
+create or replace function public.hh_painel() returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare r uuid := public.meu_restaurante(); st jsonb;
+begin
+  if r is null then raise exception 'Acesso negado.'; end if;
+  st := public.hh_status(r);
+  return st || jsonb_build_object('config', public.hh_cfg(r),
+    'leituras', coalesce((select jsonb_agg(jsonb_build_object('id', l.id, 'em', l.em, 'qtd', l.qtd, 'minutos', l.minutos, 'por', l.por,
+          'desfeita', l.desfeita, 'desfeita_por', l.desfeita_por) order by l.em desc)
+        from (select l.* from public.hh_leituras l
+               where l.sessao_id = coalesce((st -> 'sessao' ->> 'id')::uuid,
+                       (select id from public.hh_sessoes where restaurante_id = r order by inicio desc limit 1))
+               order by l.em desc limit 15) l), '[]'::jsonb),
+    'historico', coalesce((select jsonb_agg(jsonb_build_object('id', x.id, 'nome', x.nome, 'inicio', x.inicio, 'fim', coalesce(x.encerrada_em, x.fim),
+          'aberta', x.encerrada_em is null, 'motivo', x.motivo, 'leituras', x.leituras, 'minutos_ganhos', x.minutos_ganhos,
+          'criado_por', x.criado_por) order by x.inicio desc)
+        from (select * from public.hh_sessoes where restaurante_id = r order by inicio desc limit 20) x), '[]'::jsonb));
+end $$;
+
+-- Começa agora (p_minutos vazio = a duração dos ajustes).
+create or replace function public.hh_comecar(p_minutos int default null) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare r uuid := public.meu_restaurante(); c jsonb; m int;
+begin
+  c := public.hh_exigir(r);
+  perform public.hh_tick(r);
+  if exists (select 1 from public.hh_sessoes where restaurante_id = r and encerrada_em is null) then
+    raise exception 'Já tem uma % rolando.', c ->> 'nome';
+  end if;
+  m := least(greatest(coalesce(p_minutos, (c ->> 'duracao')::int), 1), 600);
+  insert into public.hh_sessoes (restaurante_id, nome, inicio, fim, criado_por)
+  values (r, c ->> 'nome', now(), least(now() + make_interval(mins => m), public.hh_limite(r, now())), coalesce(public.fid_quem(), 'Equipe'));
+  return public.hh_painel();
+end $$;
+
+-- Chopp servido: soma os minutos (respeitando o teto e o horário limite).
+create or replace function public.hh_somar(p_qtd int default 1) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare r uuid := public.meu_restaurante(); c jsonb; s public.hh_sessoes; q int; m numeric; pedido numeric; novo timestamptz;
+begin
+  c := public.hh_exigir(r);
+  perform public.hh_tick(r);
+  select * into s from public.hh_sessoes where restaurante_id = r and encerrada_em is null for update;
+  if s.id is null then raise exception 'A % não está rolando agora.', c ->> 'nome'; end if;
+  q := least(greatest(coalesce(p_qtd, 1), 1), 50);
+  pedido := q * (c ->> 'minutos')::int;
+  m := pedido;
+  if (c ->> 'teto')::int > 0 then m := least(m, greatest((c ->> 'teto')::int - s.minutos_ganhos, 0)); end if;
+  novo := least(s.fim + interval '1 minute' * m, public.hh_limite(r, s.inicio));
+  m := greatest(round((extract(epoch from (novo - s.fim)) / 60)::numeric, 2), 0);
+  novo := s.fim + interval '1 minute' * m;
+  insert into public.hh_leituras (sessao_id, restaurante_id, qtd, minutos, por) values (s.id, r, q, m, coalesce(public.fid_quem(), 'Equipe'));
+  update public.hh_sessoes set fim = novo, leituras = leituras + q, minutos_ganhos = minutos_ganhos + m where id = s.id;
+  return public.hh_painel() || jsonb_build_object('adicionados', m, 'travado', m < pedido);
+end $$;
+
+-- Desfaz a última leitura da sessão que está rolando (chopp lido duas vezes, engano).
+create or replace function public.hh_desfazer() returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare r uuid := public.meu_restaurante(); s public.hh_sessoes; l public.hh_leituras;
+begin
+  perform public.hh_exigir(r);
+  perform public.hh_tick(r);
+  select * into s from public.hh_sessoes where restaurante_id = r and encerrada_em is null for update;
+  if s.id is null then raise exception 'Não tem nada rolando para desfazer.'; end if;
+  select * into l from public.hh_leituras where sessao_id = s.id and not desfeita order by em desc limit 1;
+  if l.id is null then raise exception 'Nenhuma leitura para desfazer.'; end if;
+  update public.hh_leituras set desfeita = true, desfeita_em = now(), desfeita_por = coalesce(public.fid_quem(), 'Equipe') where id = l.id;
+  update public.hh_sessoes set fim = fim - interval '1 minute' * l.minutos, leituras = leituras - l.qtd, minutos_ganhos = minutos_ganhos - l.minutos
+   where id = s.id;
+  perform public.hh_tick(r);
+  return public.hh_painel();
+end $$;
+
+-- Encerra agora.
+create or replace function public.hh_encerrar() returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare r uuid := public.meu_restaurante();
+begin
+  if r is null then raise exception 'Acesso negado.'; end if;
+  perform public.hh_tick(r);
+  update public.hh_sessoes set encerrada_em = now(), fim = least(fim, now()), motivo = 'equipe'
+   where restaurante_id = r and encerrada_em is null;
+  if not found then raise exception 'Não tem nada rolando agora.'; end if;
+  return public.hh_painel();
+end $$;
+
+do $$
+declare f text;
+begin
+  foreach f in array array['public.hh_cfg(uuid)', 'public.hh_limite(uuid, timestamptz)', 'public.hh_tick(uuid)',
+      'public.hh_exigir(uuid)'] loop
+    execute format('revoke execute on function %s from public, anon, authenticated', f);
+  end loop;
+  execute 'revoke execute on function public.hh_status(uuid) from public';
+  execute 'grant execute on function public.hh_status(uuid) to anon, authenticated';
+  foreach f in array array['public.hh_painel()', 'public.hh_comecar(int)', 'public.hh_somar(int)', 'public.hh_desfazer()',
+      'public.hh_encerrar()'] loop
+    execute format('revoke execute on function %s from public, anon', f);
+    execute format('grant execute on function %s to authenticated', f);
+  end loop;
 end $$;

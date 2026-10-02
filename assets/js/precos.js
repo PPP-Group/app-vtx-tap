@@ -4,7 +4,8 @@
  *
  *   Precos.SERVICOS                  → [{ id, nome, preco, desc }]
  *   Precos.servicos({ pagina, ... }) → mensalidade dos serviços (com desconto de combo)
- *   Precos.plano(plano)              → mensalidade do plano (serviços + domínio próprio)
+ *   Precos.plano(plano)              → mensalidade do plano (serviços + domínio próprio + adicionais)
+ *   Precos.ADICIONAIS                → [{ id, nome, preco, desc }] cobrados à parte (fora do desconto de combo)
  *   Precos.combo({ ... })            → { soma, total, economia, desconto } para mostrar o desconto
  *   Precos.SEFAZ_NOTA                → preço de cada nota conferida na SEFAZ (opcional, cobrado à parte)
  *   Precos.implantacao(mesas)        → implantação da faixa de mesas (até 20, 21 a 50, 51 ou mais)
@@ -21,6 +22,11 @@
   const DESCONTO = { 2: 0.1, 3: 0.15 };
   const TODOS = 349;
   const DOMINIO_MES = 19;
+  // Adicionais: o mesmo de public.adicional_preco. preco 0 = preço ainda a definir (não soma na mensalidade).
+  const ADICIONAIS = [
+    { id: 'prorrogacao', nome: 'Prorrogação', preco: 0, desc: 'Happy hour que ganha minutos a cada chopp: o garçom lê o QR e o relógio no telão aumenta.' },
+  ];
+  const adicionais = (ad = {}) => ADICIONAIS.filter((a) => ad[a.id]).reduce((t, a) => t + a.preco, 0);
   // Conferência automática da nota na SEFAZ (fidelidade): o restaurante liga se quiser e paga por nota conferida.
   const SEFAZ_NOTA = 0.25;
   // Implantação por faixa de mesas (a mesma tabela de public.implantacao_faixa no banco).
@@ -43,7 +49,7 @@
     return { soma, total, economia: soma - total, qtd: escolhidos.length, desconto: DESCONTO[escolhidos.length] || (escolhidos.length === SERVICOS.length ? 1 - TODOS / soma : 0) };
   }
   const servicos = (sv) => combo(sv).total;
-  const plano = (p) => servicos((p && p.servicos) || {}) + (p && ['proprio', 'registro'].includes(p.dominio) ? DOMINIO_MES : 0);
+  const plano = (p) => servicos((p && p.servicos) || {}) + (p && ['proprio', 'registro'].includes(p.dominio) ? DOMINIO_MES : 0) + adicionais((p && p.adicionais) || {});
 
-  window.Precos = { SERVICOS, DESCONTO, TODOS, DOMINIO_MES, SEFAZ_NOTA, IMPLANTACAO, faixa, implantacao, taxaMesas, combo, servicos, plano };
+  window.Precos = { SERVICOS, ADICIONAIS, adicionais, DESCONTO, TODOS, DOMINIO_MES, SEFAZ_NOTA, IMPLANTACAO, faixa, implantacao, taxaMesas, combo, servicos, plano };
 })();

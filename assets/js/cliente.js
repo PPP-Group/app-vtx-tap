@@ -636,6 +636,39 @@
     if (b) openSheet(b.dataset.open);
   });
 
+  /* ---------------- Prorrogação (adicional): relógio do happy hour ---------------- */
+  let hh = null;
+  const temHH = () => !!(live.plano && live.plano.adicionais && live.plano.adicionais.prorrogacao && live.prorrogacao && live.prorrogacao.ativo && window.Prorrogacao);
+  function renderHH() {
+    const el = $('#hhMesa');
+    const PR = window.Prorrogacao;
+    const hora = (iso) => new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    // Rolando: o relógio. Parado: só avisa se o próximo começa nas próximas 12 horas.
+    const proxima = hh && !hh.rodando && hh.proxima && new Date(hh.proxima) - Date.now() < 12 * 3600e3 ? hh.proxima : null;
+    if (!hh || !hh.disponivel || (!hh.rodando && !proxima)) {
+      el.hidden = true;
+      el.innerHTML = '';
+      return;
+    }
+    el.hidden = false;
+    el.classList.toggle('is-rodando', !!hh.rodando);
+    const s = hh.sessao;
+    el.innerHTML = hh.rodando
+      ? `<span class="hh-mesa-ico">${icon('beer')}</span>
+        <div class="hh-mesa-txt"><b>${esc(hh.nome)}</b><small>${esc(hh.frase || '')}</small></div>
+        <div class="hh-mesa-rel"><b class="mono" data-hh-mesa>${PR.relogio(PR.restante(hh))}</b><small>${s.leituras} ${esc(hh.produto)}${s.leituras === 1 ? '' : 's'} · até ${hora(s.fim)}</small></div>`
+      : `<span class="hh-mesa-ico">${icon('timer')}</span>
+        <div class="hh-mesa-txt"><b>${esc(hh.nome)} às ${hora(proxima)}</b><small>${esc(hh.frase || '')}</small></div>`;
+  }
+  function iniciarHH() {
+    if (!temHH()) return;
+    Prorrogacao.acompanhar(store, (st) => { hh = st; renderHH(); }, 10000);
+    setInterval(() => {
+      const b = $('[data-hh-mesa]');
+      if (b && hh) b.textContent = Prorrogacao.relogio(Prorrogacao.restante(hh));
+    }, 1000);
+  }
+
   /* ---------------- Rodapé ---------------- */
   function renderInfo() {
     const dias = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
@@ -1113,6 +1146,7 @@
       renderInfo();
       entrada();
       setInterval(renderTop, 60e3);
+      iniciarHH();
       if (live.modulos && live.modulos.fidelidade && window.Fidelidade) {
         Fidelidade.iniciar({ store, slug: cfg.backend.slug, nomeRestaurante: R.nome })
           .then((p) => p && renderTiles())

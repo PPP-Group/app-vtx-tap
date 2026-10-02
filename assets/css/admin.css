@@ -983,3 +983,32 @@
 .fp-evento-acoes > span { font-size: 13.5px; font-weight: 600; margin-right: 2px; }
 .fp-passos { margin: 0; padding-left: 20px; display: grid; gap: 6px; color: var(--ink-2); font-size: 14px; }
 .fp-evento .vhead-actions > .muted { flex-basis: 100%; font-size: 13.5px; }
+
+/* Prorrogação (adicional) */
+.plano-sub { font-size: 14px; margin-top: 6px; }
+.badge--vivo { background: transparent; color: #ff5c5c; font-size: 11px; animation: hh-pisca 1.4s ease-in-out infinite; }
+@keyframes hh-pisca { 50% { opacity: .3; } }
+.hh-grid { align-items: start; }
+.hh-vivo { display: grid; justify-items: center; text-align: center; gap: 10px; padding: 28px 20px; }
+.hh-rotulo { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.hh-relogio { margin: 0; font-family: var(--font-display); font-weight: 900; font-size: clamp(64px, 14vw, 120px); line-height: .9; font-variant-numeric: tabular-nums; color: var(--cobalt-ink); }
+.hh-fim { margin: 0; color: var(--muted); }
+.hh-stats { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 18px; font-size: 14px; }
+.hh-stats b { font-size: 18px; }
+.hh-mais { width: 100%; max-width: 420px; min-height: 84px; font-size: 24px; font-weight: 700; border-radius: 20px; background: var(--cobalt); color: #fff; display: inline-flex; align-items: center; justify-content: center; gap: 10px; }
+.hh-mais .i { width: 30px; height: 30px; }
+.hh-mais small { font-size: 14px; font-weight: 500; opacity: .85; }
+.hh-mais:active { transform: scale(.98); }
+.hh-mais-varios { display: flex; gap: 8px; }
+.hh-mais-varios .btn { min-width: 64px; }
+.hh-acoes { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 6px; }
+.hh-comecar { display: flex; align-items: end; gap: 10px; flex-wrap: wrap; }
+.hh-comecar .field { width: 140px; }
+.hh-qr svg { width: 160px; height: 160px; }
+.hh-leituras, .hh-hist { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.hh-leituras li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 10px; font-size: 14px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.hh-leituras li.is-desfeita b { text-decoration: line-through; opacity: .6; }
+.hh-leituras small { width: 100%; color: var(--muted); }
+.hh-hist li { display: grid; gap: 2px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.hh-recorde { margin: 0; display: flex; align-items: center; gap: 8px; }
+.hh-dias { display: flex; flex-wrap: wrap; gap: 6px 14px; }

@@ -77,6 +77,17 @@ A central libera por restaurante (Editar restaurante → Módulos contratados �
 - **Níveis do clube** (Regras → Níveis do clube): até 6 níveis, com nome, frase curta, cor, pontos mínimos, bônus nas compras (+5% a dobro), pontos ao chegar e vantagens. Os pontos contam desde o cadastro ou só nos últimos N meses. Prêmios podem ser exclusivos de um nível em diante.
 - Link direto do programa: `https://<restaurante>.<domínio>/?fidelidade`.
 
+### Prorrogação (adicional)
+
+Happy hour que ganha minutos a cada chopp, inspirado no Budclock da Budweiser (Equador, 2012). Cada restaurante dá o nome que quiser (exemplos: Prorrogação, Hora Extra, Happy Hour Sem Fim). A central liga o adicional em Editar restaurante → Plano contratado, ou o administrador liga na aba Plano do painel. Preço ainda a definir (`public.adicional_preco` e `Precos.ADICIONAIS`).
+
+- **Ajustes** (aba do painel com o nome escolhido): nome, frase, o que soma tempo (chopp), duração inicial, minutos por chopp, teto de minutos ganhos, horário limite (acaba nessa hora de qualquer jeito) e agenda (começa sozinha nos dias e hora escolhidos).
+- **Ao vivo**: relógio, botão **+1 chopp** (e +2, +3, +5), desfazer a última leitura, encerrar, últimas leituras.
+- **QR do garçom** (`/admin/?chopp=1`, para imprimir e colar na chopeira): com o celular logado no painel, ler o QR soma 1 chopp.
+- **Telão** (`/telao/`): o relógio em tela cheia na TV do bar, com "+1 min" a cada chopp, a próxima da agenda e o recorde da casa.
+- **Página da mesa**: faixa com o relógio enquanto rola (e o horário da próxima, se for nas próximas 12 horas).
+- Banco: tabelas `hh_sessoes` e `hh_leituras`, funções `hh_status` (aberta), `hh_painel`, `hh_comecar`, `hh_somar`, `hh_desfazer`, `hh_encerrar` (equipe). O fim por tempo e o início pela agenda acontecem quando qualquer tela consulta (telão, mesa ou painel).
+
 ### Central (painel da Vortex)
 
 - *Visão geral*: leituras por dia (7, 30 ou 90 dias), ranking dos restaurantes com variação contra o período anterior, **chamados e tempo médio de resposta** de cada restaurante, plaquinhas nunca lidas e alerta de restaurante parado há 7 dias.
@@ -95,6 +106,7 @@ env.js                  gerado no servidor a partir das variáveis de ambiente
 assets/js/config.js     dados iniciais do restaurante e leitura do subdomínio
 assets/js/store.js      dados: modo demonstração (navegador) ou Supabase
 assets/js/cliente.js    página da mesa;   assets/js/admin.js   painel da equipe
+telao/                  telão da Prorrogação (relógio do happy hour na TV)  →  quintal.vortexsystems.tech/telao/
 supabase/schema.sql     banco único: tabelas, regras de acesso, funções, imagens e tempo real
 supabase/functions/     função "equipe": criar conta e entrar por PIN (por restaurante)
 Dockerfile, deploy/     nginx: no CENTRAL_HOST, preços em /, central em /master e plaquinhas em /t/; restaurantes em qualquer outro subdomínio

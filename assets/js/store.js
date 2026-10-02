@@ -41,6 +41,10 @@
  *            fidPremios() / fidSalvarPremio(p) / fidExcluirPremio(id) / fidExportar() / fidTopProdutos(cpf, dias) /
  *            fidEventos() / fidEventoSalvar(e) / fidEventoExcluir(id) / fidEventoResultado(id, vencedor|'empate')
  *            → erros viram exceção com a mensagem
+ *
+ *   Prorrogação (adicional; ajustes em settings.prorrogacao): happy hour que ganha minutos a cada chopp.
+ *   todos:   hhStatus() → { disponivel, agora, nome, frase, produto, minutos, rodando, sessao, ultima_sessao, recorde, proxima }
+ *   equipe:  hhPainel() (status + config, leituras, historico) / hhComecar(minutos?) / hhSomar(qtd) / hhDesfazer() / hhEncerrar()
  */
 (function () {
   const cfg = window.NFC_CONFIG;
@@ -261,6 +265,29 @@
     ativo: false, local: null, faixas: [{ ate: 3, taxa: 5 }, { ate: 6, taxa: 8 }, { ate: 10, taxa: 12 }],
     minimo: 0, tempo: '40 a 60', pagamentos: { pix: true, cartao: true, dinheiro: true }, pix: '', whatsapp: '',
   };
+  // Prorrogação: os mesmos padrões e limites de public.hh_cfg.
+  const PRORROGACAO_PADRAO = {
+    ativo: false, nome: 'Prorrogação', frase: '', produto: 'chopp',
+    duracao: 60, minutos: 1, teto: 0, limite: null, agenda: { ativo: false, dias: [], hora: '18:00' },
+  };
+  const HORA_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+  const hhCfg = (c) => {
+    c = c || {};
+    const ag = c.agenda || {};
+    const lim = (v, pad, a, b) => Math.round(Math.min(Math.max(Number.isFinite(+v) && v !== '' && v != null ? +v : pad, a), b));
+    return {
+      ativo: c.ativo === true,
+      nome: String(c.nome || '').trim().slice(0, 40) || PRORROGACAO_PADRAO.nome,
+      // Vazia = a frase padrão (hhFrase), que acompanha o item e os minutos.
+      frase: String(c.frase || '').trim().slice(0, 120),
+      produto: String(c.produto || '').trim().slice(0, 30) || 'chopp',
+      duracao: lim(c.duracao, 60, 5, 600), minutos: lim(c.minutos, 1, 1, 30), teto: lim(c.teto, 0, 0, 1440),
+      limite: HORA_RE.test(c.limite || '') ? c.limite : null,
+      agenda: { ativo: ag.ativo === true, dias: [...new Set((Array.isArray(ag.dias) ? ag.dias : []).map(String).filter((d) => /^[0-6]$/.test(d)).map(Number))].sort(),
+        hora: HORA_RE.test(ag.hora || '') ? ag.hora : '18:00' },
+    };
+  };
+  const hhFrase = (c) => c.frase || `Cada ${c.produto} é mais ${c.minutos} ${c.minutos === 1 ? 'minuto' : 'minutos'} de happy hour`;
   const seed = (demo = true) => (demo ? {
     restaurante: cfg.restaurante,
     wifi: cfg.wifi,
@@ -269,6 +296,7 @@
     mesas: cfg.mesasPadrao,
     widgets: cfg.widgetsPadrao,
     delivery: { ...DELIVERY_PADRAO, ativo: true, local: { lat: -23.5667, lng: -46.6849, endereco: 'Rua dos Pinheiros, 412 - Pinheiros, São Paulo' }, pix: 'pix@quintalbistro.com.br' },
+    prorrogacao: { ...PRORROGACAO_PADRAO, ativo: true },
   } : {
     restaurante: RESTAURANTE_VAZIO,
     wifi: { rede: '', senha: '', seguranca: 'WPA' },
@@ -277,6 +305,7 @@
     // As informações (endereço, telefone, horários, Instagram) começam desligadas.
     widgets: cfg.widgetsPadrao.map((w) => (w.tipo === 'info' ? { ...w, ativo: false } : w)),
     delivery: DELIVERY_PADRAO,
+    prorrogacao: PRORROGACAO_PADRAO,
   });
   // Completa o que foi salvo com os valores iniciais (campos novos em versões futuras).
   // Módulos: na demonstração vêm todos liberados; no servidor, a central libera.
@@ -296,7 +325,10 @@
     out.plano = {
       servicos: { pagina: true, garcom: true, fidelidade: !!out.modulos.fidelidade, delivery: !!demo, ...((pl && pl.servicos) || {}) },
       mesas: Math.min(Math.max(+((pl && pl.mesas) || 500), 1), 500),
+      // Adicionais (cobrados à parte). Demonstração: todos ligados.
+      adicionais: { prorrogacao: !!demo, ...((pl && pl.adicionais) || {}) },
     };
+    out.prorrogacao = hhCfg(out.prorrogacao);
     out.modulos.fidelidade = !!out.plano.servicos.fidelidade;
     out.fidelidade = mergeFid(saved && saved.fidelidade ? saved.fidelidade : demo ? FID_DEMO : null);
     return out;
@@ -567,6 +599,70 @@
     /* ---- Aniversário, validade, transferência e clássico (mesmas regras do banco) ---- */
     const evs = (db) => { const f = F(db); f.eventos = f.eventos || []; f.torcidas = f.torcidas || []; return f; };
     const fechaEvento = (e) => new Date(`${e.data}T${e.hora || '23:59'}:00`);
+    // Prorrogação na demonstração (horário deste aparelho).
+    const HH = (db) => (db.hh = db.hh || { sessoes: [], leituras: [] });
+    const hhAberta = (db) => HH(db).sessoes.find((x) => !x.encerrada_em);
+    const emHora = (dia, hhmm) => new Date(`${dia}T${hhmm}:00`).getTime();
+    const hhLimite = (c, inicio) => {
+      if (!c.limite) return Infinity;
+      let t = emHora(diaIso(new Date(inicio)), c.limite);
+      if (t <= inicio) t += 864e5;
+      return t;
+    };
+    const hhExigir = (db) => {
+      const s = mergeSettings(db.configuracao, true);
+      if (!s.plano.adicionais.prorrogacao) falha('A Prorrogação é um adicional e não está no plano deste restaurante. Contrate na aba Plano.');
+      if (!s.prorrogacao.ativo) falha('Ligue a Prorrogação nos ajustes dela antes de usar.');
+      return s.prorrogacao;
+    };
+    const hhTick = (db) => {
+      const h = HH(db);
+      h.sessoes.forEach((x) => { if (!x.encerrada_em && new Date(x.fim).getTime() <= Date.now()) Object.assign(x, { encerrada_em: x.fim, motivo: 'tempo' }); });
+      h.sessoes = h.sessoes.slice(-60);
+      h.leituras = h.leituras.filter((l) => h.sessoes.some((x) => x.id === l.sessao_id)).slice(-600);
+      const s = mergeSettings(db.configuracao, true);
+      const c = s.prorrogacao;
+      const hoje = diaIso(new Date());
+      if (!s.plano.adicionais.prorrogacao || !c.ativo || !c.agenda.ativo || !c.agenda.dias.includes(new Date().getDay())) return;
+      if (h.sessoes.some((x) => x.agenda_dia === hoje)) return;
+      const ini = emHora(hoje, c.agenda.hora);
+      const ate = Math.min(ini + c.duracao * 60e3, hhLimite(c, ini));
+      if (Date.now() < ini || Date.now() >= ate) return;
+      const aberta = hhAberta(db);
+      if (aberta) { if (!aberta.agenda_dia) aberta.agenda_dia = hoje; return; }
+      h.sessoes.push({ id: uid(), nome: c.nome, inicio: new Date(ini).toISOString(), fim: new Date(ate).toISOString(), encerrada_em: null, motivo: null,
+        leituras: 0, minutos_ganhos: 0, criado_por: 'Agenda', agenda_dia: hoje });
+    };
+    const hhStatusDe = (db) => {
+      const s = mergeSettings(db.configuracao, true);
+      const c = s.prorrogacao;
+      if (!s.plano.adicionais.prorrogacao || !c.ativo) return { disponivel: false };
+      hhTick(db);
+      const h = HH(db);
+      const a = hhAberta(db);
+      const fechadas = h.sessoes.filter((x) => x.encerrada_em);
+      const u = fechadas.slice().sort((x, y) => y.encerrada_em.localeCompare(x.encerrada_em))[0];
+      const dur = (x) => new Date(x.encerrada_em) - new Date(x.inicio);
+      const rec = fechadas.slice().sort((x, y) => dur(y) - dur(x))[0];
+      let proxima = null;
+      if (c.agenda.ativo) {
+        for (let d = 0; d <= 7 && !proxima; d++) {
+          const dia = new Date(); dia.setDate(dia.getDate() + d);
+          const t = emHora(diaIso(dia), c.agenda.hora);
+          if (c.agenda.dias.includes(dia.getDay()) && t > Date.now() && !h.sessoes.some((x) => x.agenda_dia === diaIso(dia))) proxima = new Date(t).toISOString();
+        }
+      }
+      const lim = a ? hhLimite(c, new Date(a.inicio).getTime()) : Infinity;
+      return {
+        disponivel: true, agora: nowIso(), nome: c.nome, frase: hhFrase(c), produto: c.produto, minutos: c.minutos, teto: c.teto, rodando: !!a,
+        sessao: a ? { id: a.id, inicio: a.inicio, fim: a.fim, leituras: a.leituras, minutos_ganhos: a.minutos_ganhos,
+          limite_em: lim === Infinity ? null : new Date(lim).toISOString(),
+          ultima: (h.leituras.filter((l) => l.sessao_id === a.id && !l.desfeita).pop() || {}).em || null } : null,
+        ultima_sessao: u ? { inicio: u.inicio, fim: u.encerrada_em, leituras: u.leituras, minutos_ganhos: u.minutos_ganhos } : null,
+        recorde: rec ? { minutos: Math.round(dur(rec) / 60e3), leituras: rec.leituras, em: rec.inicio } : null,
+        proxima,
+      };
+    };
     // Mês do aniversário e clássico vencido pelo time do cliente no dia da compra.
     function extraDe(db, cpf, quando) {
       const c = cpf && cliDe(db, cpf);
@@ -810,6 +906,9 @@
           throw new Error('Informe o CNPJ que sai nas notas fiscais antes de ativar o programa.');
         }
         const atual = mergeSettings(db.configuracao, true);
+        if (patch.prorrogacao && !atual.plano.adicionais.prorrogacao) {
+          throw new Error('A Prorrogação é um adicional e não está no plano deste restaurante. Contrate na aba Plano.');
+        }
         if (patch.mesas && +patch.mesas.total > atual.plano.mesas) {
           throw new Error(`Seu plano tem ${atual.plano.mesas} mesas. Para usar mais, aumente as mesas na aba Plano.`);
         }
@@ -850,7 +949,9 @@
         if (!ids.some((k) => sv[k])) throw new Error('Escolha pelo menos um serviço.');
         const atual = await this.meuPlano();
         const antes = atual.plano;
-        const novo = { servicos: Object.fromEntries(ids.map((k) => [k, !!sv[k]])), mesas: Math.min(Math.max(Math.round(+p.mesas || 20), 1), 500), dominio: 'sub', contrato: 6, definido: true };
+        const ad = (p && p.adicionais) || antes.adicionais || {};
+        const novo = { servicos: Object.fromEntries(ids.map((k) => [k, !!sv[k]])), mesas: Math.min(Math.max(Math.round(+p.mesas || 20), 1), 500),
+          adicionais: Object.fromEntries(window.Precos.ADICIONAIS.map((x) => [x.id, !!ad[x.id]])), dominio: 'sub', contrato: 6, definido: true };
         const cfgAtual = mergeSettings(db.configuracao, true);
         const mesas = cfgAtual.mesas.total > novo.mesas
           ? { total: novo.mesas, areas: cfgAtual.mesas.areas.filter((a) => a.de <= novo.mesas).map((a) => ({ ...a, ate: Math.min(a.ate, novo.mesas) })) }
@@ -1581,6 +1682,77 @@
       async fidExportar() {
         return F(read()).clientes.slice();
       },
+
+      /* ---------- Prorrogação (mesmas regras de public.hh_*) ---------- */
+      async hhStatus() {
+        const db = read();
+        const st = hhStatusDe(db);
+        write(db);
+        return st;
+      },
+      async hhPainel() {
+        const db = read();
+        const st = hhStatusDe(db);
+        write(db);
+        const h = HH(db);
+        const atual = st.sessao ? st.sessao.id : (h.sessoes[h.sessoes.length - 1] || {}).id;
+        return { ...st, config: mergeSettings(db.configuracao, true).prorrogacao,
+          leituras: h.leituras.filter((l) => l.sessao_id === atual).slice(-15).reverse(),
+          historico: h.sessoes.slice(-20).reverse().map((x) => ({ id: x.id, nome: x.nome, inicio: x.inicio, fim: x.encerrada_em || x.fim, aberta: !x.encerrada_em,
+            motivo: x.motivo, leituras: x.leituras, minutos_ganhos: x.minutos_ganhos, criado_por: x.criado_por })) };
+      },
+      async hhComecar(min) {
+        const db = read();
+        const c = hhExigir(db);
+        hhTick(db);
+        if (hhAberta(db)) falha(`Já tem uma ${c.nome} rolando.`);
+        const m = Math.min(Math.max(Math.round(+min || c.duracao), 1), 600);
+        const agora = Date.now();
+        HH(db).sessoes.push({ id: uid(), nome: c.nome, inicio: new Date(agora).toISOString(), fim: new Date(Math.min(agora + m * 60e3, hhLimite(c, agora))).toISOString(),
+          encerrada_em: null, motivo: null, leituras: 0, minutos_ganhos: 0, criado_por: quem(db), agenda_dia: null });
+        write(db);
+        return this.hhPainel();
+      },
+      async hhSomar(qtd = 1) {
+        const db = read();
+        const c = hhExigir(db);
+        hhTick(db);
+        const s = hhAberta(db);
+        if (!s) falha(`A ${c.nome} não está rolando agora.`);
+        const q = Math.min(Math.max(Math.round(+qtd || 1), 1), 50);
+        const pedido = q * c.minutos;
+        let m = c.teto > 0 ? Math.min(pedido, Math.max(c.teto - s.minutos_ganhos, 0)) : pedido;
+        const fim = new Date(s.fim).getTime();
+        m = Math.max(Math.round(((Math.min(fim + m * 60e3, hhLimite(c, new Date(s.inicio).getTime())) - fim) / 60e3) * 100) / 100, 0);
+        Object.assign(s, { fim: new Date(fim + m * 60e3).toISOString(), leituras: s.leituras + q, minutos_ganhos: Math.round((s.minutos_ganhos + m) * 100) / 100 });
+        HH(db).leituras.push({ id: uid(), sessao_id: s.id, em: nowIso(), qtd: q, minutos: m, por: quem(db), desfeita: false });
+        write(db);
+        return { ...(await this.hhPainel()), adicionados: m, travado: m < pedido };
+      },
+      async hhDesfazer() {
+        const db = read();
+        hhExigir(db);
+        hhTick(db);
+        const s = hhAberta(db);
+        if (!s) falha('Não tem nada rolando para desfazer.');
+        const l = HH(db).leituras.filter((x) => x.sessao_id === s.id && !x.desfeita).pop();
+        if (!l) falha('Nenhuma leitura para desfazer.');
+        Object.assign(l, { desfeita: true, desfeita_em: nowIso(), desfeita_por: quem(db) });
+        Object.assign(s, { fim: new Date(new Date(s.fim).getTime() - l.minutos * 60e3).toISOString(), leituras: s.leituras - l.qtd,
+          minutos_ganhos: Math.round((s.minutos_ganhos - l.minutos) * 100) / 100 });
+        hhTick(db);
+        write(db);
+        return this.hhPainel();
+      },
+      async hhEncerrar() {
+        const db = read();
+        hhTick(db);
+        const s = hhAberta(db);
+        if (!s) falha('Não tem nada rolando agora.');
+        Object.assign(s, { encerrada_em: nowIso(), fim: new Date(Math.min(new Date(s.fim).getTime(), Date.now())).toISOString(), motivo: 'equipe' });
+        write(db);
+        return this.hhPainel();
+      },
       auth: equipeLocal(read, write),
     };
   }
@@ -2056,6 +2228,24 @@
       async fidEventos() {
         return must(await sb.rpc('fid_eventos_lista'));
       },
+      async hhStatus() {
+        return must(await sb.rpc('hh_status', { p_restaurante: rid }));
+      },
+      async hhPainel() {
+        return must(await sb.rpc('hh_painel'));
+      },
+      async hhComecar(minutos) {
+        return must(await sb.rpc('hh_comecar', { p_minutos: +minutos || null }));
+      },
+      async hhSomar(qtd = 1) {
+        return must(await sb.rpc('hh_somar', { p_qtd: +qtd || 1 }));
+      },
+      async hhDesfazer() {
+        return must(await sb.rpc('hh_desfazer'));
+      },
+      async hhEncerrar() {
+        return must(await sb.rpc('hh_encerrar'));
+      },
       async fidEventoSalvar(e) {
         return must(await sb.rpc('fid_evento_salvar', { p: e }));
       },
@@ -2174,6 +2364,7 @@
     precoPlano,
     // Regras do programa de fidelidade usadas também pelas telas (validação e simulação).
     delivery: { PADRAO: DELIVERY_PADRAO, distanciaKm, taxa: taxaEntrega },
+    prorrogacao: { PADRAO: PRORROGACAO_PADRAO, cfg: hhCfg, frase: hhFrase },
     opcoes,
     fid: { PADRAO: FID_PADRAO, cpfValido, chaveValida, chaveDoTexto, valorDoQr, boost: fidBoost, calcular: fidCalcular, niveis: fidNiveis, nivelDe: fidNivelDe, soDigitos },
     create() {
