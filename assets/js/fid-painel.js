@@ -3,7 +3,8 @@
  *   Hoje:     números, prêmios para entregar, notas para conferir, importar XML, lançar nota
  *   Clientes: busca, ficha (extrato, notas, prêmios), PIN, editar, excluir, exportar
  *   Prêmios:  catálogo com foto
- *   Regras:   pontos por real, dias em dobro, CNPJ, prazo, indicação, regulamento
+ *   Clássicos: dia de jogo em que os pontos de quem torce pelo vencedor valem mais
+ *   Regras:   pontos por real, dias em dobro, CNPJ, prazo, indicação, aniversário, transferência, validade, regulamento
  *
  *   FidPainel.iniciar(ctx)  ctx = { store, S, rerender(), chrome(), ding(), isDemo, prepararImagem(file, tipo) }
  *   FidPainel.atualizar() / FidPainel.html() / FidPainel.badge()
@@ -17,9 +18,12 @@
     { id: 'clientes', label: 'Clientes' },
     { id: 'premios', label: 'Prêmios' },
     { id: 'ranking', label: 'Ranking' },
+    { id: 'eventos', label: 'Clássicos' },
     { id: 'regras', label: 'Regras' },
   ];
-  const TIPO = { nivel: 'Bônus de nível', compra: 'Compra', indicacao: 'Indicação', boas_vindas: 'Boas-vindas', manual: 'Lançamento', resgate: 'Troca', estorno: 'Estorno', ajuste: 'Ajuste' };
+  const TIPO = { nivel: 'Bônus de nível', compra: 'Compra', indicacao: 'Indicação', boas_vindas: 'Boas-vindas', manual: 'Lançamento', resgate: 'Troca', estorno: 'Estorno', ajuste: 'Ajuste',
+    aniversario: 'Aniversário', transferencia: 'Transferência', validade: 'Pontos vencidos', evento: 'Clássico' };
+  const MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
   const STATUS = { pendente: 'Conferir', creditada: 'Creditada', recusada: 'Recusada', estornada: 'Estornada', entregue: 'Entregue', cancelado: 'Cancelado' };
 
   let ctx = null;
@@ -107,6 +111,7 @@
       if (P.tab === 'hoje' && !P.recentes) P.recentes = await store.fidRecentes();
       else if (P.tab === 'clientes' && !P.clientes) P.clientes = await store.fidClientes(P.busca);
       else if (P.tab === 'premios' && !P.premios) P.premios = await store.fidPremios();
+      else if (P.tab === 'eventos' && !P.eventos) P.eventos = await store.fidEventos();
       else if (P.tab === 'ranking' && !P.ranking) {
         const [rk, top] = await Promise.all([store.fidRanking ? store.fidRanking(null) : null, store.fidTopProdutos(null, P.dias)]);
         P.ranking = { rk, top };
@@ -123,6 +128,8 @@
     const tab = P.tab;
     // Redesenho (ex.: atualização automática) no meio da edição: guarda o que já foi digitado.
     if (tab === 'regras' && $('#fpRegras') && !P.jaLido) lerRegras();
+    if (tab === 'eventos' && $('#fpEvento')) lerEventoForm();
+    if (tab === 'premios' && $('#fpPremioForm') && P.premioEdit) lerPremioForm();
     P.jaLido = false;
     const r = regras();
     const intro = {
@@ -130,7 +137,8 @@
       clientes: 'Quem participa do programa, com o saldo e o extrato de cada um.',
       premios: 'O que o cliente pode trocar pelos pontos. Aparece na página da mesa na hora.',
       ranking: 'Os 10 clientes que mais ganharam pontos e os produtos mais pedidos nas notas.',
-      regras: 'Quanto vale cada real, dias com pontos em dobro e o regulamento.',
+      eventos: 'Dia de clássico: o cliente escolhe o time e, se ele vencer, os pontos do dia valem mais.',
+      regras: 'Quanto vale cada real, dias com pontos em dobro, aniversário, validade e o regulamento.',
     }[tab];
     setTimeout(carregarAba, 0);
     return `<div class="vhead"><div><h1>${esc(r.nome || 'Fidelidade')}</h1><p>${intro}</p></div>
@@ -138,7 +146,7 @@
       <div class="aj-tabs" role="tablist" aria-label="Seções da fidelidade">
         ${TABS.map((t) => `<button type="button" role="tab" aria-selected="${t.id === tab}" data-fp-tab="${t.id}">${t.label}${t.id === 'hoje' && badge() ? ` <span class="badge">${badge()}</span>` : ''}</button>`).join('')}
       </div>
-      ${{ hoje: tHoje, clientes: tClientes, premios: tPremios, ranking: tRanking, regras: tRegras }[tab]()}`;
+      ${{ hoje: tHoje, clientes: tClientes, premios: tPremios, ranking: tRanking, eventos: tEventos, regras: tRegras }[tab]()}`;
   }
 
   /* ---------- Hoje ---------- */
@@ -318,6 +326,8 @@
           <label class="field"><span>Nome completo</span><input class="input" name="nome" maxlength="80" value="${esc(c.nome)}" required></label>
           <label class="field"><span>E-mail</span><input class="input" name="email" type="email" maxlength="120" value="${esc(c.email || '')}"></label>
           <label class="field"><span>Celular</span><input class="input" name="telefone" type="tel" maxlength="16" value="${esc(tel(c.telefone))}"></label>
+          <label class="field"><span>Mês do aniversário</span><select class="input" name="aniversario"><option value="">Não informado</option>
+            ${MESES.map((m, i) => `<option value="${i + 1}" ${+c.aniversario_mes === i + 1 ? 'selected' : ''}>${m}</option>`).join('')}</select></label>
           <label class="check"><input type="checkbox" name="marketing" ${c.marketing ? 'checked' : ''}> <span>Aceita receber promoções</span></label>
           <div class="vhead-actions"><button type="submit" class="btn btn-cobalt btn-sm">Salvar</button><button type="button" class="btn btn-quiet btn-sm" data-fp-ficha="ver">Cancelar</button></div>
         </form>`
@@ -326,6 +336,7 @@
           <div><dt>Celular</dt><dd>${c.telefone ? `<a href="https://wa.me/55${F.soDigitos(c.telefone)}" target="_blank" rel="noopener">${esc(tel(c.telefone))}</a>` : '-'}</dd></div>
           <div><dt>E-mail</dt><dd>${c.email ? `<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>` : '-'}</dd></div>
           <div><dt>Desde</dt><dd>${data(c.criado_em)}</dd></div>
+          <div><dt>Aniversário</dt><dd>${c.aniversario_mes ? MESES[c.aniversario_mes - 1] : 'Não informado'}</dd></div>
           <div><dt>Código de indicação</dt><dd class="mono">${esc(c.codigo || '-')}</dd></div>
           ${c.indicado_por ? `<div><dt>Indicado por</dt><dd><button type="button" class="link" data-fp-cliente="${esc(c.indicado_por)}">${esc(c.indicado_por_nome || cpfOculto(c.indicado_por))}</button></dd></div>` : ''}
           <div><dt>Promoções</dt><dd>${c.marketing ? 'Aceita' : 'Não aceita'}</dd></div>
@@ -368,7 +379,7 @@
           ${!lista ? '<p class="muted">Carregando…</p>' : !lista.length ? '<p class="muted">Nenhum prêmio ainda. Comece por algo simples, como uma bebida ou uma sobremesa.</p>'
             : `<ul class="fp-premios">${lista.map((p) => `<li class="fp-premio ${p.ativo ? '' : 'is-off'}">
                 <div class="fp-premio-img">${p.imagem ? `<img src="${esc(p.imagem)}" alt="" loading="lazy">` : icon('gift')}</div>
-                <div class="fp-item-body"><b>${esc(p.nome)} ${p.nivel_min ? seloNivel(p.nivel_min, 'fp-selo--sm') : ''}</b><small>${pts(p.pontos)}${p.ativo ? '' : ' · escondido'}${p.descricao ? ` · ${esc(p.descricao)}` : ''}</small></div>
+                <div class="fp-item-body"><b>${esc(p.nome)} ${p.nivel_min ? seloNivel(p.nivel_min, 'fp-selo--sm') : ''}${p.aniversario ? '<span class="fp-selo fp-selo--sm fp-selo--aniv">Aniversário</span>' : ''}</b><small>${p.aniversario && !p.pontos ? 'De graça' : pts(p.pontos)}${p.ativo ? '' : ' · escondido'}${p.descricao ? ` · ${esc(p.descricao)}` : ''}</small></div>
                 <button type="button" class="icon-btn" data-fp-premio="${esc(p.id)}" aria-label="Editar ${esc(p.nome)}">${icon('edit')}</button>
               </li>`).join('')}</ul>`}
         </section>
@@ -386,13 +397,15 @@
       <label class="field"><span>Nome</span><input class="input" name="nome" maxlength="60" required value="${esc(p.nome || '')}" placeholder="Ex.: Caipirinha da casa"></label>
       <label class="field"><span>Descrição (opcional)</span><input class="input" name="descricao" maxlength="160" value="${esc(p.descricao || '')}"></label>
       <div class="fp-manual-row">
-        <label class="field"><span>Pontos</span><input class="input mono" name="pontos" type="number" min="1" max="1000000" required value="${esc(p.pontos || '')}"></label>
+        <label class="field"><span>Pontos</span><input class="input mono" name="pontos" type="number" min="${p.aniversario ? 0 : 1}" max="1000000" required value="${esc(p.pontos ?? '')}"></label>
         ${niveisCfg().length ? `<label class="field"><span>Quem pode trocar</span><select class="input" name="nivel_min">
           <option value="">Todos os clientes</option>
           ${niveisCfg().slice(1).map((l) => `<option value="${esc(l.id)}" ${p.nivel_min === l.id ? 'selected' : ''}>Nível ${esc(l.nome)} em diante</option>`).join('')}
         </select></label>` : ''}
       </div>
       <small class="help">Os prêmios aparecem para o cliente do que custa menos para o que custa mais.</small>
+      <label class="check"><input type="checkbox" name="aniversario" ${p.aniversario ? 'checked' : ''}> <span>Presente de aniversário: só no mês do aniversário do cliente, uma vez por ano (pode ser 0 ponto = de graça)</span></label>
+      ${p.aniversario && !(regras().aniversario || {}).ativo ? `<p class="note">${icon('alert')}<span>Ligue o <b>Aniversário</b> em Regras para este presente aparecer.</span></p>` : ''}
       <label class="check"><input type="checkbox" name="ativo" ${p.ativo !== false ? 'checked' : ''}> <span>Mostrar para os clientes</span></label>
       <div class="vhead-actions">
         <button type="submit" class="btn btn-cobalt btn-sm">Salvar prêmio</button>
@@ -400,6 +413,71 @@
         ${p.id ? `<button type="button" class="btn btn-danger btn-sm" data-fp-premio-del="${esc(p.id)}">${icon('trash')} Excluir</button>` : ''}
       </div>
     </form>`;
+  }
+
+  /* ---------- Clássicos ---------- */
+  const multEv = (m) => (+m === 2 ? 'Dobro' : +m === 3 ? 'Triplo' : `${String(+m).replace('.', ',')}x`);
+  function tEventos() {
+    const lista = P.eventos;
+    const ed = P.eventoEdit;
+    return `<div class="fp-grid">
+      <div class="aj-col">
+        <section class="panel stack">
+          <div class="fp-h"><h2>Dias de clássico</h2><button type="button" class="btn btn-cobalt btn-sm" data-fp-evento="novo">${icon('plus')} Novo clássico</button></div>
+          ${!lista ? '<p class="muted">Carregando…</p>' : !lista.length ? '<p class="muted">Nenhum clássico ainda. Ex.: Cruzeiro x Atlético no domingo, pontos em dobro para quem torcer pelo vencedor.</p>'
+            : `<ul class="fp-eventos">${lista.map(eventoItem).join('')}</ul>`}
+        </section>
+      </div>
+      <div class="aj-col">${ed ? eventoForm(ed) : `<section class="panel stack"><h2>Como funciona</h2>
+        <ol class="fp-passos"><li>Crie o clássico com os times, o dia e a hora do jogo.</li>
+          <li>O cliente escolhe o time na conta do clube até a hora do jogo (uma vez só).</li>
+          <li>Depois do jogo, lance o resultado aqui.</li>
+          <li>Quem torceu pelo vencedor ganha o bônus sobre os pontos das compras daquele dia, inclusive as notas conferidas depois.</li></ol></section>`}</div>
+    </div>`;
+  }
+  function eventoItem(e) {
+    const total = Object.values(e.torcida || {}).reduce((a, b) => a + b, 0);
+    const quando = `${dataBr(e.data)}${e.hora ? ` às ${e.hora}` : ''}`;
+    const placar = e.times.map((t) => `${esc(t)} <b>${num((e.torcida || {})[t] || 0)}</b>`).join(' · ');
+    return `<li class="fp-evento ${e.vencedor ? 'is-fim' : ''}">
+      <div class="fp-evento-h"><b>${esc(e.nome)}</b><span class="fp-st">${multEv(e.mult)}</span></div>
+      <small class="muted">${quando} · ${total} ${total === 1 ? 'torcedor' : 'torcedores'}: ${placar}</small>
+      ${e.vencedor ? `<p class="fp-evento-res">${e.vencedor === 'empate' ? 'Empate: ninguém ganhou bônus.' : `<b>${esc(e.vencedor)}</b> venceu · ${num(e.premiados || 0)} ${e.premiados === 1 ? 'cliente ganhou' : 'clientes ganharam'} ${pts(e.pontos_pagos || 0)} de bônus.`}</p>`
+        : e.aberta ? `<div class="vhead-actions"><span class="muted">Torcida aberta até o início do jogo.</span>
+            <button type="button" class="btn btn-line btn-sm" data-fp-evento="${esc(e.id)}">${icon('edit')} Editar</button>
+            <button type="button" class="btn btn-quiet btn-sm" data-fp-evento-del="${esc(e.id)}">${icon('trash')} Excluir</button></div>`
+        : `<div class="fp-evento-acoes"><span>Quem venceu?</span>${e.times.map((t) => `<button type="button" class="btn btn-cobalt btn-sm" data-fp-resultado="${esc(e.id)}" data-vencedor="${esc(t)}">${esc(t)}</button>`).join('')}
+            <button type="button" class="btn btn-line btn-sm" data-fp-resultado="${esc(e.id)}" data-vencedor="empate">Empate</button></div>`}
+    </li>`;
+  }
+  function eventoForm(e) {
+    const times = [...(e.times || []), '', ''].slice(0, Math.max(2, (e.times || []).length));
+    return `<form class="panel stack" id="fpEvento" novalidate>
+      <h2>${e.id ? 'Editar clássico' : 'Novo clássico'}</h2>
+      <div class="fp-manual-row">${times.map((t, i) => `<label class="field"><span>Time ${i + 1}</span><input class="input" name="time" maxlength="30" value="${esc(t)}" placeholder="${i ? 'Ex.: Atlético' : 'Ex.: Cruzeiro'}" required></label>`).join('')}</div>
+      <label class="field"><span>Nome (opcional)</span><input class="input" name="nome" maxlength="60" value="${esc(e.nome || '')}" placeholder="Ex.: Clássico mineiro"></label>
+      <div class="fp-manual-row">
+        ${campoData('data', e.data, 'Dia do jogo').replace(/value="[^"]*"/, `value="${esc(e.dataTxt ?? dataBr(e.data))}"`)}
+        ${campoHora('hora', e.hora, 'Início do jogo')}
+        <label class="field"><span>Pontos do dia valem</span><select class="input" name="mult">${[1.5, 2, 3].map((m) => `<option value="${m}" ${(+e.mult || 2) === m ? 'selected' : ''}>${multEv(m)}</option>`).join('')}</select></label>
+      </div>
+      <small class="help">A escolha do time fecha no início do jogo. Sem hora, fecha no fim do dia.</small>
+      <div class="vhead-actions">
+        <button type="submit" class="btn btn-cobalt btn-sm">Salvar clássico</button>
+        <button type="button" class="btn btn-quiet btn-sm" data-fp-evento="fechar">Cancelar</button>
+      </div>
+    </form>`;
+  }
+
+  // Guarda o que foi digitado no clássico (o painel redesenha sozinho de tempos em tempos).
+  function lerEventoForm() {
+    const f = $('#fpEvento');
+    if (!f || !P.eventoEdit) return;
+    Object.assign(P.eventoEdit, {
+      nome: f.elements.nome.value, hora: f.elements.hora.value, mult: +f.elements.mult.value,
+      data: dataIso(f.elements.data.value) || P.eventoEdit.data, dataTxt: f.elements.data.value,
+      times: [...f.querySelectorAll('[name=time]')].map((x) => x.value),
+    });
   }
 
   /* ---------- Regras ---------- */
@@ -445,6 +523,9 @@
             <option value="compra" ${ind.quando === 'compra' ? 'selected' : ''}>Na primeira compra do indicado (mais seguro)</option>
           </select></label>
         </section>
+        ${anivForm(r)}
+        ${transfForm(r)}
+        ${validadeForm(r)}
         ${sefazForm(r)}
         <section class="panel stack">
           <div class="set-row fp-row"><div><h3>Lançamento manual</h3><p>Deixa a equipe lançar compras sem nota (ex.: delivery) na ficha do cliente. Fica registrado quem lançou.</p></div>
@@ -464,6 +545,43 @@
       <div class="fp-salvar" ${P.regrasSujas ? '' : 'hidden'}><span class="fp-salvar-txt">Mudanças não salvas</span><button type="submit" class="btn btn-cobalt">${icon('check')} Salvar regras</button>
         <button type="button" class="btn btn-quiet" data-fp-regras="desfazer">Desfazer</button></div>
     </form>`;
+  }
+  function anivForm(r) {
+    const a = r.aniversario || {};
+    return `<section class="panel stack">
+      <div class="set-row fp-row"><div><h3>Aniversário</h3><p>O cliente informa o mês do aniversário no cadastro. No mês dele, ganha presente.</p></div>
+        <label class="switch"><input type="checkbox" name="anAtivo" ${a.ativo ? 'checked' : ''} aria-label="Aniversário"><span></span></label></div>
+      <div class="fp-manual-row">
+        <label class="field"><span>Pontos nas compras do mês</span><select class="input" name="anMult">${[[1, 'Normal'], [1.5, '1,5x'], [2, 'Dobro'], [3, 'Triplo']]
+          .map(([m, t]) => `<option value="${m}" ${(+a.mult || 1) === m ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+        <label class="field"><span>Pontos de presente</span><input class="input mono" name="anBonus" type="number" min="0" max="100000" value="${esc(a.bonus || 0)}"></label>
+      </div>
+      <small class="help">Os pontos de presente entram uma vez por ano, quando o cliente abre a conta ou compra no mês do aniversário. Para dar um prêmio (ex.: uma sobremesa), crie o prêmio na aba Prêmios e marque “Presente de aniversário”.</small>
+    </section>`;
+  }
+  function transfForm(r) {
+    const t = r.transferencia || {};
+    return `<section class="panel stack">
+      <div class="set-row fp-row"><div><h3>Transferir pontos</h3><p>O cliente manda pontos para um amigo do clube (pelo CPF ou código de indicação), confirmando com o PIN.</p></div>
+        <label class="switch"><input type="checkbox" name="trAtivo" ${t.ativo ? 'checked' : ''} aria-label="Transferir pontos"><span></span></label></div>
+      <div class="fp-manual-row">
+        <label class="field"><span>Mínimo por transferência</span><input class="input mono" name="trMinimo" type="number" min="1" max="1000000" value="${esc(t.minimo || 1)}"></label>
+        <label class="field"><span>Máximo por dia (0 = sem limite)</span><input class="input mono" name="trMaximo" type="number" min="0" max="10000000" value="${esc(t.maximoDia || 0)}"></label>
+      </div>
+      <small class="help">Pontos transferidos não contam no ranking nem nos níveis.</small>
+    </section>`;
+  }
+  function validadeForm(r) {
+    const v = r.validade || {};
+    return `<section class="panel stack">
+      <div class="set-row fp-row"><div><h3>Validade dos pontos</h3><p>Pontos que não forem usados vencem depois do prazo (os mais antigos primeiro). Pontos vencidos saem do saldo e do ranking.</p></div>
+        <label class="switch"><input type="checkbox" name="vaAtivo" ${v.ativo ? 'checked' : ''} aria-label="Validade dos pontos"><span></span></label></div>
+      <div class="fp-manual-row">
+        <label class="field"><span>Os pontos valem por</span><input class="input mono" name="vaQtd" type="number" min="1" max="3650" value="${esc(v.quantidade || 12)}"></label>
+        <label class="field"><span>&nbsp;</span><select class="input" name="vaUnidade"><option value="meses" ${v.unidade !== 'dias' ? 'selected' : ''}>meses</option><option value="dias" ${v.unidade === 'dias' ? 'selected' : ''}>dias</option></select></label>
+      </div>
+      <small class="help">${v.ativo && v.desde ? `Ligada em ${dataBr(v.desde)}: os pontos ganhos antes contam a partir desse dia.` : 'Ao ligar, os pontos que os clientes já têm começam a contar a partir de hoje (ninguém perde pontos na hora).'} O cliente vê na conta quanto vai vencer nos próximos 30 dias.</small>
+    </section>`;
   }
   // Conferência automática na SEFAZ: opcional, cobrada por nota conferida junto com a mensalidade.
   function sefazForm(r) {
@@ -571,6 +689,13 @@
     if (v('sefazAtivo').checked !== !!(r.sefaz && r.sefaz.ativo)) r.sefaz = { ativo: v('sefazAtivo').checked, em: new Date().toISOString(), por: (ctx.S.user && ctx.S.user.nome) || '' };
     r.indicacao = { ativo: v('indAtivo').checked, indicador: Math.round(+v('indIndicador').value || 0), indicado: Math.round(+v('indIndicado').value || 0), quando: v('indQuando').value === 'compra' ? 'compra' : 'cadastro' };
     r.manual = v('manual').checked;
+    r.aniversario = { ativo: v('anAtivo').checked, mult: +v('anMult').value || 1, bonus: Math.round(+v('anBonus').value || 0) };
+    r.transferencia = { ativo: v('trAtivo').checked, minimo: Math.round(+v('trMinimo').value || 1), maximoDia: Math.round(+v('trMaximo').value || 0) };
+    const vaAntes = r.validade || {};
+    const vaAtivo = v('vaAtivo').checked;
+    r.validade = { ativo: vaAtivo, quantidade: Math.round(+v('vaQtd').value || 12), unidade: v('vaUnidade').value === 'dias' ? 'dias' : 'meses',
+      // Dia em que a regra foi ligada: o que foi ganho antes conta a partir dele.
+      desde: vaAtivo ? (vaAntes.ativo && vaAntes.desde) || new Date().toLocaleDateString('sv-SE') : null };
     r.regulamento = v('regulamento').value.trim();
     r.boosts = [...f.querySelectorAll('.fp-boost')].map((el, i) => {
       const q = (n) => el.querySelector(`[name="${n}"]`);
@@ -620,6 +745,12 @@
     if (ruim) return `CNPJ incompleto: ${ruim}. São 14 números.`;
     if (r.ativo && !r.cnpjs.length) return 'Para colocar no ar, informe o CNPJ que sai nas notas.';
     if (!(r.prazoDias >= 1 && r.prazoDias <= 90)) return 'O prazo para ler a nota vai de 1 a 90 dias.';
+    if (r.aniversario.bonus < 0 || r.aniversario.bonus > 100000) return 'Aniversário: os pontos de presente vão de 0 a 100.000.';
+    if (r.transferencia.minimo < 1) return 'Transferir pontos: o mínimo é pelo menos 1 ponto.';
+    if (r.transferencia.maximoDia && r.transferencia.maximoDia < r.transferencia.minimo) return 'Transferir pontos: o máximo por dia precisa ser maior que o mínimo.';
+    if (r.validade.ativo && !(r.validade.quantidade >= 1 && r.validade.quantidade <= (r.validade.unidade === 'dias' ? 3650 : 120))) {
+      return r.validade.unidade === 'dias' ? 'Validade: de 1 a 3.650 dias.' : 'Validade: de 1 a 120 meses.';
+    }
     for (const b of r.boosts) {
       if (!b.dias.length && !b.de && !b.ate && !b.inicio && !b.fim) return `${b.nome || 'Dia com mais pontos'}: marque os dias, o horário ou as datas em que vale. Para não usar, toque em Remover.`;
       if ((b.de && !b.ate) || (!b.de && b.ate)) return `${b.nome || 'Dia com mais pontos'}: preencha o horário de início e de fim, ou deixe os dois vazios.`;
@@ -865,6 +996,41 @@
       if (P.premioEdit) setTimeout(() => { const i = $('#fpPremioForm [name=nome]'); i && i.focus(); }, 60);
       return;
     }
+    const ev = t.closest('[data-fp-evento]');
+    if (ev) {
+      const v = ev.dataset.fpEvento;
+      P.eventoEdit = v === 'fechar' ? null : v === 'novo' ? { times: ['', ''], data: '', hora: '', mult: 2, nome: '' } : { ...(P.eventos || []).find((x) => x.id === v) };
+      ctx.rerender();
+      if (P.eventoEdit) setTimeout(() => { const i = $('#fpEvento [name=time]'); i && i.focus(); }, 60);
+      return;
+    }
+    const evd = t.closest('[data-fp-evento-del]');
+    if (evd) {
+      if (!confirm('Excluir este clássico? A escolha dos torcedores também é apagada.')) return;
+      try {
+        await ctx.store.fidEventoExcluir(evd.dataset.fpEventoDel);
+        P.eventos = await ctx.store.fidEventos();
+        toast('Clássico excluído.');
+      } catch (ex) {
+        toast(erroMsg(ex), { tone: 'error' });
+      }
+      return ctx.rerender();
+    }
+    const res = t.closest('[data-fp-resultado]');
+    if (res) {
+      const venc = res.dataset.vencedor;
+      if (!confirm(venc === 'empate' ? 'Confirmar empate? Ninguém ganha o bônus. Não dá para mudar depois.'
+        : `Confirmar vitória do ${venc}? Quem torceu por ele ganha o bônus agora. Não dá para mudar depois.`)) return;
+      res.disabled = true;
+      try {
+        const r = await ctx.store.fidEventoResultado(res.dataset.fpResultado, venc);
+        toast(venc === 'empate' ? 'Empate registrado.' : `${num(r.premiados)} ${r.premiados === 1 ? 'cliente ganhou' : 'clientes ganharam'} ${pts(r.pontos)} de bônus.`, { tone: 'ok', ms: 5000 });
+        P.eventos = await ctx.store.fidEventos();
+      } catch (ex) {
+        toast(erroMsg(ex), { tone: 'error' });
+      }
+      return ctx.rerender();
+    }
     const pd = t.closest('[data-fp-premio-del]');
     if (pd) {
       if (!confirm('Excluir este prêmio? Quem já trocou continua com o código. Para só esconder, desmarque “Mostrar para os clientes”.')) return;
@@ -968,7 +1134,7 @@
     if (!f) return P.premioEdit;
     const v = (n) => f.elements[n];
     Object.assign(P.premioEdit, {
-      nome: v('nome').value, descricao: v('descricao').value, pontos: v('pontos').value, ativo: v('ativo').checked,
+      nome: v('nome').value, descricao: v('descricao').value, pontos: v('pontos').value, ativo: v('ativo').checked, aniversario: v('aniversario').checked,
       nivel_min: v('nivel_min') ? v('nivel_min').value || null : P.premioEdit.nivel_min || null,
     });
     return P.premioEdit;
@@ -985,6 +1151,10 @@
       marcarSujo();
       if (t.name === 'nvBase') $('.fp-meses').hidden = t.value !== 'meses';
       if (t.name === 'sefazAtivo') $('.fp-conf').dataset.sefaz = t.checked ? 'on' : 'off';
+    }
+    if (t.name === 'aniversario' && t.closest('#fpPremioForm')) {
+      lerPremioForm();
+      return ctx.rerender();
     }
     if (t.matches('[data-fp-xml]')) {
       const files = [...(t.files || [])];
@@ -1055,7 +1225,7 @@
   async function onSubmit(e) {
     const f = e.target;
     const id = f.id || (f.dataset.fpAprovar ? 'aprovar' : '');
-    if (!['fpRegras', 'fpPremioForm', 'fpEditar', 'fpManual', 'fpLancar', 'fpLancar2', 'aprovar'].includes(id)) return;
+    if (!['fpRegras', 'fpPremioForm', 'fpEditar', 'fpManual', 'fpLancar', 'fpLancar2', 'aprovar', 'fpEvento'].includes(id)) return;
     e.preventDefault();
     const btn = f.querySelector('[type=submit]');
     if (btn) btn.disabled = true;
@@ -1083,6 +1253,19 @@
         redesenhar();
         return;
       }
+      if (id === 'fpEvento') {
+        const v = (n) => f.elements[n];
+        const d = dataIso(v('data').value);
+        if (!d) throw new Error('Informe o dia do jogo (dd/mm/aaaa).');
+        if (!horaOk(v('hora').value.trim())) throw new Error('Hora inválida. Use hh:mm.');
+        await ctx.store.fidEventoSalvar({ id: P.eventoEdit.id || null, nome: v('nome').value, data: d, hora: v('hora').value.trim(),
+          mult: +v('mult').value, times: [...f.querySelectorAll('[name=time]')].map((x) => x.value) });
+        P.eventoEdit = null;
+        P.eventos = await ctx.store.fidEventos();
+        toast('Clássico salvo. Já aparece para os clientes.', { tone: 'ok' });
+        ctx.rerender();
+        return;
+      }
       if (id === 'fpPremioForm') {
         const p = lerPremioForm();
         await ctx.store.fidSalvarPremio(p);
@@ -1095,7 +1278,8 @@
       if (id === 'fpEditar') {
         const v = (n) => f.elements[n];
         if (!v('nome').value.trim()) throw new Error('Informe o nome.');
-        await ctx.store.fidEditarCliente(P.ficha.cliente.cpf, { nome: v('nome').value, email: v('email').value, telefone: v('telefone').value, marketing: v('marketing').checked });
+        await ctx.store.fidEditarCliente(P.ficha.cliente.cpf, { nome: v('nome').value, email: v('email').value, telefone: v('telefone').value, marketing: v('marketing').checked,
+          aniversario: v('aniversario').value || null });
         P.ficha = await ctx.store.fidCliente(P.ficha.cliente.cpf);
         P.clientes = null;
         toast('Cadastro atualizado.', { tone: 'ok' });

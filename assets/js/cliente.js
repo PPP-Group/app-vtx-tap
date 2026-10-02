@@ -559,10 +559,10 @@
     switch (w.tipo) {
       case 'cardapio': {
         if (!menuCount()) return '';
-        const cats = menuMesa().map((c) => c.nome).join(' · ');
+        // Só o convite: as categorias e os pratos aparecem ao abrir.
         return `<button type="button" class="tile tile--menu" data-open="sh-menu">
           <span class="tile-menu-count">${icon('book')} ${menuCount()} itens</span>
-          <div><h3>Cardápio</h3><p>${esc(cats)}</p></div>
+          <div><h3>Cardápio</h3><p>Toque para ver o cardápio completo</p></div>
           <span class="tile-go">${icon('arrow')}</span>
         </button>`;
       }

@@ -776,3 +776,24 @@ button.fid-nivel { cursor: pointer; }
 .dish-op { font-size: 13px; color: var(--ink-2); margin-top: 4px; }
 .dish-op span { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .price small { font-size: 11px; font-weight: 500; color: var(--muted); }
+
+/* Clube: aniversário, validade, transferência e dia de clássico. */
+.fid-aniv { background: var(--cobalt-soft); }
+.fid-aniv .i, .fid-vence .i { width: 18px; height: 18px; flex: none; }
+.fid-aniv .i { color: var(--cobalt); }
+.fid-vence { background: var(--pepper-soft); }
+.fid-vence .i { color: var(--pepper); }
+.fid-aniv-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 10px; padding: 14px 16px; border-radius: 16px; background: var(--surface); box-shadow: var(--shadow-1); }
+.fid-aniv-form .field { margin: 0; }
+.fid-validade { display: flex; gap: 8px; align-items: flex-start; font-size: 13.5px; }
+.fid-validade .i { width: 16px; height: 16px; flex: none; margin-top: 2px; }
+.fid-selo--aniv { --nv: var(--cobalt); }
+.fid-premio--aniv { box-shadow: var(--shadow-1), inset 0 0 0 2px var(--cobalt-soft); }
+.fid-evento { display: grid; gap: 8px; padding: 14px 16px; border-radius: 16px; background: var(--surface); box-shadow: var(--shadow-1), inset 4px 0 0 var(--leaf); }
+.fid-evento.is-fim { box-shadow: var(--shadow-1), inset 4px 0 0 var(--muted); }
+.fid-evento-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.fid-evento-top b { font-size: 16px; }
+.fid-evento-top small { color: var(--muted); font-size: 13px; }
+.fid-evento p { margin: 0; font-size: 14px; }
+.fid-times { display: flex; flex-wrap: wrap; gap: 8px; }
+.fid-times .btn { flex: 1 1 120px; }

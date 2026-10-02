@@ -1056,7 +1056,10 @@ language sql stable security definer set search_path = public as $$
     'ativo', false, 'nome', 'Clube de pontos', 'pontosPorReal', 1, 'boosts', '[]'::jsonb,
     'cnpjs', '[]'::jsonb, 'prazoDias', 7, 'inicio', null, 'manual', false, 'regulamento', '',
     'fuso', 'America/Sao_Paulo', 'indicacao', jsonb_build_object('ativo', true, 'indicador', 50, 'indicado', 20, 'quando', 'cadastro'),
-    'niveis', jsonb_build_object('ativo', false, 'base', 'sempre', 'meses', 12, 'lista', '[]'::jsonb)
+    'niveis', jsonb_build_object('ativo', false, 'base', 'sempre', 'meses', 12, 'lista', '[]'::jsonb),
+    'aniversario', jsonb_build_object('ativo', false, 'mult', 1, 'bonus', 0),
+    'transferencia', jsonb_build_object('ativo', true, 'minimo', 10, 'maximoDia', 0),
+    'validade', jsonb_build_object('ativo', false, 'quantidade', 12, 'unidade', 'meses', 'desde', null)
   ) || coalesce((select fidelidade from public.restaurantes where id = p_restaurante), '{}'::jsonb);
 $$;
 
@@ -1175,7 +1178,7 @@ begin
                   then least(greatest(public.num_ou(n ->> 'meses', 12), 1), 60)::int end;
   return greatest(coalesce((select sum(pontos) from public.fid_movimentos
     where restaurante_id = p_restaurante and cpf = p_cpf
-      and (tipo in ('compra', 'manual') or (tipo in ('estorno', 'ajuste') and resgate_id is null))
+      and (tipo in ('compra', 'manual', 'evento') or (tipo in ('estorno', 'ajuste') and resgate_id is null))
       and (v_meses is null or criado_em > now() - make_interval(months => v_meses))), 0), 0)::int;
 end $$;
 
@@ -1196,19 +1199,37 @@ begin
       'minimo', (prox ->> 'minimo')::int, 'falta', (prox ->> 'minimo')::int - q) end);
 end $$;
 
--- Pontos de uma compra: valor x pontos por real x dia com mais pontos x bônus do nível.
+-- Pontos de uma compra: valor x pontos por real x (dia com mais pontos ou mês do aniversário, o maior)
+-- x bônus do nível x clássico (time do cliente venceu no dia da compra).
 create or replace function public.fid_calcular(p_restaurante uuid, p_valor numeric, p_quando timestamptz, p_cpf text default null) returns jsonb
 language plpgsql stable security definer set search_path = public as $$
 declare
-  ppr numeric := least(greatest(public.num_ou(public.fid_cfg(p_restaurante) ->> 'pontosPorReal', 1), 0), 1000);
+  c jsonb := public.fid_cfg(p_restaurante);
+  ppr numeric := least(greatest(public.num_ou(c ->> 'pontosPorReal', 1), 0), 1000);
   b jsonb := public.fid_boost(p_restaurante, p_quando);
+  bm numeric := (b ->> 'mult')::numeric; bnome text := b ->> 'nome';
   nv jsonb := case when p_cpf is null then null else public.fid_nivel(p_restaurante, p_cpf) end;
   mn numeric := coalesce((nv ->> 'mult')::numeric, 1);
-  m numeric := round((b ->> 'mult')::numeric * mn, 2);
+  am numeric := least(greatest(public.num_ou(c -> 'aniversario' ->> 'mult', 1), 1), 10);
+  em numeric := 1; enome text; m numeric;
+  dia date := (p_quando at time zone public.fid_fuso(p_restaurante))::date;
 begin
+  if p_cpf is not null and coalesce(c -> 'aniversario' ->> 'ativo', '') = 'true' and am > bm
+     and exists (select 1 from public.fid_clientes where restaurante_id = p_restaurante and cpf = p_cpf
+                  and aniversario_mes = extract(month from dia)) then
+    bm := am; bnome := 'mês do aniversário';
+  end if;
+  if p_cpf is not null then
+    select e.mult, e.nome into em, enome from public.fid_eventos e
+      join public.fid_torcidas t on t.evento_id = e.id and t.cpf = p_cpf and t.time = e.vencedor
+     where e.restaurante_id = p_restaurante and e.data = dia
+     order by e.mult desc limit 1;
+    em := coalesce(em, 1);
+  end if;
+  m := round(bm * mn * em, 2);
   return jsonb_build_object(
     'pontos', floor(greatest(coalesce(p_valor, 0), 0) * ppr * m)::int,
-    'mult', m, 'boost', b ->> 'nome', 'nivel', case when mn > 1 then nv ->> 'nome' end);
+    'mult', m, 'boost', nullif(concat_ws(' · ', bnome, case when em > 1 then enome end), ''), 'nivel', case when mn > 1 then nv ->> 'nome' end);
 end $$;
 
 create or replace function public.brl(p numeric) returns text
@@ -1236,6 +1257,9 @@ create table if not exists public.fid_clientes (
 );
 alter table public.fid_clientes add column if not exists nivel text;
 alter table public.fid_clientes add column if not exists niveis_bonus text[] not null default '{}';
+-- Mês do aniversário (pedido no cadastro) e o ano em que o bônus de aniversário já foi pago.
+alter table public.fid_clientes add column if not exists aniversario_mes smallint check (aniversario_mes between 1 and 12);
+alter table public.fid_clientes add column if not exists aniversario_ano int;
 create index if not exists fid_clientes_indicado_idx on public.fid_clientes (restaurante_id, indicado_por);
 
 create table if not exists private.fid_pins (
@@ -1274,7 +1298,8 @@ create table if not exists public.fid_movimentos (
 );
 alter table public.fid_movimentos drop constraint if exists fid_movimentos_tipo_check;
 alter table public.fid_movimentos add constraint fid_movimentos_tipo_check
-  check (tipo in ('compra', 'indicacao', 'boas_vindas', 'manual', 'resgate', 'estorno', 'ajuste', 'nivel'));
+  check (tipo in ('compra', 'indicacao', 'boas_vindas', 'manual', 'resgate', 'estorno', 'ajuste', 'nivel',
+                  'aniversario', 'transferencia', 'validade', 'evento'));
 create index if not exists fid_movimentos_cliente_idx on public.fid_movimentos (restaurante_id, cpf, criado_em desc);
 create index if not exists fid_movimentos_rest_idx on public.fid_movimentos (restaurante_id, criado_em desc);
 
@@ -1327,6 +1352,11 @@ create table if not exists public.fid_premios (
   criado_em      timestamptz not null default now()
 );
 alter table public.fid_premios add column if not exists nivel_min text check (char_length(nivel_min) <= 24);
+-- Presente de aniversário: só no mês do aniversário do cliente, uma vez por ano (pode ser de graça).
+alter table public.fid_premios add column if not exists aniversario boolean not null default false;
+alter table public.fid_premios drop constraint if exists fid_premios_pontos_check;
+alter table public.fid_premios add constraint fid_premios_pontos_check
+  check (pontos between 1 and 1000000 or (aniversario and pontos = 0));
 create index if not exists fid_premios_rest_idx on public.fid_premios (restaurante_id, ordem);
 
 -- Resgates: o cliente troca os pontos e mostra o código ao garçom.
@@ -1445,6 +1475,7 @@ begin
               then ' (' || replace(rtrim(rtrim(to_char((calc ->> 'mult')::numeric, 'FM990.99'), '0'), '.'), '.', ',') || 'x)' else '' end,
     p_valor, (calc ->> 'mult')::numeric, p_chave, null, p_por);
   perform public.fid_bonus_indicacao(n.restaurante_id, n.cpf);
+  perform public.fid_bonus_aniversario(n.restaurante_id, n.cpf);
   return pts;
 end $$;
 
@@ -1565,9 +1596,23 @@ begin
         'meses', least(greatest(public.num_ou(c -> 'niveis' ->> 'meses', 12), 1), 60)::int,
         'lista', public.fid_niveis(p_restaurante))
       else jsonb_build_object('ativo', false) end,
+    'aniversario', case when coalesce(c -> 'aniversario' ->> 'ativo', '') = 'true' then jsonb_build_object('ativo', true,
+        'mult', least(greatest(public.num_ou(c -> 'aniversario' ->> 'mult', 1), 1), 10),
+        'bonus', least(greatest(public.num_ou(c -> 'aniversario' ->> 'bonus', 0), 0), 100000)::int)
+      else jsonb_build_object('ativo', false) end,
+    'transferencia', case when coalesce(c -> 'transferencia' ->> 'ativo', '') = 'true' then jsonb_build_object('ativo', true,
+        'minimo', least(greatest(public.num_ou(c -> 'transferencia' ->> 'minimo', 1), 1), 1000000)::int,
+        'maximoDia', least(greatest(public.num_ou(c -> 'transferencia' ->> 'maximoDia', 0), 0), 10000000)::int)
+      else jsonb_build_object('ativo', false) end,
+    'validade', case when public.fid_validade(p_restaurante) is not null then jsonb_build_object('ativo', true,
+        'quantidade', least(greatest(public.num_ou(c -> 'validade' ->> 'quantidade', 12), 1), 3650)::int,
+        'unidade', case when c -> 'validade' ->> 'unidade' = 'dias' then 'dias' else 'meses' end)
+      else jsonb_build_object('ativo', false) end,
+    'eventos', public.fid_eventos_publicos(p_restaurante),
     'premios', coalesce((select jsonb_agg(jsonb_build_object('id', id, 'nome', nome, 'descricao', descricao, 'pontos', pontos, 'imagem', imagem,
-          'nivel_min', nivel_min) order by ordem, pontos, nome)
-        from public.fid_premios where restaurante_id = p_restaurante and ativo), '[]'::jsonb));
+          'nivel_min', nivel_min, 'aniversario', aniversario) order by aniversario desc, ordem, pontos, nome)
+        from public.fid_premios where restaurante_id = p_restaurante and ativo
+         and (not aniversario or coalesce(c -> 'aniversario' ->> 'ativo', '') = 'true')), '[]'::jsonb));
 end $$;
 
 -- Achar a conta pelo CPF: só o primeiro nome e o saldo.
@@ -1580,8 +1625,12 @@ begin
   if not public.equipe_pode_tentar('fid-consulta:' || public.ip_do_pedido(), 120, 10) then
     return jsonb_build_object('status', 'erro', 'mensagem', 'Muitas consultas seguidas. Aguarde alguns minutos.');
   end if;
+  if not exists (select 1 from public.fid_clientes where restaurante_id = p_restaurante and cpf = v_cpf) then
+    return jsonb_build_object('status', 'novo');
+  end if;
+  perform public.fid_vencer(p_restaurante, v_cpf);
+  perform public.fid_bonus_aniversario(p_restaurante, v_cpf);
   select * into cli from public.fid_clientes where restaurante_id = p_restaurante and cpf = v_cpf;
-  if not found then return jsonb_build_object('status', 'novo'); end if;
   return jsonb_build_object('status', 'ok', 'nome', split_part(cli.nome, ' ', 1), 'pontos', cli.pontos,
     'nivel', public.fid_nivel(p_restaurante, v_cpf),
     'pendentes', (select count(*) from public.fid_notas where restaurante_id = p_restaurante and cpf = v_cpf and status = 'pendente'),
@@ -1611,8 +1660,9 @@ begin
   return v_token;
 end $$;
 
+drop function if exists public.fid_cadastrar(uuid, text, text, text, text, text, boolean, text);
 create or replace function public.fid_cadastrar(p_restaurante uuid, p_cpf text, p_nome text, p_email text, p_telefone text,
-  p_pin text, p_marketing boolean default false, p_indicacao text default null) returns jsonb
+  p_pin text, p_marketing boolean default false, p_indicacao text default null, p_aniversario int default null) returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare
   v_cpf   text := regexp_replace(coalesce(p_cpf, ''), '[^0-9]', '', 'g');
@@ -1633,6 +1683,7 @@ begin
     when char_length(v_email) > 120 or v_email !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' then 'E-mail inválido.'
     when v_tel !~ '^[1-9][0-9]{9,10}$' then 'Telefone inválido. Use DDD + número.'
     when coalesce(p_pin, '') !~ '^[0-9]{4}$' then 'O PIN tem 4 números.'
+    when p_aniversario is null or p_aniversario not between 1 and 12 then 'Escolha o mês do seu aniversário.'
   end;
   if erro is not null then return jsonb_build_object('status', 'erro', 'mensagem', erro); end if;
   if not public.equipe_pode_tentar('fid-cadastro:' || public.ip_do_pedido(), 40, 60) then
@@ -1651,8 +1702,8 @@ begin
     v_codigo := public.novo_codigo(6);
     exit when not exists (select 1 from public.fid_clientes where restaurante_id = p_restaurante and codigo = v_codigo);
   end loop;
-  insert into public.fid_clientes (restaurante_id, cpf, nome, email, telefone, codigo, indicado_por, marketing)
-  values (p_restaurante, v_cpf, v_nome, v_email, v_tel, v_codigo, v_indicador, coalesce(p_marketing, false));
+  insert into public.fid_clientes (restaurante_id, cpf, nome, email, telefone, codigo, indicado_por, marketing, aniversario_mes)
+  values (p_restaurante, v_cpf, v_nome, v_email, v_tel, v_codigo, v_indicador, coalesce(p_marketing, false), p_aniversario);
   insert into private.fid_pins (restaurante_id, cpf, pin_hash)
   values (p_restaurante, v_cpf, extensions.crypt(p_pin, extensions.gen_salt('bf')));
   -- Indicação paga no cadastro (padrão) ou só na primeira compra, conforme as regras.
@@ -1667,6 +1718,8 @@ begin
    where p.restaurante_id = p_restaurante and p.status = 'entregue' and coalesce(p.fid_situacao, 'sem_cadastro') = 'sem_cadastro'
      and (p.cpf = v_cpf or (p.cpf is null and p.cliente ->> 'telefone' = v_tel))
      and p.criado_em > now() - make_interval(days => public.fid_prazo(p_restaurante));
+  -- Cadastrou no mês do aniversário: já ganha o presente.
+  perform public.fid_bonus_aniversario(p_restaurante, v_cpf);
   return jsonb_build_object('status', 'ok', 'token', public.fid_nova_sessao(p_restaurante, v_cpf));
 end $$;
 
@@ -1706,11 +1759,25 @@ begin
   select s.restaurante_id, s.cpf into v_r, v_cpf from private.fid_sessoes s
    where s.token_hash = public.hash_token(p_token) and s.criado_em > now() - interval '180 days';
   if v_r is null then return jsonb_build_object('status', 'sem_sessao'); end if;
+  if not exists (select 1 from public.fid_clientes where restaurante_id = v_r and cpf = v_cpf) then
+    return jsonb_build_object('status', 'sem_sessao');
+  end if;
+  perform public.fid_vencer(v_r, v_cpf);
+  perform public.fid_bonus_aniversario(v_r, v_cpf);
   select * into cli from public.fid_clientes where restaurante_id = v_r and cpf = v_cpf;
-  if not found then return jsonb_build_object('status', 'sem_sessao'); end if;
   return jsonb_build_object('status', 'ok',
     'cpf', cli.cpf, 'nome', cli.nome, 'email', cli.email, 'telefone', cli.telefone, 'pontos', cli.pontos,
     'codigo', cli.codigo, 'marketing', cli.marketing, 'criado_em', cli.criado_em,
+    'aniversario_mes', cli.aniversario_mes,
+    'aniversariante', cli.aniversario_mes = extract(month from now() at time zone public.fid_fuso(v_r)),
+    'a_vencer', public.fid_a_vencer(v_r, v_cpf),
+    'torcidas', coalesce((select jsonb_object_agg(t.evento_id, t.time) from public.fid_torcidas t
+        join public.fid_eventos e on e.id = t.evento_id
+       where t.restaurante_id = v_r and t.cpf = v_cpf and e.data > now() - interval '10 days'), '{}'::jsonb),
+    'presentes_ano', coalesce((select jsonb_agg(distinct x.premio_id) from public.fid_resgates x
+        join public.fid_premios p on p.id = x.premio_id and p.aniversario
+       where x.restaurante_id = v_r and x.cpf = v_cpf and x.status <> 'cancelado'
+         and extract(year from x.criado_em at time zone public.fid_fuso(v_r)) = extract(year from now() at time zone public.fid_fuso(v_r))), '[]'::jsonb),
     'nivel', public.fid_atualizar_nivel(v_r, v_cpf, false),
     'indicacoes', (select count(*) from public.fid_clientes where restaurante_id = v_r and indicado_por = v_cpf),
     'notas', coalesce((select jsonb_agg(jsonb_build_object('chave', n.chave, 'status', n.status, 'valor', coalesce(n.valor, n.valor_informado),
@@ -1817,6 +1884,24 @@ begin
   if not public.fid_no_ar(v_r) then return jsonb_build_object('status', 'inativo'); end if;
   select * into p from public.fid_premios where id = p_premio and restaurante_id = v_r and ativo;
   if not found then return jsonb_build_object('status', 'erro', 'mensagem', 'Este prêmio não está mais disponível.'); end if;
+  perform public.fid_vencer(v_r, v_cpf);
+  -- Presente de aniversário: só no mês do aniversário, uma vez por ano.
+  if p.aniversario then
+    select * into cli from public.fid_clientes where restaurante_id = v_r and cpf = v_cpf;
+    if coalesce(public.fid_cfg(v_r) -> 'aniversario' ->> 'ativo', '') <> 'true' then
+      return jsonb_build_object('status', 'erro', 'mensagem', 'Este prêmio não está mais disponível.');
+    end if;
+    if cli.aniversario_mes is null then
+      return jsonb_build_object('status', 'erro', 'mensagem', 'Informe o mês do seu aniversário na sua conta para liberar o presente.');
+    end if;
+    if cli.aniversario_mes <> extract(month from now() at time zone public.fid_fuso(v_r)) then
+      return jsonb_build_object('status', 'erro', 'mensagem', 'Este presente é só no mês do seu aniversário.');
+    end if;
+    if exists (select 1 from public.fid_resgates where restaurante_id = v_r and cpf = v_cpf and premio_id = p.id and status <> 'cancelado'
+                and extract(year from criado_em at time zone public.fid_fuso(v_r)) = extract(year from now() at time zone public.fid_fuso(v_r))) then
+      return jsonb_build_object('status', 'erro', 'mensagem', 'Você já pegou este presente de aniversário este ano.');
+    end if;
+  end if;
   -- Prêmio exclusivo de um nível (se o nível não existe mais, vale para todos).
   if p.nivel_min is not null then
     select (i - 1)::int into v_min from jsonb_array_elements(public.fid_niveis(v_r)) with ordinality t(l, i) where l ->> 'id' = p.nivel_min;
@@ -1837,7 +1922,9 @@ begin
   v_cod := lpad((((get_byte(b, 0) << 8) | get_byte(b, 1)) % 10000)::text, 4, '0');
   insert into public.fid_resgates (restaurante_id, cpf, premio_id, premio_nome, pontos, codigo)
   values (v_r, v_cpf, p.id, p.nome, p.pontos, v_cod) returning id into v_id;
-  perform public.fid_mover(v_r, v_cpf, 'resgate', -p.pontos, 'Resgate: ' || p.nome, null, null, null, v_id, 'Cliente');
+  if p.pontos > 0 then
+    perform public.fid_mover(v_r, v_cpf, 'resgate', -p.pontos, 'Resgate: ' || p.nome, null, null, null, v_id, 'Cliente');
+  end if;
   return jsonb_build_object('status', 'ok', 'pontos', cli.pontos - p.pontos,
     'resgate', jsonb_build_object('id', v_id, 'premio', p.nome, 'pontos', p.pontos, 'codigo', v_cod, 'status', 'pendente', 'criado_em', now()));
 end $$;
@@ -2017,7 +2104,7 @@ begin
    where id = p_id and restaurante_id = r and status = 'pendente'
   returning * into x;
   if not found then raise exception 'Este resgate já foi resolvido.'; end if;
-  if not p_entregar then
+  if not p_entregar and x.pontos > 0 then
     perform public.fid_mover(r, x.cpf, 'estorno', x.pontos, 'Resgate cancelado: ' || x.premio_nome, null, null, null, x.id, public.fid_quem());
   end if;
 end $$;
@@ -2069,7 +2156,9 @@ begin
   delete from public.fid_clientes where restaurante_id = r and cpf = p_cpf;
 end $$;
 
-create or replace function public.fid_editar_cliente(p_cpf text, p_nome text, p_email text, p_telefone text, p_marketing boolean) returns void
+drop function if exists public.fid_editar_cliente(text, text, text, text, boolean);
+create or replace function public.fid_editar_cliente(p_cpf text, p_nome text, p_email text, p_telefone text, p_marketing boolean,
+  p_aniversario int default null) returns void
 language plpgsql security definer set search_path = public as $$
 declare
   r uuid := public.meu_restaurante();
@@ -2082,7 +2171,9 @@ begin
   if v_nome !~ '^\S{2,}( \S+)+$' then raise exception 'Informe o nome completo.'; end if;
   if char_length(v_email) > 120 or v_email !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' then raise exception 'E-mail inválido.'; end if;
   if v_tel !~ '^[1-9][0-9]{9,10}$' then raise exception 'Telefone inválido. Use DDD + número.'; end if;
-  update public.fid_clientes set nome = v_nome, email = v_email, telefone = v_tel, marketing = coalesce(p_marketing, marketing)
+  if p_aniversario is not null and p_aniversario not between 1 and 12 then raise exception 'Mês do aniversário inválido.'; end if;
+  update public.fid_clientes set nome = v_nome, email = v_email, telefone = v_tel, marketing = coalesce(p_marketing, marketing),
+         aniversario_mes = coalesce(p_aniversario, aniversario_mes)
    where restaurante_id = r and cpf = p_cpf;
   if not found then raise exception 'Cliente não encontrado.'; end if;
 end $$;
@@ -2196,7 +2287,7 @@ begin
     'public.mesa_da_etiqueta(uuid, text)', 'public.sessao_status(uuid)', 'public.sessao_abrir(uuid, int, text, text)',
     'public.sessao_sair(uuid)', 'public.chamar(uuid, text, text, text, jsonb)', 'public.chamado_cancelar(uuid, uuid)',
     'public.fid_programa(uuid)', 'public.fid_consultar(uuid, text)', 'public.fid_indicador(uuid, text)',
-    'public.fid_cadastrar(uuid, text, text, text, text, text, boolean, text)', 'public.fid_entrar(uuid, text, text)',
+    'public.fid_cadastrar(uuid, text, text, text, text, text, boolean, text, int)', 'public.fid_entrar(uuid, text, text)',
     'public.fid_conta(uuid)', 'public.fid_sair(uuid)', 'public.fid_registrar_nota(uuid, text, text, numeric)',
     'public.fid_nota_situacao(uuid, text, text)',
     'public.fid_resgatar(uuid, uuid)'] loop
@@ -2215,7 +2306,7 @@ begin
     'public.fid_importar_xml(jsonb)', 'public.fid_resgate_decidir(uuid, boolean)', 'public.fid_lancar(text, numeric, text)',
     'public.fid_redefinir_pin(text)', 'public.fid_excluir_cliente(text)', 'public.fid_nivel_cliente(text)',
     'public.plano_alterar_central(uuid, jsonb)', 'public.meu_plano()', 'public.meu_plano_alterar(jsonb)',
-    'public.fid_editar_cliente(text, text, text, text, boolean)'] loop
+    'public.fid_editar_cliente(text, text, text, text, boolean, int)'] loop
     execute format('revoke execute on function %s from public, anon', f);
     execute format('grant execute on function %s to authenticated', f);
   end loop;
@@ -2446,7 +2537,7 @@ begin
   return (with ganhos as (
       select m.cpf, sum(m.pontos)::int as pontos
         from public.fid_movimentos m
-       where m.restaurante_id = p_restaurante and m.tipo <> 'resgate' and not (m.tipo = 'estorno' and m.resgate_id is not null)
+       where m.restaurante_id = p_restaurante and m.tipo not in ('resgate', 'transferencia') and not (m.tipo = 'estorno' and m.resgate_id is not null)
        group by m.cpf having sum(m.pontos) > 0),
     pos as (
       select g.cpf, g.pontos, rank() over (order by g.pontos desc) as pos,
@@ -2853,6 +2944,7 @@ begin
               then ' (' || replace(rtrim(rtrim(to_char((calc ->> 'mult')::numeric, 'FM990.99'), '0'), '.'), '.', ',') || 'x)' else '' end,
     p.total, (calc ->> 'mult')::numeric, null, null, 'Delivery');
   perform public.fid_bonus_indicacao(p.restaurante_id, v_cpf);
+  perform public.fid_bonus_aniversario(p.restaurante_id, v_cpf);
   return jsonb_build_object('status', 'creditado', 'pontos', pts);
 end $$;
 
@@ -3161,4 +3253,418 @@ begin
   execute 'grant execute on function public.dominio_marcar(text, text, text) to service_role';
   execute 'revoke execute on function public.restaurante_por_dominio(text) from public';
   execute 'grant execute on function public.restaurante_por_dominio(text) to anon, authenticated';
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- Clube: aniversário, transferência de pontos, validade e dia de clássico.
+-- Tudo configurável nas regras (restaurantes.fidelidade):
+--   aniversario   { ativo, mult (pontos x no mês do aniversário), bonus (pontos de presente, 1 vez por ano) }
+--                 e prêmios marcados como "presente de aniversário" (só no mês, 1 vez por ano, podem custar 0);
+--   transferencia { ativo, minimo, maximoDia (0 = sem limite) }: o cliente manda pontos para outro cliente
+--                 (achado pelo CPF ou pelo código de indicação), confirmando com o PIN. Não mexe no ranking;
+--   validade      { ativo, quantidade, unidade 'meses'|'dias', desde 'AAAA-MM-DD' }: pontos ganhos há mais
+--                 tempo que isso vencem (os mais antigos primeiro). Descontam do saldo e do ranking.
+--                 "desde" = dia em que a regra foi ligada: o que foi ganho antes conta a partir daí;
+--   eventos       (tabela fid_eventos) dia de clássico: o cliente escolhe o time até o início do jogo; se o
+--                 time dele vencer, os pontos das compras daquele dia valem mult (ex.: dobro).
+-- ---------------------------------------------------------------------------
+
+-- Validade dos pontos (null = pontos não vencem).
+create or replace function public.fid_validade(p_restaurante uuid) returns interval
+language sql stable security definer set search_path = public as $$
+  select case when coalesce(v ->> 'ativo', '') = 'true' then
+    case when v ->> 'unidade' = 'dias' then make_interval(days => least(greatest(public.num_ou(v ->> 'quantidade', 365), 1), 3650)::int)
+         else make_interval(months => least(greatest(public.num_ou(v ->> 'quantidade', 12), 1), 120)::int) end end
+  from (select public.fid_cfg(p_restaurante) -> 'validade' as v) x;
+$$;
+create or replace function public.fid_validade_desde(p_restaurante uuid) returns timestamptz
+language sql stable security definer set search_path = public as $$
+  select case when coalesce(public.fid_cfg(p_restaurante) -> 'validade' ->> 'desde', '') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+              then ((public.fid_cfg(p_restaurante) -> 'validade' ->> 'desde')::date)::timestamp at time zone public.fid_fuso(p_restaurante) end;
+$$;
+
+-- Vence os pontos do cliente (FIFO: as saídas gastam primeiro os pontos mais antigos). Devolve quantos venceram.
+create or replace function public.fid_vencer(p_restaurante uuid, p_cpf text) returns int
+language plpgsql security definer set search_path = public as $$
+declare iv interval := public.fid_validade(p_restaurante); desde timestamptz := public.fid_validade_desde(p_restaurante);
+  saldo int; ganhos int; saidas int; v int;
+begin
+  if iv is null then return 0; end if;
+  select pontos into saldo from public.fid_clientes where restaurante_id = p_restaurante and cpf = p_cpf for update;
+  if not found or saldo <= 0 then return 0; end if;
+  select coalesce(sum(pontos) filter (where pontos > 0 and greatest(criado_em, coalesce(desde, criado_em)) + iv <= now()), 0),
+         coalesce(-sum(pontos) filter (where pontos < 0), 0)
+    into ganhos, saidas from public.fid_movimentos where restaurante_id = p_restaurante and cpf = p_cpf;
+  v := least(ganhos - saidas, saldo);
+  if v <= 0 then return 0; end if;
+  perform public.fid_mover(p_restaurante, p_cpf, 'validade', -v, 'Pontos vencidos', null, null, null, null, 'Validade');
+  return v;
+end $$;
+
+-- Próximos pontos a vencer (nos próximos 30 dias): { pontos, em }. null = nada vencendo.
+create or replace function public.fid_a_vencer(p_restaurante uuid, p_cpf text) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare iv interval := public.fid_validade(p_restaurante); desde timestamptz := public.fid_validade_desde(p_restaurante);
+  saidas int; acum int := 0; m record; primeira timestamptz; total int := 0;
+begin
+  if iv is null then return null; end if;
+  select coalesce(-sum(pontos) filter (where pontos < 0), 0) into saidas
+    from public.fid_movimentos where restaurante_id = p_restaurante and cpf = p_cpf;
+  for m in select pontos, greatest(criado_em, coalesce(desde, criado_em)) + iv as vence
+             from public.fid_movimentos where restaurante_id = p_restaurante and cpf = p_cpf and pontos > 0 order by 2 loop
+    exit when m.vence > now() + interval '30 days';
+    acum := acum + m.pontos;
+    if acum > saidas then primeira := coalesce(primeira, m.vence); total := acum - saidas; end if;
+  end loop;
+  if total <= 0 then return null; end if;
+  return jsonb_build_object('pontos', total, 'em', primeira);
+end $$;
+
+-- Todos os clientes de todos os restaurantes com validade (roda todo dia pelo pg_cron).
+create or replace function public.fid_vencer_todos() returns int
+language plpgsql security definer set search_path = public as $$
+declare x record; n int := 0;
+begin
+  for x in select c.restaurante_id, c.cpf from public.fid_clientes c
+            where c.pontos > 0 and public.fid_validade(c.restaurante_id) is not null loop
+    n := n + public.fid_vencer(x.restaurante_id, x.cpf);
+  end loop;
+  return n;
+end $$;
+
+-- Presente de aniversário em pontos: uma vez por ano, no mês do aniversário.
+create or replace function public.fid_bonus_aniversario(p_restaurante uuid, p_cpf text) returns int
+language plpgsql security definer set search_path = public as $$
+declare c jsonb := public.fid_cfg(p_restaurante); cli public.fid_clientes; b int;
+  agora timestamp := now() at time zone public.fid_fuso(p_restaurante);
+begin
+  b := least(greatest(public.num_ou(c -> 'aniversario' ->> 'bonus', 0), 0), 100000)::int;
+  if coalesce(c -> 'aniversario' ->> 'ativo', '') <> 'true' or b <= 0 or not public.fid_no_ar(p_restaurante) then return 0; end if;
+  select * into cli from public.fid_clientes where restaurante_id = p_restaurante and cpf = p_cpf for update;
+  if not found or cli.aniversario_mes is distinct from extract(month from agora)::int
+     or coalesce(cli.aniversario_ano, 0) >= extract(year from agora)::int then return 0; end if;
+  update public.fid_clientes set aniversario_ano = extract(year from agora)::int where restaurante_id = p_restaurante and cpf = p_cpf;
+  perform public.fid_mover(p_restaurante, p_cpf, 'aniversario', b, 'Presente de aniversário', null, null, null, null, 'Aniversário');
+  return b;
+end $$;
+
+-- Cliente que se cadastrou antes de o mês ser pedido informa o mês (uma vez; depois só a equipe muda).
+create or replace function public.fid_definir_aniversario(p_token uuid, p_mes int) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare v_r uuid; v_cpf text;
+begin
+  select s.restaurante_id, s.cpf into v_r, v_cpf from private.fid_sessoes s
+   where s.token_hash = public.hash_token(p_token) and s.criado_em > now() - interval '180 days';
+  if v_r is null then return jsonb_build_object('status', 'sem_sessao'); end if;
+  if p_mes is null or p_mes not between 1 and 12 then return jsonb_build_object('status', 'erro', 'mensagem', 'Escolha o mês.'); end if;
+  update public.fid_clientes set aniversario_mes = p_mes where restaurante_id = v_r and cpf = v_cpf and aniversario_mes is null;
+  if not found then return jsonb_build_object('status', 'erro', 'mensagem', 'O mês do aniversário já está salvo. Para mudar, fale com a equipe.'); end if;
+  perform public.fid_bonus_aniversario(v_r, v_cpf);
+  return jsonb_build_object('status', 'ok');
+end $$;
+
+-- Nome curto para mostrar a outra pessoa: "Maria S.".
+create or replace function public.fid_nome_curto(p_nome text) returns text
+language sql immutable set search_path = public as $$
+  select w[1] || case when array_length(w, 1) > 1 then ' ' || left(w[array_length(w, 1)], 1) || '.' else '' end
+    from (select regexp_split_to_array(btrim(coalesce(p_nome, '')), '\s+') as w) x;
+$$;
+
+-- Destino da transferência: CPF (11 números) ou código de indicação. Devolve o cliente ou um erro em texto.
+create or replace function public.fid_destino(p_restaurante uuid, p_destino text) returns public.fid_clientes
+language plpgsql stable security definer set search_path = public as $$
+declare d text := regexp_replace(coalesce(p_destino, ''), '[^0-9A-Za-z]', '', 'g'); cli public.fid_clientes;
+begin
+  if d ~ '^[0-9]{11}$' then
+    select * into cli from public.fid_clientes where restaurante_id = p_restaurante and cpf = d;
+  elsif d ~ '^[A-Za-z0-9]{4,12}$' then
+    select * into cli from public.fid_clientes where restaurante_id = p_restaurante and codigo = upper(d);
+  end if;
+  return cli;
+end $$;
+
+-- Cliente confere para quem vai transferir (antes de digitar a quantidade e o PIN).
+create or replace function public.fid_transferir_destino(p_token uuid, p_destino text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare v_r uuid; v_cpf text; d public.fid_clientes;
+begin
+  select s.restaurante_id, s.cpf into v_r, v_cpf from private.fid_sessoes s
+   where s.token_hash = public.hash_token(p_token) and s.criado_em > now() - interval '180 days';
+  if v_r is null then return jsonb_build_object('status', 'sem_sessao'); end if;
+  if not public.fid_no_ar(v_r) then return jsonb_build_object('status', 'inativo'); end if;
+  if coalesce(public.fid_cfg(v_r) -> 'transferencia' ->> 'ativo', '') <> 'true' then
+    return jsonb_build_object('status', 'erro', 'mensagem', 'A transferência de pontos está desligada neste restaurante.');
+  end if;
+  if not public.equipe_pode_tentar('fid-transf-busca:' || v_r || ':' || v_cpf, 20, 10) then
+    return jsonb_build_object('status', 'erro', 'mensagem', 'Muitas buscas seguidas. Aguarde alguns minutos.');
+  end if;
+  d := public.fid_destino(v_r, p_destino);
+  if d.cpf is null then
+    return jsonb_build_object('status', 'erro', 'mensagem', 'Não achamos ninguém no clube com esse CPF ou código. A pessoa precisa estar cadastrada.');
+  end if;
+  if d.cpf = v_cpf then return jsonb_build_object('status', 'erro', 'mensagem', 'Esse é você. Digite o CPF ou o código de outra pessoa.'); end if;
+  return jsonb_build_object('status', 'ok', 'nome', public.fid_nome_curto(d.nome));
+end $$;
+
+-- Transfere pontos para outro cliente do clube (confirma com o PIN de quem manda).
+create or replace function public.fid_transferir(p_token uuid, p_destino text, p_pontos int, p_pin text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  v_r uuid; v_cpf text; c jsonb; d public.fid_clientes; eu public.fid_clientes; h text;
+  v_min int; v_max int; hoje int; tz text;
+begin
+  select s.restaurante_id, s.cpf into v_r, v_cpf from private.fid_sessoes s
+   where s.token_hash = public.hash_token(p_token) and s.criado_em > now() - interval '180 days';
+  if v_r is null then return jsonb_build_object('status', 'sem_sessao'); end if;
+  if not public.fid_no_ar(v_r) then return jsonb_build_object('status', 'inativo'); end if;
+  c := public.fid_cfg(v_r);
+  if coalesce(c -> 'transferencia' ->> 'ativo', '') <> 'true' then
+    return jsonb_build_object('status', 'erro', 'mensagem', 'A transferência de pontos está desligada neste restaurante.');
+  end if;
+  v_min := least(greatest(public.num_ou(c -> 'transferencia' ->> 'minimo', 1), 1), 1000000)::int;
+  v_max := least(greatest(public.num_ou(c -> 'transferencia' ->> 'maximoDia', 0), 0), 10000000)::int;
+  if p_pontos is null or p_pontos < v_min then
+    return jsonb_build_object('status', 'erro', 'mensagem', 'O mínimo para transferir é ' || v_min || ' ' || case when v_min = 1 then 'ponto' else 'pontos' end || '.');
+  end if;
+  -- PIN de quem manda (mesmas travas do login).
+  if coalesce(p_pin, '') !~ '^[0-9]{4}$' then return jsonb_build_object('status', 'erro', 'mensagem', 'O PIN tem 4 números.'); end if;
+  if not public.equipe_pode_tentar('fid-pin:' || v_r || ':' || v_cpf, 5, 15)
+     or not public.equipe_pode_tentar('fid-pin-dia:' || v_r || ':' || v_cpf, 12, 1440) then
+    return jsonb_build_object('status', 'erro', 'mensagem', 'Muitas tentativas. Aguarde 15 minutos.');
+  end if;
+  select pin_hash into h from private.fid_pins where restaurante_id = v_r and cpf = v_cpf;
+  if h is null or extensions.crypt(p_pin, h) <> h then return jsonb_build_object('status', 'erro', 'mensagem', 'PIN incorreto.'); end if;
+  perform public.equipe_limpar_tentativas('fid-pin:' || v_r || ':' || v_cpf);
+  d := public.fid_destino(v_r, p_destino);
+  if d.cpf is null then return jsonb_build_object('status', 'erro', 'mensagem', 'Não achamos ninguém no clube com esse CPF ou código.'); end if;
+  if d.cpf = v_cpf then return jsonb_build_object('status', 'erro', 'mensagem', 'Esse é você. Digite o CPF ou o código de outra pessoa.'); end if;
+  -- Trava as duas contas sempre na mesma ordem (evita impasse com transferências cruzadas).
+  perform 1 from public.fid_clientes where restaurante_id = v_r and cpf in (v_cpf, d.cpf) order by cpf for update;
+  perform public.fid_vencer(v_r, v_cpf);
+  select * into eu from public.fid_clientes where restaurante_id = v_r and cpf = v_cpf;
+  if eu.pontos < p_pontos then
+    return jsonb_build_object('status', 'erro', 'mensagem', 'Você tem ' || greatest(eu.pontos, 0) || ' pontos. Escolha uma quantidade menor.');
+  end if;
+  if v_max > 0 then
+    tz := public.fid_fuso(v_r);
+    select coalesce(-sum(pontos), 0) into hoje from public.fid_movimentos
+     where restaurante_id = v_r and cpf = v_cpf and tipo = 'transferencia' and pontos < 0
+       and (criado_em at time zone tz)::date = (now() at time zone tz)::date;
+    if hoje + p_pontos > v_max then
+      return jsonb_build_object('status', 'erro', 'mensagem', 'O limite é ' || v_max || ' pontos transferidos por dia. Hoje ainda dá para mandar '
+        || greatest(v_max - hoje, 0) || '.');
+    end if;
+  end if;
+  perform public.fid_mover(v_r, v_cpf, 'transferencia', -p_pontos, 'Transferência para ' || public.fid_nome_curto(d.nome), null, null, null, null, 'Cliente');
+  perform public.fid_mover(v_r, d.cpf, 'transferencia', p_pontos, 'Transferência de ' || public.fid_nome_curto(eu.nome), null, null, null, null, 'Cliente');
+  return jsonb_build_object('status', 'ok', 'pontos', eu.pontos - p_pontos, 'nome', public.fid_nome_curto(d.nome));
+end $$;
+
+-- Dia de clássico.
+create table if not exists public.fid_eventos (
+  id             uuid primary key default gen_random_uuid(),
+  restaurante_id uuid not null references public.restaurantes (id) on delete cascade,
+  nome           text not null check (char_length(nome) between 1 and 60),
+  data           date not null,
+  hora           text check (hora ~ '^[0-2][0-9]:[0-5][0-9]$'),
+  times          text[] not null check (array_length(times, 1) between 2 and 4),
+  mult           numeric(4, 2) not null default 2 check (mult between 1.1 and 10),
+  vencedor       text check (char_length(vencedor) <= 30),
+  premiados      int,
+  pontos_pagos   int,
+  resultado_em   timestamptz,
+  resultado_por  text check (char_length(resultado_por) <= 60),
+  criado_em      timestamptz not null default now()
+);
+create index if not exists fid_eventos_rest_idx on public.fid_eventos (restaurante_id, data desc);
+create table if not exists public.fid_torcidas (
+  evento_id      uuid not null references public.fid_eventos (id) on delete cascade,
+  restaurante_id uuid not null,
+  cpf            text not null,
+  time           text not null check (char_length(time) <= 30),
+  criado_em      timestamptz not null default now(),
+  primary key (evento_id, cpf),
+  foreign key (restaurante_id, cpf) references public.fid_clientes (restaurante_id, cpf) on delete cascade
+);
+alter table public.fid_eventos enable row level security;
+alter table public.fid_torcidas enable row level security;
+revoke all on public.fid_eventos, public.fid_torcidas from anon;
+revoke insert, update, delete, truncate on public.fid_eventos, public.fid_torcidas from authenticated;
+drop policy if exists "equipe ve eventos" on public.fid_eventos;
+create policy "equipe ve eventos" on public.fid_eventos for select to authenticated using (restaurante_id = public.meu_restaurante());
+drop policy if exists "equipe ve torcidas" on public.fid_torcidas;
+create policy "equipe ve torcidas" on public.fid_torcidas for select to authenticated using (restaurante_id = public.meu_restaurante());
+
+-- Hora em que a torcida fecha (início do jogo; sem hora, fim do dia).
+create or replace function public.fid_evento_fecha(e public.fid_eventos) returns timestamptz
+language sql stable security definer set search_path = public as $$
+  select (e.data + coalesce(e.hora, '23:59')::time) at time zone public.fid_fuso(e.restaurante_id);
+$$;
+
+-- Eventos que aparecem para o cliente: os próximos 30 dias e os resultados dos últimos 3 dias.
+create or replace function public.fid_eventos_publicos(p_restaurante uuid) returns jsonb
+language sql stable security definer set search_path = public as $$
+  select coalesce(jsonb_agg(jsonb_build_object('id', e.id, 'nome', e.nome, 'data', e.data, 'hora', e.hora, 'times', to_jsonb(e.times),
+      'mult', e.mult, 'vencedor', e.vencedor, 'aberta', e.vencedor is null and now() < public.fid_evento_fecha(e)) order by e.data, e.hora), '[]'::jsonb)
+    from public.fid_eventos e
+   where e.restaurante_id = p_restaurante
+     and ((e.vencedor is null and e.data >= (now() at time zone public.fid_fuso(p_restaurante))::date - 1
+           and e.data <= (now() at time zone public.fid_fuso(p_restaurante))::date + 30)
+          or e.resultado_em > now() - interval '3 days');
+$$;
+
+-- Cliente escolhe o time (uma vez, até o início do jogo).
+create or replace function public.fid_torcer(p_token uuid, p_evento uuid, p_time text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare v_r uuid; v_cpf text; e public.fid_eventos; ja text;
+begin
+  select s.restaurante_id, s.cpf into v_r, v_cpf from private.fid_sessoes s
+   where s.token_hash = public.hash_token(p_token) and s.criado_em > now() - interval '180 days';
+  if v_r is null then return jsonb_build_object('status', 'sem_sessao'); end if;
+  if not public.fid_no_ar(v_r) then return jsonb_build_object('status', 'inativo'); end if;
+  select * into e from public.fid_eventos where id = p_evento and restaurante_id = v_r;
+  if not found then return jsonb_build_object('status', 'erro', 'mensagem', 'Evento não encontrado.'); end if;
+  select time into ja from public.fid_torcidas where evento_id = e.id and cpf = v_cpf;
+  if ja is not null then
+    return jsonb_build_object('status', case when ja = p_time then 'ok' else 'erro' end, 'mensagem', 'Você já escolheu ' || ja || '.');
+  end if;
+  if e.vencedor is not null or now() >= public.fid_evento_fecha(e) then
+    return jsonb_build_object('status', 'erro', 'mensagem', 'A escolha do time já fechou: o jogo começou.');
+  end if;
+  if not (p_time = any (e.times)) then return jsonb_build_object('status', 'erro', 'mensagem', 'Escolha um dos times.'); end if;
+  insert into public.fid_torcidas (evento_id, restaurante_id, cpf, time) values (e.id, v_r, v_cpf, p_time);
+  return jsonb_build_object('status', 'ok');
+end $$;
+
+-- Equipe: eventos com a contagem da torcida.
+create or replace function public.fid_eventos_lista() returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare r uuid := public.meu_restaurante();
+begin
+  if r is null then raise exception 'Acesso negado.'; end if;
+  return coalesce((select jsonb_agg(jsonb_build_object('id', e.id, 'nome', e.nome, 'data', e.data, 'hora', e.hora, 'times', to_jsonb(e.times),
+      'mult', e.mult, 'vencedor', e.vencedor, 'premiados', e.premiados, 'pontos_pagos', e.pontos_pagos, 'resultado_em', e.resultado_em,
+      'aberta', e.vencedor is null and now() < public.fid_evento_fecha(e),
+      'torcida', coalesce((select jsonb_object_agg(t.time, t.n) from (select time, count(*) as n from public.fid_torcidas
+                                                                         where evento_id = e.id group by time) t), '{}'::jsonb))
+      order by e.data desc, e.hora desc)
+    from (select * from public.fid_eventos where restaurante_id = r order by data desc limit 40) e), '[]'::jsonb);
+end $$;
+
+-- Equipe cria ou edita um evento (antes do resultado).
+create or replace function public.fid_evento_salvar(p jsonb) returns uuid
+language plpgsql security definer set search_path = public as $$
+declare
+  r uuid := public.meu_restaurante(); e public.fid_eventos; v_id uuid;
+  v_nome text := left(btrim(coalesce(p ->> 'nome', '')), 60);
+  v_hora text := nullif(btrim(coalesce(p ->> 'hora', '')), '');
+  v_times text[]; v_mult numeric := round(least(greatest(public.num_ou(p ->> 'mult', 2), 1.1), 10), 2); v_data date;
+begin
+  if r is null then raise exception 'Acesso negado.'; end if;
+  -- Times na ordem digitada, sem repetir.
+  select array_agg(x order by i) into v_times from (
+    select distinct on (lower(left(btrim(t), 30))) left(btrim(t), 30) as x, i
+      from jsonb_array_elements_text(case when jsonb_typeof(p -> 'times') = 'array' then p -> 'times' else '[]'::jsonb end) with ordinality u(t, i)
+     where btrim(t) <> '' order by lower(left(btrim(t), 30)), i) y;
+  if coalesce(array_length(v_times, 1), 0) not between 2 and 4 then raise exception 'Informe os dois times (até quatro).'; end if;
+  if coalesce(p ->> 'data', '') !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' then raise exception 'Informe o dia do jogo.'; end if;
+  v_data := (p ->> 'data')::date;
+  if v_hora is not null and v_hora !~ '^[0-2][0-9]:[0-5][0-9]$' then raise exception 'Hora inválida (ex.: 16:00).'; end if;
+  if v_nome = '' then v_nome := left(array_to_string(v_times, ' x '), 60); end if;
+  if coalesce(p ->> 'id', '') ~ '^[0-9a-f-]{36}$' then
+    select * into e from public.fid_eventos where id = (p ->> 'id')::uuid and restaurante_id = r for update;
+    if not found then raise exception 'Evento não encontrado.'; end if;
+    if e.vencedor is not null then raise exception 'Este evento já tem resultado.'; end if;
+    if exists (select 1 from public.fid_torcidas where evento_id = e.id and not (time = any (v_times))) then
+      raise exception 'Já tem torcedores escolhendo os times: não dá para trocar os times.';
+    end if;
+    update public.fid_eventos set nome = v_nome, data = v_data, hora = v_hora, times = v_times, mult = v_mult where id = e.id;
+    return e.id;
+  end if;
+  if v_data < (now() at time zone public.fid_fuso(r))::date then raise exception 'O dia do jogo já passou.'; end if;
+  insert into public.fid_eventos (restaurante_id, nome, data, hora, times, mult) values (r, v_nome, v_data, v_hora, v_times, v_mult)
+  returning id into v_id;
+  return v_id;
+end $$;
+
+create or replace function public.fid_evento_excluir(p_id uuid) returns void
+language plpgsql security definer set search_path = public as $$
+declare r uuid := public.meu_restaurante();
+begin
+  if r is null then raise exception 'Acesso negado.'; end if;
+  delete from public.fid_eventos where id = p_id and restaurante_id = r and vencedor is null;
+  if not found then raise exception 'Evento não encontrado ou já com resultado.'; end if;
+end $$;
+
+-- Equipe lança o resultado. Quem torceu pelo vencedor ganha o bônus sobre os pontos das compras do dia
+-- já creditadas; as que forem creditadas depois já entram multiplicadas (fid_calcular).
+create or replace function public.fid_evento_resultado(p_id uuid, p_vencedor text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  r uuid := public.meu_restaurante(); e public.fid_eventos; tz text; t record; base int; b int;
+  n int := 0; total int := 0;
+begin
+  if r is null then raise exception 'Acesso negado.'; end if;
+  select * into e from public.fid_eventos where id = p_id and restaurante_id = r for update;
+  if not found then raise exception 'Evento não encontrado.'; end if;
+  if e.vencedor is not null then raise exception 'O resultado já foi lançado.'; end if;
+  if now() < public.fid_evento_fecha(e) then raise exception 'O jogo ainda não começou.'; end if;
+  if not (p_vencedor = any (e.times) or p_vencedor = 'empate') then raise exception 'Escolha o time vencedor ou empate.'; end if;
+  tz := public.fid_fuso(r);
+  update public.fid_eventos set vencedor = p_vencedor, resultado_em = now(), resultado_por = public.fid_quem() where id = e.id;
+  if p_vencedor <> 'empate' then
+    for t in select cpf from public.fid_torcidas where evento_id = e.id and time = p_vencedor loop
+      base := coalesce((select sum(pontos) from public.fid_notas where restaurante_id = r and cpf = t.cpf and status = 'creditada'
+                          and (emitida_em at time zone tz)::date = e.data), 0)
+            + coalesce((select sum(fid_pontos) from public.pedidos where restaurante_id = r and cpf = t.cpf and fid_situacao = 'creditado'
+                          and (criado_em at time zone tz)::date = e.data), 0)
+            + coalesce((select sum(pontos) from public.fid_movimentos where restaurante_id = r and cpf = t.cpf and tipo = 'manual'
+                          and (criado_em at time zone tz)::date = e.data), 0);
+      b := floor(base * (e.mult - 1))::int;
+      if b > 0 then
+        perform public.fid_mover(r, t.cpf, 'evento', b,
+          left(e.nome || ': ' || p_vencedor || ' venceu (' || replace(rtrim(rtrim(to_char(e.mult, 'FM990.99'), '0'), '.'), '.', ',') || 'x)', 160),
+          null, e.mult, null, null, public.fid_quem());
+        n := n + 1; total := total + b;
+      end if;
+    end loop;
+  end if;
+  update public.fid_eventos set premiados = n, pontos_pagos = total where id = e.id;
+  return jsonb_build_object('premiados', n, 'pontos', total);
+end $$;
+
+do $$
+declare f text;
+begin
+  -- Internas (chamadas por outras funções).
+  foreach f in array array['public.fid_vencer(uuid, text)', 'public.fid_vencer_todos()', 'public.fid_a_vencer(uuid, text)',
+      'public.fid_bonus_aniversario(uuid, text)', 'public.fid_destino(uuid, text)', 'public.fid_validade(uuid)',
+      'public.fid_validade_desde(uuid)', 'public.fid_evento_fecha(public.fid_eventos)', 'public.fid_eventos_publicos(uuid)'] loop
+    execute format('revoke execute on function %s from public, anon, authenticated', f);
+  end loop;
+  -- Cliente (com o token do aparelho).
+  foreach f in array array['public.fid_definir_aniversario(uuid, int)', 'public.fid_transferir_destino(uuid, text)',
+      'public.fid_transferir(uuid, text, int, text)', 'public.fid_torcer(uuid, uuid, text)'] loop
+    execute format('revoke execute on function %s from public', f);
+    execute format('grant execute on function %s to anon, authenticated', f);
+  end loop;
+  -- Equipe.
+  foreach f in array array['public.fid_eventos_lista()', 'public.fid_evento_salvar(jsonb)', 'public.fid_evento_excluir(uuid)',
+      'public.fid_evento_resultado(uuid, text)'] loop
+    execute format('revoke execute on function %s from public, anon', f);
+    execute format('grant execute on function %s to authenticated', f);
+  end loop;
+end $$;
+
+-- Validade: vence os pontos de todo mundo uma vez por dia (pg_cron). Sem pg_cron, os pontos vencem
+-- quando o cliente abre a conta, consulta o saldo, troca ou transfere.
+do $$
+begin
+  if exists (select 1 from pg_available_extensions where name = 'pg_cron') then
+    create extension if not exists pg_cron;
+    perform cron.unschedule(jobid) from cron.job where jobname = 'fid-vencer-pontos';
+    perform cron.schedule('fid-vencer-pontos', '17 6 * * *', 'select public.fid_vencer_todos()');
+  end if;
+exception when others then
+  raise notice 'pg_cron indisponível: os pontos vencem quando o cliente usa a conta (%).', sqlerrm;
 end $$;
