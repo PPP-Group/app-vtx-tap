@@ -114,7 +114,8 @@
   const sefazLigada = (r) => !!(r.fidelidade && r.fidelidade.sefaz && r.fidelidade.sefaz.ativo);
   const sefazDoMes = (rid) => ((S.sefaz && S.sefaz.uso) || []).find((u) => u.restaurante_id === rid && u.mes === mesAtual()) || { notas: 0, valor: 0 };
   const planoPreco = (p) => (p ? Precos.plano(p) : 0);
-  const planoServicos = (p) => SERVICOS.filter(([k]) => p && p.servicos && p.servicos[k]).map(([, n]) => n);
+  const planoServicos = (p) => [...SERVICOS.filter(([k]) => p && p.servicos && p.servicos[k]).map(([, n]) => n),
+    ...Precos.ADICIONAIS.filter((a) => p && p.adicionais && p.adicionais[a.id]).map((a) => a.nome)];
   const planoResumo = (p) => (p ? `${planoServicos(p).join(' · ')} · ${p.mesas} mesas · ${reais(planoPreco(p))}/mês` : 'Plano não definido');
   // Plano para o formulário: o salvo ou, sem plano, o que o restaurante usa hoje.
   const planoOuPadrao = (r) => r.plano || { servicos: { pagina: true, garcom: true, fidelidade: !!(r.modulos && r.modulos.fidelidade) }, mesas: 30, dominio: 'sub', contrato: 6 };
@@ -147,6 +148,7 @@
         const sv = plano.servicos || {};
         if (!SERVICOS.some(([k]) => sv[k])) throw new Error('Escolha pelo menos um serviço.');
         const novo = { servicos: Object.fromEntries(SERVICOS.map(([k]) => [k, !!sv[k]])), mesas: Math.min(Math.max(Math.round(+plano.mesas || 20), 1), 500),
+          adicionais: Object.fromEntries(Precos.ADICIONAIS.map((a) => [a.id, !!(plano.adicionais || {})[a.id]])),
           dominio: ['proprio', 'registro'].includes(plano.dominio) ? plano.dominio : 'sub', contrato: +plano.contrato === 12 ? 12 : 6, definido: true };
         (db.mudancas = db.mudancas || []).unshift({ id: id(), restaurante_id: rid, antes: r.plano || null, depois: novo, mensal_antes: r.plano ? planoPreco(r.plano) : null,
           mensal_depois: planoPreco(novo), origem: 'central', por: 'demonstração', visto: false, criado_em: new Date().toISOString() });
@@ -691,6 +693,7 @@
     return `<fieldset class="stack modulos" id="rPlano"><legend>Plano contratado</legend>
       ${r.id && !r.plano ? '<p class="note">Plano ainda não definido: hoje tudo está liberado. Confira os serviços e as mesas e salve.</p>' : ''}
       ${SERVICOS.map(([k, n, v]) => `<label class="check"><input type="checkbox" data-plano-sv="${k}" ${p.servicos[k] ? 'checked' : ''}> ${n} <span class="muted">· R$ ${v}/mês</span></label>`).join('')}
+      ${Precos.ADICIONAIS.map((a) => `<label class="check"><input type="checkbox" data-plano-ad="${a.id}" ${(p.adicionais || {})[a.id] ? 'checked' : ''}> ${esc(a.nome)} <span class="muted">· adicional, ${a.preco ? `R$ ${a.preco}/mês` : 'preço a definir'}</span></label>`).join('')}
       <div class="plano-linha">
         <label class="field"><span>Mesas contratadas</span><input class="input mono" id="rMesas" type="number" min="1" max="500" value="${p.mesas}"></label>
         <label class="field"><span>Endereço</span><select class="input" id="rDominio">
@@ -705,6 +708,7 @@
   }
   const planoDoForm = () => ({
     servicos: Object.fromEntries(SERVICOS.map(([k]) => [k, !!($(`[data-plano-sv="${k}"]`) || {}).checked])),
+    adicionais: Object.fromEntries(Precos.ADICIONAIS.map((a) => [a.id, !!($(`[data-plano-ad="${a.id}"]`) || {}).checked])),
     mesas: Math.round(+$('#rMesas').value || 0), dominio: $('#rDominio').value, contrato: +$('#rContrato').value,
   });
   document.addEventListener('input', (e) => {
@@ -1359,6 +1363,7 @@
         const antes = restDe(rid);
         const at = antes && antes.plano;
         const mudou = !at || SERVICOS.some(([k]) => !!(at.servicos || {})[k] !== plano.servicos[k])
+          || Precos.ADICIONAIS.some((a) => !!(at.adicionais || {})[a.id] !== plano.adicionais[a.id])
           || +at.mesas !== plano.mesas || at.dominio !== plano.dominio || +at.contrato !== plano.contrato;
         if (rid && mudou) {
           const novo = await api.alterarPlano(rid, plano);

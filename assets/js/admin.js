@@ -30,6 +30,8 @@
     seenSess: new Set(),
     // Plaquinha nova lida pela equipe (/admin/?vincular=CODIGO).
     vincular: (new URLSearchParams(location.search).get('vincular') || '').toUpperCase().replace(/[^A-Z0-9]/g, '') || null,
+    // QR do garçom da Prorrogação (/admin/?chopp=1): soma 1 chopp no relógio.
+    chopp: new URLSearchParams(location.search).get('chopp') === '1',
     fresh: new Map(),
     ready: false,
     online: true,
@@ -52,11 +54,17 @@
   const temServico = (k) => !S.settings.plano || !!S.settings.plano.servicos[k];
   // Delivery aparece com o serviço no plano.
   const temDel = () => temServico('delivery') && !!window.DelPainel;
+  // Prorrogação (adicional) aparece com o adicional no plano.
+  const temHH = () => !!(S.settings.plano && S.settings.plano.adicionais && S.settings.plano.adicionais.prorrogacao && window.HHPainel);
   const views = () => {
     let base = VIEWS.filter((v) => temServico('garcom') || !['chamados', 'salao'].includes(v.id));
     if (temDel()) {
       const i = base.findIndex((v) => v.id === 'comentarios');
       base = [...base.slice(0, i), { id: 'delivery', label: 'Delivery', curto: 'Delivery', icon: 'receipt' }, ...base.slice(i)];
+    }
+    if (temHH()) {
+      const i = base.findIndex((v) => v.id === 'comentarios');
+      base = [...base.slice(0, i), { id: 'prorrogacao', label: HHPainel.nome(), curto: 'Happy', icon: 'timer' }, ...base.slice(i)];
     }
     if (!temFid()) return base;
     const i = base.findIndex((v) => v.id === 'plaquinhas');
@@ -419,6 +427,7 @@
     }
     if (temFid()) await FidPainel.atualizar();
     if (temDel()) await DelPainel.atualizar();
+    if (temHH()) await HHPainel.atualizar();
     detectNew();
     renderChrome();
     // Na fidelidade só redesenha sem formulário em edição (não apaga o que está sendo digitado).
@@ -526,6 +535,7 @@
     if (id === 'comentarios' && n.naoLidos) return `<span class="badge badge--soft">${n.naoLidos}</span>`;
     if (id === 'fidelidade' && temFid() && FidPainel.badge()) return `<span class="badge">${FidPainel.badge()}</span>`;
     if (id === 'delivery' && temDel() && DelPainel.badge()) return `<span class="badge">${DelPainel.badge()}</span>`;
+    if (id === 'prorrogacao' && temHH() && HHPainel.badge()) return '<span class="badge badge--vivo" aria-label="rolando agora">●</span>';
     return '';
   };
 
@@ -672,7 +682,8 @@
   function renderView() {
     const main = $('#main');
     main.dataset.view = S.view;
-    main.innerHTML = avisoConfig() + { chamados: vChamados, salao: vSalao, comentarios: vComentarios, plaquinhas: vPlaquinhas, ajustes: vAjustes, fidelidade: () => FidPainel.html(), delivery: () => DelPainel.html() }[S.view]();
+    main.innerHTML = avisoConfig() + { chamados: vChamados, salao: vSalao, comentarios: vComentarios, plaquinhas: vPlaquinhas, ajustes: vAjustes, fidelidade: () => FidPainel.html(), delivery: () => DelPainel.html(),
+      prorrogacao: () => HHPainel.html() }[S.view]();
     if (S.view === 'ajustes' && S.ajTab === 'restaurante') carregarEquipe();
   }
 
@@ -1851,11 +1862,14 @@
   /* Plano: upsell e downsell pelo próprio restaurante */
   const SERVICOS = Precos.SERVICOS.map((x) => [x.id, x.nome, x.preco, x.desc]);
   const reais = (v) => 'R$ ' + Number(v || 0).toLocaleString('pt-BR');
-  const planoTxt = (p) => (p ? SERVICOS.filter(([k]) => p.servicos[k]).map(([, n]) => n).join(', ') + ` · ${p.mesas} mesas` : '—');
+  const ADICIONAIS = Precos.ADICIONAIS;
+  const precoAd = (a) => (a.preco ? `R$ ${a.preco}/mês` : 'Preço a combinar');
+  const planoTxt = (p) => (p ? [...SERVICOS.filter(([k]) => p.servicos[k]).map(([, n]) => n), ...ADICIONAIS.filter((a) => (p.adicionais || {})[a.id]).map((a) => a.nome)].join(', ')
+    + ` · ${p.mesas} mesas` : '—');
   async function carregarPlano() {
     try {
       S.plano = await store.meuPlano();
-      S.planoEd = { servicos: { ...S.plano.plano.servicos }, mesas: S.plano.plano.mesas };
+      S.planoEd = { servicos: { ...S.plano.plano.servicos }, adicionais: { ...(S.plano.plano.adicionais || {}) }, mesas: S.plano.plano.mesas };
     } catch (e) {
       console.error(e);
       toast('Não foi possível carregar o plano.', { tone: 'error' });
@@ -1885,13 +1899,15 @@
     const ed = S.planoEd;
     const novoPreco = Store.precoPlano({ ...atual, ...ed });
     const dif = novoPreco - S.plano.mensal;
-    const mudou = SERVICOS.some(([k]) => !!ed.servicos[k] !== !!atual.servicos[k]) || ed.mesas !== atual.mesas;
+    const adAtual = atual.adicionais || {};
+    const mudou = SERVICOS.some(([k]) => !!ed.servicos[k] !== !!atual.servicos[k]) || ADICIONAIS.some((a) => !!ed.adicionais[a.id] !== !!adAtual[a.id]) || ed.mesas !== atual.mesas;
     // Subir de faixa de mesas (até 20, 21 a 50, 51 ou mais) cobra uma vez a diferença da implantação.
     const taxa = Precos.taxaMesas(S.plano.implantacao_paga || 0, ed.mesas, atual.contrato);
     const avisos = [
       atual.servicos.garcom && !ed.servicos.garcom && 'Sem “Chamar o garçom”, o sino some da página da mesa e as abas Chamados e Salão saem do painel.',
       atual.servicos.pagina && !ed.servicos.pagina && 'Sem a página e o cardápio, somem o cardápio, o Wi-Fi, a avaliação no Google e as informações.',
       atual.servicos.fidelidade && !ed.servicos.fidelidade && 'Sem a fidelidade, o clube de pontos some da página. Os pontos dos clientes ficam guardados se vocês voltarem.',
+      adAtual.prorrogacao && !ed.adicionais.prorrogacao && 'Sem a Prorrogação, o relógio do happy hour some do telão e da página da mesa. O histórico fica guardado.',
       ed.mesas < S.settings.mesas.total && `Hoje vocês usam ${S.settings.mesas.total} mesas. As mesas acima da ${ed.mesas} deixam de funcionar.`,
     ].filter(Boolean);
     return `<div class="aj-grid plano-grid">
@@ -1899,6 +1915,7 @@
         <h2>Seu plano hoje</h2>
         ${atual.definido === false ? '<p class="note">A VTX ainda não definiu o plano deste restaurante: hoje tudo está liberado.</p>' : ''}
         <ul class="plano-atual">${SERVICOS.map(([k, n]) => `<li class="${atual.servicos[k] ? 'is-on' : ''}">${icon(atual.servicos[k] ? 'check' : 'x')} ${n}</li>`).join('')}
+          ${ADICIONAIS.map((a) => `<li class="${adAtual[a.id] ? 'is-on' : ''}">${icon(adAtual[a.id] ? 'check' : 'x')} ${esc(a.nome)} <small class="muted">(adicional)</small></li>`).join('')}
           <li class="is-on">${icon('grid')} ${atual.mesas >= 500 ? 'Mesas sem limite' : `${atual.mesas} mesas`}</li></ul>
         <p class="plano-valor"><b>${reais(S.plano.mensal)}</b> por mês</p>
         <p class="help">Domínio próprio: em Ajustes › Endereço. Tempo de contrato: fale com a VTX.</p>
@@ -1913,6 +1930,12 @@
             <span><b>${n}</b><small>${d}</small></span>
             <span class="plano-op-preco">R$ ${v}/mês</span>
             <span class="switch"><input type="checkbox" data-plano-sv="${k}" ${ed.servicos[k] ? 'checked' : ''} aria-label="${n}"><span></span></span>
+          </label>`).join('')}</div>
+        <h3 class="plano-sub">Adicionais</h3>
+        <div class="plano-ops">${ADICIONAIS.map((a) => `<label class="plano-op ${ed.adicionais[a.id] ? 'is-on' : ''}">
+            <span><b>${esc(a.nome)}</b><small>${esc(a.desc)}</small></span>
+            <span class="plano-op-preco">${precoAd(a)}</span>
+            <span class="switch"><input type="checkbox" data-plano-ad="${a.id}" ${ed.adicionais[a.id] ? 'checked' : ''} aria-label="${esc(a.nome)}"><span></span></span>
           </label>`).join('')}</div>
         <label class="field plano-mesas"><span>Mesas contratadas</span>
           <span class="plano-stepper"><button type="button" class="icon-btn" data-plano-mesas="-1" aria-label="Menos mesas">${icon('minus')}</button>
@@ -1942,6 +1965,11 @@
     const sv = e.target.closest('[data-plano-sv]');
     if (sv && S.planoEd) {
       S.planoEd.servicos[sv.dataset.planoSv] = sv.checked;
+      return renderView();
+    }
+    const ad = e.target.closest('[data-plano-ad]');
+    if (ad && S.planoEd) {
+      S.planoEd.adicionais[ad.dataset.planoAd] = ad.checked;
       return renderView();
     }
     if (e.target.id === 'planoMesas' && S.planoEd) {
@@ -2465,6 +2493,7 @@
     if (store.dominio) store.dominio().then((d) => { if (d && d.status === 'ativo' && d.dominio) window.VTX_ORIGEM = `https://${d.dominio}`; }).catch(() => {});
     if (window.FidPainel) FidPainel.iniciar({ store, S, rerender: renderView, chrome: renderChrome, ding, isDemo, prepararImagem });
     if (window.DelPainel) DelPainel.iniciar({ store, S, rerender: renderView, chrome: renderChrome, ding });
+    if (window.HHPainel) HHPainel.iniciar({ store, S, rerender: renderView, chrome: renderChrome });
     route();
     window.addEventListener('hashchange', route);
     store.subscribe(queueRefresh);
@@ -2479,6 +2508,13 @@
       S.vincular = null;
       history.replaceState(null, '', location.pathname + location.hash);
       if (/^[A-Z0-9]{4,16}$/.test(codigo)) setTimeout(() => abrirVincular(codigo), 300);
+    }
+    if (S.chopp) {
+      // Tira o ?chopp=1 do endereço: recarregar a página não soma de novo.
+      S.chopp = false;
+      history.replaceState(null, '', location.pathname + location.hash);
+      if (temHH()) HHPainel.choppDoQr();
+      else toast('A Prorrogação não está no plano deste restaurante.', { tone: 'error' });
     }
   }
 

@@ -1,24 +1,8 @@
 VTX Tap — pendências
 ====================
 
-BANCO DO CLUBE (quase tudo já aplicado no Supabase)
-[ ] Rodar no SQL Editor do Supabase (são os 2 trechos que pedem confirmação e não passaram pelo Claude):
-
-    -- 1) Excluir clássico (botão "Excluir" na aba Clássicos)
-    create or replace function public.fid_evento_excluir(p_id uuid) returns void
-    language plpgsql security definer set search_path = public as $$
-    declare r uuid := public.meu_restaurante();
-    begin
-      if r is null then raise exception 'Acesso negado.'; end if;
-      delete from public.fid_eventos where id = p_id and restaurante_id = r and vencedor is null;
-      if not found then raise exception 'Evento não encontrado ou já com resultado.'; end if;
-    end $$;
-    revoke execute on function public.fid_evento_excluir(uuid) from public, anon;
-    grant execute on function public.fid_evento_excluir(uuid) to authenticated;
-
-    -- 2) Apagar as versões antigas do cadastro e da edição do cliente (as novas já estão no ar)
-    drop function if exists public.fid_cadastrar(uuid, text, text, text, text, text, boolean, text);
-    drop function if exists public.fid_editar_cliente(text, text, text, text, boolean);
+PRORROGAÇÃO (HAPPY HOUR QUE CRESCE A CADA CHOPP)
+[ ] Testar num restaurante de verdade: ligar o adicional na central, abrir o /telao/ na TV e imprimir o QR do garçom
 
 DOMÍNIO PRÓPRIO DOS RESTAURANTES
 [ ] Subir o roteador de domínios (app "vtx-dominios") no EasyPanel — passo a passo no README, seção 5

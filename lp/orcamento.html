@@ -82,6 +82,7 @@
   .tipo { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
   .tipo::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
   .tipo--unico { color: var(--unico); background: var(--unico-soft); }
+  .op-ad { font-weight: 500; opacity: .7; }
   .tipo--mensal { color: var(--mensal); background: var(--mensal-soft); }
   .tipo--anual { color: var(--anual); background: var(--anual-soft); }
 
@@ -301,6 +302,8 @@
               <small>Pontos pela nota fiscal, prêmios, níveis do clube, ranking, indicação de amigos e dias com pontos em dobro.</small></span></label>
             <label class="op"><input type="checkbox" id="svDel"><span class="op-txt"><span class="op-top"><b>Delivery</b><span class="preco" data-preco="delivery"></span></span>
               <small>Pedido para entrega com endereço, taxa por distância, comanda na cozinha e acompanhamento do pedido.</small></span></label>
+            <label class="op"><input type="checkbox" id="adProrrogacao"><span class="op-txt"><span class="op-top"><b>Prorrogação <small class="op-ad">· adicional</small></b><span class="preco" data-preco-ad="prorrogacao"></span></span>
+              <small>Happy hour que ganha minutos a cada chopp: o garçom lê a comanda e o relógio cresce na TV e no celular de todo mundo.</small></span></label>
           </div>
           <p class="dica" id="comboDica"></p>
         </div>
@@ -475,6 +478,7 @@
       document.querySelectorAll(`[data-preco="${s.id}"]`).forEach((el) => (el.textContent = `${brl(s.preco)} por mês`));
       document.querySelectorAll(`[data-preco-n="${s.id}"]`).forEach((el) => (el.textContent = brl(s.preco)));
     });
+    Precos.ADICIONAIS.forEach((a) => document.querySelectorAll(`[data-preco-ad="${a.id}"]`).forEach((el) => (el.textContent = `${brl(a.preco)} por mês`)));
     const todos = Precos.combo(Object.fromEntries(Precos.SERVICOS.map((s) => [s.id, true])));
     $('precoTodos').textContent = brl(todos.total);
     $('economiaTodos').textContent = `Economia de ${brl(todos.economia)}/mês`;
@@ -546,6 +550,8 @@
       if (cb.economia) mm.push(linha(cb.qtd === Precos.SERVICOS.length ? 'Desconto do combo (os quatro)' : `Desconto de ${Math.round(cb.desconto * 100)}% (${cb.qtd} serviços)`, '− ' + brl(cb.economia), 'desc'));
       totM += cb.total;
       if (dom !== 'sub') { mm.push(linha('Domínio próprio', brl(PRECO.domMes))); totM += PRECO.domMes; }
+      // Adicionais: fora do desconto de combo.
+      Precos.ADICIONAIS.forEach((a) => { if ($('ad' + a.id[0].toUpperCase() + a.id.slice(1)).checked) { mm.push(linha(`${a.nome} (adicional)`, brl(a.preco))); totM += a.preco; } });
       if (!mm.length) mm.push(linha('Escolha pelo menos um serviço', '—'));
       $('lnMensal').innerHTML = mm.join('');
       $('totMensal').textContent = brl(totM);

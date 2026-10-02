@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0C0820">
+  <meta name="robots" content="noindex">
+  <title>Happy hour</title>
+  <link rel="icon" href="/assets/img/icon-64.png" type="image/png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800;900&family=IBM+Plex+Mono:wght@500&family=Schibsted+Grotesk:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="/assets/css/base.css">
+  <link rel="stylesheet" href="/assets/css/telao.css">
+</head>
+<body class="telao">
+  <main class="tl" id="tl" data-estado="carregando">
+    <header class="tl-topo">
+      <div class="tl-logo" id="tlLogo"></div>
+      <p class="tl-rest" id="tlRest"></p>
+    </header>
+    <section class="tl-centro">
+      <h1 class="tl-nome" id="tlNome">Happy hour</h1>
+      <p class="tl-frase" id="tlFrase"></p>
+      <p class="tl-relogio" id="tlRelogio" aria-live="off">--:--</p>
+      <p class="tl-sub" id="tlSub"></p>
+      <p class="tl-flash" id="tlFlash" aria-hidden="true"></p>
+    </section>
+    <footer class="tl-rodape">
+      <p class="tl-stats" id="tlStats"></p>
+      <p class="tl-recorde" id="tlRecorde"></p>
+    </footer>
+    <button type="button" class="tl-tela-cheia" id="tlCheia">Tela cheia</button>
+  </main>
+
+  <script src="/env.js"></script>
+  <script src="/assets/js/config.js"></script>
+  <script src="/assets/js/precos.js"></script>
+  <script src="/assets/js/store.js"></script>
+  <script src="/assets/js/ui.js"></script>
+  <script src="/assets/js/prorrogacao.js"></script>
+  <script src="/assets/js/telao.js"></script>
+</body>
+</html>
