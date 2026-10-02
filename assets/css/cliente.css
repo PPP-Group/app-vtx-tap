@@ -783,8 +783,9 @@ button.fid-nivel { cursor: pointer; }
 .fid-aniv .i { color: var(--cobalt); }
 .fid-vence { background: var(--pepper-soft); }
 .fid-vence .i { color: var(--pepper); }
-.fid-aniv-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 10px; padding: 14px 16px; border-radius: 16px; background: var(--surface); box-shadow: var(--shadow-1); }
+.fid-aniv-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 14px 16px; border-radius: 16px; background: var(--surface); box-shadow: var(--shadow-1); }
 .fid-aniv-form .field { margin: 0; }
+.fid-aniv-acoes { display: flex; align-items: center; gap: 12px; }
 .fid-validade { display: flex; gap: 8px; align-items: flex-start; font-size: 13.5px; }
 .fid-validade .i { width: 16px; height: 16px; flex: none; margin-top: 2px; }
 .fid-selo--aniv { --nv: var(--cobalt); }
@@ -803,14 +804,14 @@ button.fid-nivel { cursor: pointer; }
 .hh-mesa[hidden] { display: none; }
 .hh-mesa.is-rodando { background: linear-gradient(160deg, #1d1203, #0c0820); color: #fff; box-shadow: 0 10px 30px rgba(242, 157, 12, .25); }
 .hh-mesa-topo { display: flex; align-items: center; gap: 12px; }
-.hh-mesa-ico { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; background: rgba(255, 207, 63, .18); color: #ffcf3f; }
+.hh-mesa-ico { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; background: rgba(255, 198, 26, .18); color: #FFC61A; }
 .hh-mesa-ico .i { width: 22px; height: 22px; }
 .hh-mesa-txt { flex: 1; min-width: 0; display: grid; gap: 2px; }
 .hh-mesa-txt b { font-family: var(--font-display); font-weight: 900; font-size: 24px; line-height: 1; text-transform: uppercase; }
 .hh-mesa-txt small { font-size: 13px; opacity: .8; }
 .hh-mesa-copo[hidden] { display: none; }
 .hh-mesa-info { margin: 0; font-size: 13.5px; text-align: center; opacity: .9; }
-.hh-mesa-info b { color: #ffcf3f; }
+.hh-mesa-info b { color: #FFC61A; }
 .plate--comanda .plate-label { font-size: 9px; letter-spacing: .12em; }
 
 /* Garçom leu a comanda com o celular logado. */

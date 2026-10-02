@@ -249,13 +249,14 @@
   .placa:hover .placa-lados::after, .placa:focus-within .placa-lados::after { content: 'verso'; }
   @media (hover: none) { .placa .placa-lados::after { content: 'frente · toque para virar'; } }
 
-  /* Plaquinha em 3D: frente deitada de um lado, verso em pé do outro. O usuário arrasta para girar. */
+  /* Plaquinha em 3D: frente deitada de um lado, verso em pé do outro. O usuário arrasta para girar.
+     Com o dedo sobre a plaquinha a página não rola (touch-action: none): rola por fora dela. */
   .c3 { display: grid; gap: 22px 40px; align-items: center; padding: clamp(18px, 4vw, 40px); border-radius: 32px; background: var(--noite); color: var(--noite-ink); position: relative; overflow: hidden; }
   .c3::before { content: ''; position: absolute; width: 640px; aspect-ratio: 1; right: -260px; top: -260px; border-radius: 50%; pointer-events: none;
     background: radial-gradient(circle, transparent 0 31%, rgba(125, 39, 252, .28) 31% 37%, transparent 37% 53%, rgba(125, 39, 252, .12) 53% 59%, transparent 59% 75%, rgba(125, 39, 252, .06) 75% 81%, transparent 81%); }
   @media (min-width: 880px) { .c3 { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); } }
   .c3 > * { position: relative; }
-  .c3-palco { perspective: 1400px; display: grid; place-items: center; padding: clamp(30px, 6vw, 70px) 6px; cursor: grab; touch-action: pan-y; user-select: none; -webkit-user-select: none; border-radius: 22px; outline-offset: 4px; }
+  .c3-palco { perspective: 1400px; display: grid; place-items: center; padding: clamp(30px, 6vw, 70px) 6px; cursor: grab; touch-action: none; overscroll-behavior: contain; user-select: none; -webkit-user-select: none; border-radius: 22px; outline-offset: 4px; }
   .c3-palco:active { cursor: grabbing; }
   .c3-palco:focus-visible { outline: 3px solid var(--lilas); }
   .c3-cartao { --rx: -8deg; --ry: -24deg; --rz: 0deg; position: relative; width: min(100%, 540px); aspect-ratio: 1712 / 1080; transform-style: preserve-3d; transform: scale(var(--s, 1)) rotateZ(var(--rz)) rotateX(var(--rx)) rotateY(var(--ry)); }
@@ -405,7 +406,7 @@
     </div>
     <div class="hero-fotos" aria-hidden="true">
       <span class="fone"><span class="fone-tela"><span class="fone-status" aria-hidden="true"><span>9:41</span><svg><use href="#i-status"/></svg></span><img src="/assets/img/lp/fid-conta.webp" width="600" height="1299" alt="" fetchpriority="high"></span></span>
-      <span class="hero-placa"><img src="/assets/img/placas/cartao-vtx-verso.webp" width="1080" height="1712" alt="" fetchpriority="high"></span>
+      <span class="hero-placa"><img src="/assets/img/placas/cartao-vtx-verso.webp?v=4" width="1080" height="1712" alt="" fetchpriority="high"></span>
       <span class="hero-etq hero-etq--a"><span class="pt">+13</span><span>pontos<small>nota fiscal lida</small></span></span>
       <span class="hero-etq hero-etq--b"><svg width="20" height="20" style="color:#1B7F52"><use href="#i-moto"/></svg><span>Pedido #4<small>R$ 0 de comissão</small></span></span>
     </div>
@@ -595,8 +596,8 @@
       <div class="c3-palco" id="c3Palco" tabindex="0" role="img" aria-roledescription="plaquinha em 3D" aria-label="Plaquinha padrão da VTX Tap. Frente deitada: QR Code com a logo da VTX Tap e a faixa roxa com Aproxime o celular. Verso em pé: o QR Code em cima e a faixa embaixo. Arraste ou use as setas para girar.">
         <div class="c3-cartao" id="c3Cartao">
           <span class="c3-borda" style="--z:-1.5px"></span><span class="c3-borda" style="--z:-.5px"></span><span class="c3-borda" style="--z:.5px"></span><span class="c3-borda" style="--z:1.5px"></span>
-          <div class="c3-face c3-frente"><img src="/assets/img/placas/cartao-vtx-frente.webp" width="1712" height="1080" alt="" draggable="false"><span class="c3-brilho"></span></div>
-          <div class="c3-face c3-verso"><img src="/assets/img/placas/cartao-vtx-verso.webp" width="1080" height="1712" alt="" draggable="false"><span class="c3-brilho"></span></div>
+          <div class="c3-face c3-frente"><img src="/assets/img/placas/cartao-vtx-frente.webp?v=4" width="1712" height="1080" alt="" draggable="false"><span class="c3-brilho"></span></div>
+          <div class="c3-face c3-verso"><img src="/assets/img/placas/cartao-vtx-verso.webp?v=4" width="1080" height="1712" alt="" draggable="false"><span class="c3-brilho"></span></div>
         </div>
       </div>
       <div class="c3-txt">
@@ -611,7 +612,7 @@
     </div>
     <h3 class="c3-sub">Exemplos de artes personalizáveis</h3>
     <div class="placas">
-      <article class="placa"><span class="placa-lados"><img class="placa-frente" src="/assets/img/placas/placa-personalizada-basica.webp?v=3" width="1200" height="757" alt="Frente da plaquinha personalizada: o nome do restaurante, o QR Code com o espaço da logo dele no meio e a faixa na cor do restaurante" loading="lazy"><img class="placa-verso" src="/assets/img/placas/placa-personalizada-basica-verso.webp?v=3" width="1200" height="757" alt="Verso da plaquinha personalizada, em pé, com o nome, o QR Code e a faixa na cor do restaurante" loading="lazy"></span><h3>Personalizada simples</h3><p>A sua logo no meio do QR, o nome do restaurante escrito e a faixa na cor dele, na frente e no verso.</p></article>
+      <article class="placa"><span class="placa-lados"><img class="placa-frente" src="/assets/img/placas/placa-personalizada-basica.webp?v=4" width="1200" height="757" alt="Frente da plaquinha personalizada: o nome do restaurante, o QR Code com o espaço da logo dele no meio e a faixa na cor do restaurante" loading="lazy"><img class="placa-verso" src="/assets/img/placas/placa-personalizada-basica-verso.webp?v=4" width="1200" height="757" alt="Verso da plaquinha personalizada, em pé, com o nome, o QR Code e a faixa na cor do restaurante" loading="lazy"></span><h3>Personalizada simples</h3><p>A sua logo no meio do QR, o nome do restaurante escrito e a faixa na cor dele, na frente e no verso.</p></article>
       <article class="placa"><span class="placa-lados"><img class="placa-frente" src="/assets/img/placas/placa-sob-demanda.webp?v=3" width="1200" height="757" alt="Exemplo de plaquinha sob demanda: arte de um restaurante em verde e dourado, com o QR Code numa placa creme" loading="lazy"><img class="placa-verso" src="/assets/img/placas/placa-sob-demanda-verso.webp?v=3" width="1200" height="757" alt="Verso do exemplo sob demanda, em pé, com a mesma arte" loading="lazy"></span><h3>Sob demanda</h3><p>A arte é do seu restaurante: você manda ou conta como quer, e a gente faz. O QR, o convite para aproximar e o código continuam garantidos. Imagem ilustrativa.</p></article>
     </div>
   </section>
@@ -717,9 +718,14 @@
       });
       palco.addEventListener('pointermove', (e) => {
         if (!arrastando) return;
+        e.preventDefault();
+        // No dedo gira um pouco mais por pixel que no mouse.
+        const k = e.pointerType === 'touch' ? 0.6 : 0.5;
         const dx = e.clientX - x0, dy = e.clientY - y0; x0 = e.clientX; y0 = e.clientY;
-        vy = dx * 0.5; vx = -dy * 0.5; ry += vy; rx = Math.max(-70, Math.min(70, rx + vx));
+        vy = dx * k; vx = -dy * k * 0.8; ry += vy; rx = Math.max(-70, Math.min(70, rx + vx));
       });
+      // Sem isso, alguns navegadores ainda rolam a página com o dedo sobre a plaquinha.
+      palco.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
       const soltar = () => { arrastando = false; };
       palco.addEventListener('pointerup', soltar);
       palco.addEventListener('pointercancel', soltar);

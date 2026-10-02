@@ -182,7 +182,7 @@ Reinicie o Traefik e, no domínio coringa, informe o resolvedor `hostinger`. O p
 
 Pronto: cada restaurante criado na central já responde em `https://subdominio.vortexsystems.tech`, com HTTPS, sem nenhum passo manual.
 
-**5. Domínio próprio dos restaurantes (uma vez).** O restaurante configura sozinho em *Ajustes › Endereço* do painel: digita o domínio (ex.: `cardapio.seurestaurante.com.br`), o painel mostra o registro DNS a criar (CNAME para `tap.vortexsystems.tech`, ou A com o IP da VPS no domínio raiz), confere o DNS sozinho e, quando está certo, o domínio entra no ar com HTTPS. O subdomínio continua funcionando sempre.
+**5. Domínio próprio dos restaurantes (uma vez).** Passo a passo completo, com o teste e o que fazer se der errado: `deploy/dominios/PASSO-A-PASSO.md`. O restaurante configura sozinho em *Ajustes › Endereço* do painel: digita o domínio (ex.: `cardapio.seurestaurante.com.br`), o painel mostra o registro DNS a criar (CNAME para `tap.vortexsystems.tech`, ou A com o IP da VPS no domínio raiz), confere o DNS sozinho e, quando está certo, o domínio entra no ar com HTTPS. O subdomínio continua funcionando sempre.
 
 Quem põe a rota e o certificado de cada domínio no Traefik é o **roteador de domínios** (`deploy/dominios`), um segundo app pequeno no mesmo projeto do EasyPanel:
 
@@ -210,6 +210,14 @@ O painel (`/admin`) pode ser instalado como app (PWA), com ícone na tela inicia
 - Exige HTTPS, que o EasyPanel já fornece. Os arquivos ficam em `admin/manifest.webmanifest`, `admin/sw.js` e `admin/icons/`.
 - O app sempre busca a versão mais nova quando há internet; sem internet, abre a última cópia salva.
 - As notificações de chamado aparecem enquanto o app está aberto ou em segundo plano recente. Aviso com o app totalmente fechado exige Web Push, que ainda não está implementado.
+
+## Manual de marca
+
+A identidade visual (cores, tipografia, logos, grafismos, voz e as peças impressas) segue o manual da Vortex:
+<https://claude.ai/artifact/D8xhyUX47RHdSoA82a9Xj4>. Resumo do que mais aparece aqui: roxo `#7D27FC` como assinatura,
+noite `#140B33`, ouro `#FFC61A` (um acento por peça), um só gradiente (o do bloco roxo, 150°), títulos em Big Shoulders
+Display 900 em caixa alta, texto em Schibsted Grotesk, números em IBM Plex Mono, peças impressas em Sora; anéis
+concêntricos como grafismo; ondas de NFC só nos produtos de aproximação; sem emoji e sem exclamação em texto institucional.
 
 ## Personalizar a aparência
 

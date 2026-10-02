@@ -24,6 +24,16 @@
   const TIPO = { nivel: 'Bônus de nível', compra: 'Compra', indicacao: 'Indicação', boas_vindas: 'Boas-vindas', manual: 'Lançamento', resgate: 'Troca', estorno: 'Estorno', ajuste: 'Ajuste',
     aniversario: 'Aniversário', transferencia: 'Transferência', validade: 'Pontos vencidos', evento: 'Clássico' };
   const MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+  // "15 de maio de 1990 (34 anos)"; quem só tem o mês salvo: "Maio (sem o dia e o ano)".
+  function anivFicha(c) {
+    if (c.nascimento) {
+      const [a, m, d] = c.nascimento.split('-').map(Number);
+      const hoje = new Date();
+      const idade = hoje.getFullYear() - a - (hoje.getMonth() + 1 < m || (hoje.getMonth() + 1 === m && hoje.getDate() < d) ? 1 : 0);
+      return `${d} de ${MESES[m - 1].toLowerCase()} de ${a} (${idade} ${idade === 1 ? 'ano' : 'anos'})`;
+    }
+    return c.aniversario_mes ? `${MESES[c.aniversario_mes - 1]} (sem o dia e o ano)` : 'Não informado';
+  }
   const STATUS = { pendente: 'Conferir', creditada: 'Creditada', recusada: 'Recusada', estornada: 'Estornada', entregue: 'Entregue', cancelado: 'Cancelado' };
 
   let ctx = null;
@@ -326,8 +336,8 @@
           <label class="field"><span>Nome completo</span><input class="input" name="nome" maxlength="80" value="${esc(c.nome)}" required></label>
           <label class="field"><span>E-mail</span><input class="input" name="email" type="email" maxlength="120" value="${esc(c.email || '')}"></label>
           <label class="field"><span>Celular</span><input class="input" name="telefone" type="tel" maxlength="16" value="${esc(tel(c.telefone))}"></label>
-          <label class="field"><span>Mês do aniversário</span><select class="input" name="aniversario"><option value="">Não informado</option>
-            ${MESES.map((m, i) => `<option value="${i + 1}" ${+c.aniversario_mes === i + 1 ? 'selected' : ''}>${m}</option>`).join('')}</select></label>
+          <label class="field"><span>Aniversário</span><input class="input" name="aniversario" type="date" min="1900-01-01" max="${new Date().toISOString().slice(0, 10)}" value="${esc(c.nascimento || '')}">
+            ${!c.nascimento && c.aniversario_mes ? `<small class="help">Hoje só o mês está salvo (${MESES[c.aniversario_mes - 1]}).</small>` : ''}</label>
           <label class="check"><input type="checkbox" name="marketing" ${c.marketing ? 'checked' : ''}> <span>Aceita receber promoções</span></label>
           <div class="vhead-actions"><button type="submit" class="btn btn-cobalt btn-sm">Salvar</button><button type="button" class="btn btn-quiet btn-sm" data-fp-ficha="ver">Cancelar</button></div>
         </form>`
@@ -336,7 +346,7 @@
           <div><dt>Celular</dt><dd>${c.telefone ? `<a href="https://wa.me/55${F.soDigitos(c.telefone)}" target="_blank" rel="noopener">${esc(tel(c.telefone))}</a>` : '-'}</dd></div>
           <div><dt>E-mail</dt><dd>${c.email ? `<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>` : '-'}</dd></div>
           <div><dt>Desde</dt><dd>${data(c.criado_em)}</dd></div>
-          <div><dt>Aniversário</dt><dd>${c.aniversario_mes ? MESES[c.aniversario_mes - 1] : 'Não informado'}</dd></div>
+          <div><dt>Aniversário</dt><dd>${anivFicha(c)}</dd></div>
           <div><dt>Código de indicação</dt><dd class="mono">${esc(c.codigo || '-')}</dd></div>
           ${c.indicado_por ? `<div><dt>Indicado por</dt><dd><button type="button" class="link" data-fp-cliente="${esc(c.indicado_por)}">${esc(c.indicado_por_nome || cpfOculto(c.indicado_por))}</button></dd></div>` : ''}
           <div><dt>Promoções</dt><dd>${c.marketing ? 'Aceita' : 'Não aceita'}</dd></div>
@@ -1383,8 +1393,9 @@
       return toast(erroMsg(ex), { tone: 'error' });
     }
     const cel = (v) => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
-    const linhas = [['Nome', 'CPF', 'E-mail', 'Celular', 'Pontos', 'Código de indicação', 'Aceita promoções', 'Cadastro'].map(cel).join(';')]
-      .concat(lista.map((c) => [c.nome, fmtCpf(c.cpf), c.email, tel(c.telefone), c.pontos, c.codigo, c.marketing ? 'sim' : 'não', data(c.criado_em)].map(cel).join(';')));
+    const linhas = [['Nome', 'CPF', 'E-mail', 'Celular', 'Pontos', 'Código de indicação', 'Aceita promoções', 'Aniversário', 'Cadastro'].map(cel).join(';')]
+      .concat(lista.map((c) => [c.nome, fmtCpf(c.cpf), c.email, tel(c.telefone), c.pontos, c.codigo, c.marketing ? 'sim' : 'não',
+        c.nascimento ? c.nascimento.split('-').reverse().join('/') : c.aniversario_mes ? MESES[c.aniversario_mes - 1] : '', data(c.criado_em)].map(cel).join(';')));
     const blob = new Blob(['﻿' + linhas.join('\r\n')], { type: 'text/csv;charset=utf-8' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);

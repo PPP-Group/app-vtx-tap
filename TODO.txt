@@ -7,7 +7,7 @@ PRORROGAÇÃO (HAPPY HOUR QUE CRESCE A CADA CHOPP)
     - Android: testar o "Modo garçom (NFC)" encostando na comanda
 
 DOMÍNIO PRÓPRIO DOS RESTAURANTES
-[ ] Subir o roteador de domínios (app "vtx-dominios") no EasyPanel — passo a passo no README, seção 5
+[ ] Subir o roteador de domínios (app "vtx-dominios") no EasyPanel — passo a passo completo em deploy/dominios/PASSO-A-PASSO.md
     - Criar o app a partir da pasta deploy/dominios (Dockerfile)
     - Variáveis: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, APP_URL (endereço interno do app, ex.: http://vtx_tap:80)
     - Bind mount: /etc/easypanel/traefik/config -> /traefik
