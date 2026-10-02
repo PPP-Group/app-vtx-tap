@@ -595,27 +595,17 @@
     }
     const validadeDesde = (db) => { const d = (regras(db).validade || {}).desde; return /^\d{4}-\d{2}-\d{2}$/.test(d || '') ? +new Date(d + 'T00:00:00') : null; };
     const venceEm = (db, m, iv) => Math.max(+new Date(m.criado_em), validadeDesde(db) || 0) + iv;
-    // A parte que veio de transferência recebida vence separada e não desconta do ranking (como no banco).
     function vencer(db, cpf) {
       const iv = validadeMs(db);
       const c = cliDe(db, cpf);
       if (!iv || !c || c.pontos <= 0) return 0;
       const ms = F(db).movimentos.filter((m) => m.cpf === cpf);
-      let restante = -ms.filter((m) => m.pontos < 0).reduce((t, m) => t + m.pontos, 0);
-      let tr = 0; let out = 0;
-      for (const m of ms.filter((x) => x.pontos > 0).map((x) => ({ ...x, vence: venceEm(db, x, iv) })).sort((a, b) => a.vence - b.vence)) {
-        if (m.vence > Date.now()) break;
-        const usado = Math.min(restante, m.pontos);
-        restante -= usado;
-        if (m.tipo === 'transferencia') tr += m.pontos - usado; else out += m.pontos - usado;
-      }
-      const total = Math.min(tr + out, c.pontos);
-      if (total <= 0) return 0;
-      tr = Math.min(tr, total);
-      out = total - tr;
-      if (out > 0) mover(db, cpf, 'validade', -out, { descricao: 'Pontos vencidos', por: 'Validade' });
-      if (tr > 0) mover(db, cpf, 'validade', -tr, { descricao: 'Pontos vencidos (recebidos por transferência)', por: 'Validade (transferência)' });
-      return total;
+      const ganhos = ms.filter((m) => m.pontos > 0 && venceEm(db, m, iv) <= Date.now()).reduce((t, m) => t + m.pontos, 0);
+      const saidas = -ms.filter((m) => m.pontos < 0).reduce((t, m) => t + m.pontos, 0);
+      const v = Math.min(ganhos - saidas, c.pontos);
+      if (v <= 0) return 0;
+      mover(db, cpf, 'validade', -v, { descricao: 'Pontos vencidos', por: 'Validade' });
+      return v;
     }
     function aVencer(db, cpf) {
       const iv = validadeMs(db);
@@ -1190,8 +1180,7 @@
         const f = F(db);
         const ganhos = new Map();
         for (const m of f.movimentos) {
-          if (m.tipo === 'resgate' || m.tipo === 'transferencia' || (m.tipo === 'estorno' && m.resgate_id)) continue;
-          if (m.tipo === 'validade' && m.por === 'Validade (transferência)') continue;
+          if (m.tipo === 'resgate' || (m.tipo === 'estorno' && m.resgate_id)) continue;
           ganhos.set(m.cpf, (ganhos.get(m.cpf) || 0) + m.pontos);
         }
         const lista = [...ganhos].filter(([, p]) => p > 0).map(([cpf, pontos]) => ({ cpf, pontos, nome: nomeCurto((cliDe(db, cpf) || {}).nome) }))

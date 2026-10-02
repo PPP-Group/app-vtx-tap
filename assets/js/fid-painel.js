@@ -568,7 +568,7 @@
         <label class="field"><span>Mínimo por transferência</span><input class="input mono" name="trMinimo" type="number" min="1" max="1000000" value="${esc(t.minimo || 1)}"></label>
         <label class="field"><span>Máximo por dia (0 = sem limite)</span><input class="input mono" name="trMaximo" type="number" min="0" max="10000000" value="${esc(t.maximoDia || 0)}"></label>
       </div>
-      <small class="help">Pontos transferidos não contam no ranking nem nos níveis.</small>
+      <small class="help">Os pontos saem do ranking de quem manda e entram no de quem recebe. Não contam para subir de nível.</small>
     </section>`;
   }
   function validadeForm(r) {
