@@ -2,9 +2,6 @@ VTX Tap — pendências
 ====================
 
 PRORROGAÇÃO (HAPPY HOUR QUE CRESCE A CADA CHOPP)
-[ ] Definir o preço do adicional (hoje está 0 = "preço a combinar")
-    - Mudar em dois lugares: assets/js/precos.js (ADICIONAIS) e public.adicional_preco no banco
-    - Depois, incluir o adicional no orçamento da landing page (lp/orcamento.html)
 [ ] Testar num restaurante de verdade: ligar o adicional na central, abrir o /telao/ na TV e imprimir o QR do garçom
 
 DOMÍNIO PRÓPRIO DOS RESTAURANTES

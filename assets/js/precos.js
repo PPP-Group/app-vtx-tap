@@ -22,9 +22,9 @@
   const DESCONTO = { 2: 0.1, 3: 0.15 };
   const TODOS = 349;
   const DOMINIO_MES = 19;
-  // Adicionais: o mesmo de public.adicional_preco. preco 0 = preço ainda a definir (não soma na mensalidade).
+  // Adicionais: o mesmo de public.adicional_preco. Fora do desconto de combo.
   const ADICIONAIS = [
-    { id: 'prorrogacao', nome: 'Prorrogação', preco: 0, desc: 'Happy hour que ganha minutos a cada chopp: o garçom lê o QR e o relógio no telão aumenta.' },
+    { id: 'prorrogacao', nome: 'Prorrogação', preco: 69, desc: 'Happy hour que ganha minutos a cada chopp: o garçom lê o QR e o relógio no telão aumenta.' },
   ];
   const adicionais = (ad = {}) => ADICIONAIS.filter((a) => ad[a.id]).reduce((t, a) => t + a.preco, 0);
   // Conferência automática da nota na SEFAZ (fidelidade): o restaurante liga se quiser e paga por nota conferida.

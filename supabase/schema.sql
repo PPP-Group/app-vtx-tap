@@ -166,9 +166,9 @@ language sql stable security definer set search_path = public as $$
   from public.restaurantes where id = p_restaurante;
 $$;
 
--- Preço mensal de cada adicional (o mesmo de Precos.ADICIONAIS). Prorrogação: preço ainda a definir.
+-- Preço mensal de cada adicional (o mesmo de Precos.ADICIONAIS), fora do desconto de combo.
 create or replace function public.adicional_preco(p_adicional text) returns numeric language sql immutable as $$
-  select (case p_adicional when 'prorrogacao' then 0 else 0 end)::numeric;
+  select (case p_adicional when 'prorrogacao' then 69 else 0 end)::numeric;
 $$;
 
 -- Mensalidade do plano, em reais.
