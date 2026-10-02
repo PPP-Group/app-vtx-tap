@@ -2,7 +2,9 @@ VTX Tap — pendências
 ====================
 
 PRORROGAÇÃO (HAPPY HOUR QUE CRESCE A CADA CHOPP)
-[ ] Testar num restaurante de verdade: ligar o adicional na central, abrir o /telao/ na TV e imprimir o QR do garçom
+[ ] Testar num restaurante de verdade: ligar o adicional na central, abrir na TV pelo botão "Abrir na TV" e ligar umas plaquinhas como comanda
+    - Garçom: entrar no painel no celular dele (mesmo endereço do restaurante) e ler a comanda a cada chopp
+    - Android: testar o "Modo garçom (NFC)" encostando na comanda
 
 DOMÍNIO PRÓPRIO DOS RESTAURANTES
 [ ] Subir o roteador de domínios (app "vtx-dominios") no EasyPanel — passo a passo no README, seção 5

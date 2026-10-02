@@ -28,6 +28,8 @@
   const tag = readTag();
   let tagNova = false;
   let mesa = tag ? null : readMesaBruta();
+  // Plaquinha usada como comanda individual (uma por pessoa).
+  let comanda = null;
   const areaDe = (n) => (live.mesas.areas.find((a) => n >= a.de && n <= a.ate) || {}).nome || '';
   const motivo = (id) => cfg.motivos.find((m) => m.id === id) || { label: id, curto: id };
 
@@ -50,7 +52,7 @@
     UI.aplicarCor(R.cor);
     $('#brandName').textContent = R.nome;
     $('#brandDesc').textContent = R.descricao || '';
-    document.title = mesa ? `Mesa ${mesa} · ${R.nome}` : R.nome;
+    document.title = comanda ? `Comanda ${comanda} · ${R.nome}` : mesa ? `Mesa ${mesa} · ${R.nome}` : R.nome;
     const logo = $('#heroLogo');
     const logoUrl = safeUrl(R.logo);
     logo.classList.toggle('is-initials', !logoUrl);
@@ -92,14 +94,19 @@
   /* ---------------- Placa ---------------- */
   function renderPlate() {
     const el = $('#plate');
-    el.classList.toggle('plate--empty', !mesa);
+    el.classList.toggle('plate--empty', !mesa && !comanda);
+    el.classList.toggle('plate--comanda', !!comanda);
     const area = mesa ? areaDe(mesa) : '';
-    el.setAttribute('aria-label', mesa ? `Mesa ${mesa}${area ? `, ${area}` : ''}` : 'Mesa não identificada');
+    el.setAttribute('aria-label', comanda ? `Comanda ${comanda}${mesa ? `, mesa ${mesa}` : ''}` : mesa ? `Mesa ${mesa}${area ? `, ${area}` : ''}` : 'Mesa não identificada');
     el.title = area;
     el.innerHTML = `<span class="rivet r1"></span><span class="rivet r2"></span>
-      <span class="plate-label" aria-hidden="true">Mesa</span>
-      <span class="plate-num" aria-hidden="true">${mesa ? pad(mesa) : '?'}</span>`;
-    $('#tablePicker').hidden = !!mesa || !!tag;
+      <span class="plate-label" aria-hidden="true">${comanda ? 'Comanda' : 'Mesa'}</span>
+      <span class="plate-num" aria-hidden="true">${comanda ? pad(comanda) : mesa ? pad(mesa) : '?'}</span>`;
+    // Comanda: a mesa (para o sino) a pessoa digita.
+    $('#tablePicker').hidden = !!mesa || (!!tag && !comanda);
+    const dica = $('#tablePicker p');
+    if (dica) dica.innerHTML = comanda ? '<strong>Para chamar o garçom</strong>, digite o número da sua mesa.'
+      : '<strong>Encoste o celular na plaquinha da mesa</strong> ou digite o número dela.';
     $('#menuMesa').textContent = mesa ? `Mesa ${pad(mesa)}` : '';
     const nova = $('#tagNova');
     nova.hidden = !tagNova;
@@ -109,7 +116,7 @@
           <p>Esta plaquinha ainda não foi ligada a uma mesa. Chame alguém da equipe para configurar.</p></div>
         <a class="btn btn-cobalt btn-block" href="/admin/?vincular=${encodeURIComponent(tag)}">${icon('lock')} Sou da equipe · configurar</a>
         <small class="mono">Código ${esc(tag)}</small>`;
-    } else if (tag && !mesa) {
+    } else if (tag && !mesa && !comanda) {
       nova.hidden = false;
       nova.innerHTML = `<div><h2>Sem conexão</h2><p>Não foi possível identificar a mesa desta plaquinha. Confira a internet e encoste o celular de novo.</p></div>`;
     }
@@ -636,37 +643,113 @@
     if (b) openSheet(b.dataset.open);
   });
 
-  /* ---------------- Prorrogação (adicional): relógio do happy hour ---------------- */
+  /* ---------------- Prorrogação (adicional): relógio do happy hour ----------------
+     Todo mundo vê no próprio celular: o copo esvazia com o tempo e enche a cada chopp.
+     O garçom, com o celular logado no painel, lê a comanda (ou a mesa) e soma o chopp. */
   let hh = null;
+  let hhCopo = null;
+  let hhPoll = null;
   const temHH = () => !!(live.plano && live.plano.adicionais && live.plano.adicionais.prorrogacao && live.prorrogacao && live.prorrogacao.ativo && window.Prorrogacao);
+  const hhHora = (iso) => new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   function renderHH() {
     const el = $('#hhMesa');
     const PR = window.Prorrogacao;
-    const hora = (iso) => new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-    // Rolando: o relógio. Parado: só avisa se o próximo começa nas próximas 12 horas.
+    // Rolando: o copo. Parado: só avisa se o próximo começa nas próximas 12 horas.
     const proxima = hh && !hh.rodando && hh.proxima && new Date(hh.proxima) - Date.now() < 12 * 3600e3 ? hh.proxima : null;
     if (!hh || !hh.disponivel || (!hh.rodando && !proxima)) {
       el.hidden = true;
-      el.innerHTML = '';
       return;
     }
     el.hidden = false;
     el.classList.toggle('is-rodando', !!hh.rodando);
+    if (!el.querySelector('.hh-mesa-copo')) {
+      el.innerHTML = `<div class="hh-mesa-topo"><span class="hh-mesa-ico"></span><div class="hh-mesa-txt"><b></b><small></small></div></div>
+        <div class="hh-mesa-copo"></div><p class="hh-mesa-info"></p>`;
+      hhCopo = PR.copo(el.querySelector('.hh-mesa-copo'), { tamanho: 'cel' });
+    }
+    el.querySelector('.hh-mesa-ico').innerHTML = icon(hh.rodando ? 'beer' : 'timer');
+    el.querySelector('.hh-mesa-txt b').textContent = hh.rodando ? hh.nome : `${hh.nome} às ${hhHora(proxima)}`;
+    el.querySelector('.hh-mesa-txt small').textContent = hh.frase || '';
+    el.querySelector('.hh-mesa-copo').hidden = !hh.rodando;
     const s = hh.sessao;
-    el.innerHTML = hh.rodando
-      ? `<span class="hh-mesa-ico">${icon('beer')}</span>
-        <div class="hh-mesa-txt"><b>${esc(hh.nome)}</b><small>${esc(hh.frase || '')}</small></div>
-        <div class="hh-mesa-rel"><b class="mono" data-hh-mesa>${PR.relogio(PR.restante(hh))}</b><small>${s.leituras} ${esc(hh.produto)}${s.leituras === 1 ? '' : 's'} · até ${hora(s.fim)}</small></div>`
-      : `<span class="hh-mesa-ico">${icon('timer')}</span>
-        <div class="hh-mesa-txt"><b>${esc(hh.nome)} às ${hora(proxima)}</b><small>${esc(hh.frase || '')}</small></div>`;
+    let info = '';
+    if (hh.rodando && s) {
+      const minha = (s.destaques || []).findIndex((x) => (comanda && x.comanda === comanda) || (!comanda && mesa && x.mesa === mesa));
+      info = `<b>${s.leituras}</b> ${esc(hh.produto)}${s.leituras === 1 ? '' : 's'} · acaba às <b>${hhHora(s.fim)}</b>`
+        + (minha >= 0 ? ` · ${['🥇', '🥈', '🥉'][minha]} ${comanda ? 'sua comanda' : 'sua mesa'} é a ${minha + 1}ª que mais prorrogou` : '');
+    }
+    el.querySelector('.hh-mesa-info').innerHTML = info;
+    if (hhCopo) hhCopo.atualizar(hh);
   }
+
+  // Garçom (celular logado no painel) leu a plaquinha durante a Prorrogação: soma o chopp.
+  // Recarregar a página não soma de novo (fica marcado no histórico do navegador).
+  async function hhGarcom() {
+    if (!tag || (!mesa && !comanda) || !hh || !hh.rodando) return;
+    if (history.state && history.state.hhSomado) return;
+    const eu = await store.auth.sessao().catch(() => null);
+    if (!eu) return;
+    history.replaceState({ ...(history.state || {}), hhSomado: true }, '');
+    hhSomarAqui(false);
+  }
+  async function hhSomarAqui(forcar) {
+    const quem = comanda ? `Comanda ${comanda}` : `Mesa ${mesa}`;
+    try {
+      const r = await store.hhSomarEtiqueta(tag, forcar);
+      hh = Prorrogacao.sincronizar(r);
+      renderHH();
+      hhAvisoGarcom(r.repetida
+        ? { tom: 'aviso', titulo: `${quem} já contou agora há pouco`, texto: `Era outro ${hh.produto}?`, botoes: [['mais', `Somar mais 1 ${hh.produto}`]] }
+        : { tom: 'ok', titulo: `${quem}: +${String(+r.adicionados).replace('.', ',')} min`, texto: r.travado ? 'O relógio chegou no teto ou no horário limite.' : `${hh.produto} contado no relógio.`,
+          botoes: [['desfazer', 'Desfazer'], ['mais', `+1 ${hh.produto}`]], leitura: r.leitura_id });
+      if (hhPoll) hhPoll.ja();
+    } catch (e) {
+      hhAvisoGarcom({ tom: 'erro', titulo: 'Não contou', texto: e.message || 'Tente de novo.', botoes: [] });
+    }
+  }
+  let hhLeitura = null;
+  function hhAvisoGarcom({ tom, titulo, texto, botoes, leitura }) {
+    hhLeitura = leitura || null;
+    let el = $('#hhGarcom');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'hhGarcom';
+      el.className = 'hh-garcom';
+      el.setAttribute('role', 'status');
+      document.body.appendChild(el);
+    }
+    el.dataset.tom = tom;
+    el.innerHTML = `<span class="hh-garcom-tag">${icon('users')} Modo garçom</span>
+      <b>${esc(titulo)}</b><small>${esc(texto)}</small>
+      <div class="hh-garcom-acts">${botoes.map(([k, l]) => `<button type="button" class="btn ${k === 'mais' ? 'btn-cobalt' : 'btn-line'} btn-sm" data-hhg="${k}">${esc(l)}</button>`).join('')}
+        <a class="btn btn-quiet btn-sm" href="/admin/#prorrogacao">Painel</a>
+        <button type="button" class="icon-btn" data-hhg="fechar" aria-label="Fechar">${icon('x')}</button></div>`;
+    el.hidden = false;
+  }
+  document.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-hhg]');
+    if (!b) return;
+    const k = b.dataset.hhg;
+    if (k === 'fechar') return ($('#hhGarcom').hidden = true);
+    if (k === 'mais') return hhSomarAqui(true);
+    if (k === 'desfazer' && hhLeitura) {
+      try {
+        hh = Prorrogacao.sincronizar(await store.hhDesfazerLeitura(hhLeitura));
+        renderHH();
+        hhAvisoGarcom({ tom: 'aviso', titulo: 'Desfeito', texto: 'O chopp saiu do relógio.', botoes: [['mais', `+1 ${hh.produto}`]] });
+      } catch (ex) {
+        toast(ex.message || 'Não foi possível desfazer.', { tone: 'error' });
+      }
+    }
+  });
   function iniciarHH() {
     if (!temHH()) return;
-    Prorrogacao.acompanhar(store, (st) => { hh = st; renderHH(); }, 10000);
-    setInterval(() => {
-      const b = $('[data-hh-mesa]');
-      if (b && hh) b.textContent = Prorrogacao.relogio(Prorrogacao.restante(hh));
-    }, 1000);
+    let primeira = true;
+    hhPoll = Prorrogacao.acompanhar(store, (st) => {
+      hh = st;
+      renderHH();
+      if (primeira) { primeira = false; hhGarcom(); }
+    }, 5000);
   }
 
   /* ---------------- Rodapé ---------------- */
@@ -1116,8 +1199,11 @@
   async function resolverTag() {
     if (!tag) return;
     try {
-      mesa = await store.mesaDaEtiqueta(tag);
-      tagNova = !mesa;
+      const info = (await store.etiquetaInfo(tag)) || {};
+      comanda = info.comanda || null;
+      // Comanda: a mesa vem do que a pessoa digitou (?mesa=).
+      mesa = info.mesa || (comanda ? readMesaBruta() : null);
+      tagNova = !mesa && !comanda;
     } catch (e) {
       console.error(e);
       mesa = null;

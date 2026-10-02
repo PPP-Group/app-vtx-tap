@@ -79,14 +79,16 @@ A central libera por restaurante (Editar restaurante → Módulos contratados �
 
 ### Prorrogação (adicional)
 
-Happy hour que ganha minutos a cada chopp, inspirado no Budclock da Budweiser (Equador, 2012). Cada restaurante dá o nome que quiser (exemplos: Prorrogação, Hora Extra, Happy Hour Sem Fim). A central liga o adicional em Editar restaurante → Plano contratado, ou o administrador liga na aba Plano do painel. Preço ainda a definir (`public.adicional_preco` e `Precos.ADICIONAIS`).
+Happy hour que ganha minutos a cada chopp, inspirado no Budclock da Budweiser (Equador, 2012). Cada restaurante dá o nome que quiser (exemplos: Prorrogação, Hora Extra, Happy Hour Sem Fim). A central liga o adicional em Editar restaurante → Plano contratado, ou o administrador liga na aba Plano do painel. R$ 69 por mês, fora do desconto de combo (`public.adicional_preco` e `Precos.ADICIONAIS`).
 
 - **Ajustes** (aba do painel com o nome escolhido): nome, frase, o que soma tempo (chopp), duração inicial, minutos por chopp, teto de minutos ganhos, horário limite (acaba nessa hora de qualquer jeito) e agenda (começa sozinha nos dias e hora escolhidos).
-- **Ao vivo**: relógio, botão **+1 chopp** (e +2, +3, +5), desfazer a última leitura, encerrar, últimas leituras.
-- **QR do garçom** (`/admin/?chopp=1`, para imprimir e colar na chopeira): com o celular logado no painel, ler o QR soma 1 chopp.
-- **Telão** (`/telao/`): o relógio em tela cheia na TV do bar, com "+1 min" a cada chopp, a próxima da agenda e o recorde da casa.
-- **Página da mesa**: faixa com o relógio enquanto rola (e o horário da próxima, se for nas próximas 12 horas).
-- Banco: tabelas `hh_sessoes` e `hh_leituras`, funções `hh_status` (aberta), `hh_painel`, `hh_comecar`, `hh_somar`, `hh_desfazer`, `hh_encerrar` (equipe). O fim por tempo e o início pela agenda acontecem quando qualquer tela consulta (telão, mesa ou painel).
+- **O relógio** é um copo de chopp animado: esvazia com o tempo, enche a cada chopp (com espuma espirrando e "+1 min · Comanda 12"), os dígitos rolam e, no último minuto, o copo fica vermelho e pulsa.
+- **Ao vivo**: o copo, botão **+1 chopp** (e +2, +3, +5), **Ler comanda** (câmera), **Modo garçom (NFC)** no Android (cada comanda encostada soma 1), desfazer, encerrar e as últimas leituras com a comanda ou mesa.
+- **Comandas individuais** (Mesas → Comandas individuais, ou escolhendo "Comanda" ao ligar a plaquinha): a mesma plaquinha vira a comanda de uma pessoa, com número único. Lida pelo cliente, abre a página com "Comanda 12" e o relógio (o sino pede o número da mesa). Lida pelo garçom com o celular logado no painel durante a Prorrogação, soma 1 chopp na hora, com desfazer; a mesma plaquinha lida de novo em 20 s não conta. Também vale para a plaquinha da mesa.
+- **QR do garçom** (`/admin/?chopp=1`, para colar na chopeira): para quem não usa comanda.
+- **Telão** (`/telao/`): no painel, **Abrir na TV** abre o relógio direto na segunda tela (TV ligada no computador; o Chrome pede uma vez para gerenciar as janelas) e um toque põe em tela cheia. Smart TV ou TV box: abrir o link no navegador dela. Mostra o copo, quem mais prorrogou (top 3 comandas ou mesas), a próxima da agenda e o recorde da casa.
+- **Página da mesa e da comanda**: todo mundo vê o copo no próprio celular enquanto rola (e o horário da próxima, se for nas próximas 12 horas), com o lugar da comanda ou da mesa entre as que mais prorrogaram.
+- Banco: tabelas `hh_sessoes` e `hh_leituras`, funções `hh_status` (aberta), `hh_painel`, `hh_comecar`, `hh_somar`, `hh_somar_etiqueta`, `hh_desfazer`, `hh_desfazer_leitura`, `hh_encerrar` (equipe); comandas em `etiquetas.comanda` (`etiqueta_comanda`, `etiqueta_info`). O fim por tempo e o início pela agenda acontecem quando qualquer tela consulta (telão, mesa ou painel).
 
 ### Central (painel da Vortex)
 

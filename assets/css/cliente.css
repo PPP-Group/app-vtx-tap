@@ -798,18 +798,36 @@ button.fid-nivel { cursor: pointer; }
 .fid-times { display: flex; flex-wrap: wrap; gap: 8px; }
 .fid-times .btn { flex: 1 1 120px; }
 
-/* Prorrogação (adicional): faixa do happy hour com o relógio. */
-.hh-mesa {
-  display: flex; align-items: center; gap: 12px;
-  margin: 0 0 14px; padding: 14px 16px; border-radius: 18px;
-  background: var(--ink); color: var(--bg);
-}
+/* Prorrogação (adicional): o happy hour com o copo animado (prorrogacao.css). */
+.hh-mesa { display: grid; gap: 12px; margin: 0 0 14px; padding: 14px; border-radius: 24px; background: var(--ink); color: var(--bg); }
 .hh-mesa[hidden] { display: none; }
-.hh-mesa.is-rodando { background: var(--cobalt); color: #fff; }
-.hh-mesa-ico { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; background: rgba(255, 255, 255, .16); }
+.hh-mesa.is-rodando { background: linear-gradient(160deg, #1d1203, #0c0820); color: #fff; box-shadow: 0 10px 30px rgba(242, 157, 12, .25); }
+.hh-mesa-topo { display: flex; align-items: center; gap: 12px; }
+.hh-mesa-ico { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; background: rgba(255, 207, 63, .18); color: #ffcf3f; }
 .hh-mesa-ico .i { width: 22px; height: 22px; }
 .hh-mesa-txt { flex: 1; min-width: 0; display: grid; gap: 2px; }
-.hh-mesa-txt b { font-family: var(--font-display); font-weight: 900; font-size: 22px; line-height: 1; text-transform: uppercase; }
-.hh-mesa-txt small, .hh-mesa-rel small { font-size: 12.5px; opacity: .8; }
-.hh-mesa-rel { flex: none; display: grid; justify-items: end; gap: 2px; }
-.hh-mesa-rel b { font-family: var(--font-display); font-weight: 900; font-size: 34px; line-height: 1; font-variant-numeric: tabular-nums; }
+.hh-mesa-txt b { font-family: var(--font-display); font-weight: 900; font-size: 24px; line-height: 1; text-transform: uppercase; }
+.hh-mesa-txt small { font-size: 13px; opacity: .8; }
+.hh-mesa-copo[hidden] { display: none; }
+.hh-mesa-info { margin: 0; font-size: 13.5px; text-align: center; opacity: .9; }
+.hh-mesa-info b { color: #ffcf3f; }
+.plate--comanda .plate-label { font-size: 9px; letter-spacing: .12em; }
+
+/* Garçom leu a comanda com o celular logado. */
+.hh-garcom {
+  position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 60;
+  display: grid; gap: 4px; padding: 14px 16px; border-radius: 20px;
+  background: #13a05a; color: #fff; box-shadow: 0 12px 40px rgba(0, 0, 0, .35);
+  animation: hh-garcom .45s cubic-bezier(.2, 1.4, .4, 1);
+}
+.hh-garcom[hidden] { display: none; }
+.hh-garcom[data-tom="aviso"] { background: #d98a00; }
+.hh-garcom[data-tom="erro"] { background: var(--pepper, #c62828); }
+.hh-garcom-tag { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; opacity: .85; }
+.hh-garcom-tag .i { width: 14px; height: 14px; }
+.hh-garcom > b { font-family: var(--font-display); font-weight: 900; font-size: 30px; line-height: 1; text-transform: uppercase; }
+.hh-garcom-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; }
+.hh-garcom-acts .btn-line, .hh-garcom-acts .btn-quiet { color: #fff; border-color: rgba(255, 255, 255, .6); background: transparent; }
+.hh-garcom-acts .btn-cobalt { background: #fff; color: #13321f; }
+.hh-garcom-acts .icon-btn { margin-left: auto; color: #fff; }
+@keyframes hh-garcom { from { transform: translateY(120%); } }

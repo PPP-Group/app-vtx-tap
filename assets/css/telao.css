@@ -26,12 +26,7 @@ body.telao {
   font-size: clamp(40px, 8vw, 140px); letter-spacing: .01em;
 }
 .tl-frase { margin: .4em 0 0; font-size: clamp(16px, 2.4vw, 36px); opacity: .8; max-width: 26em; }
-.tl-relogio {
-  margin: .12em 0 0;
-  font-family: var(--font-display); font-weight: 900; font-variant-numeric: tabular-nums; line-height: .9;
-  font-size: clamp(96px, 24vw, 420px);
-  text-shadow: 0 0 .25em color-mix(in oklab, var(--cobalt) 70%, transparent);
-}
+.tl-copo { margin: 12px 0 0; }
 .tl-sub { margin: .3em 0 0; font-size: clamp(16px, 2.6vw, 40px); opacity: .9; }
 .tl-sub b { color: #fff; }
 .tl-rodape { display: grid; gap: 8px; }
@@ -39,31 +34,14 @@ body.telao {
 .tl-stats b { font-family: var(--font-display); font-weight: 900; font-size: 1.3em; }
 .tl-recorde { margin: 0; font-size: clamp(14px, 1.6vw, 24px); opacity: .7; }
 
-.tl[data-estado="parado"] .tl-relogio, .tl[data-estado="off"] .tl-relogio { opacity: .35; text-shadow: none; }
-.tl.is-final[data-estado="rodando"] .tl-relogio { color: #ff6b6b; animation: tl-pulso 1s ease-in-out infinite; }
-@keyframes tl-pulso { 50% { transform: scale(1.04); } }
-
-/* "+1 min" a cada chopp */
-.tl-flash {
-  position: absolute; left: 50%; top: 50%; margin: 0; pointer-events: none;
-  font-family: var(--font-display); font-weight: 900; font-size: clamp(48px, 10vw, 180px);
-  color: #ffd84d; text-shadow: 0 0 .3em rgba(255, 216, 77, .6);
-  opacity: 0; transform: translate(-50%, -20%) scale(.6);
-}
-.tl-flash.is-on { animation: tl-flash 2.2s ease-out forwards; }
-@keyframes tl-flash {
-  0% { opacity: 0; transform: translate(-50%, -20%) scale(.6); }
-  15% { opacity: 1; transform: translate(-50%, -60%) scale(1.1); }
-  70% { opacity: 1; transform: translate(-50%, -90%) scale(1); }
-  100% { opacity: 0; transform: translate(-50%, -130%) scale(1); }
-}
+.tl-destaques { margin: 0; display: flex; justify-content: center; flex-wrap: wrap; gap: .3em 1.2em; font-size: clamp(14px, 1.9vw, 30px); opacity: .9; }
+.tl-dest b { font-family: var(--font-display); font-weight: 900; color: #ffcf3f; margin-left: .2em; }
+.tl-tela-cheia.is-chamando { right: 50%; bottom: 50%; transform: translate(50%, 50%); font-size: clamp(18px, 2.4vw, 34px); padding: .7em 1.4em; background: #ffcf3f; color: #1a1205; border: 0; font-weight: 800; box-shadow: 0 0 0 0 rgba(255, 207, 63, .6); animation: tl-chama 1.6s ease-out infinite; }
+@keyframes tl-chama { to { box-shadow: 0 0 0 28px rgba(255, 207, 63, 0); } }
 .tl-tela-cheia {
   position: absolute; right: 16px; bottom: 16px;
   font: inherit; font-size: 14px; color: #fff; background: rgba(255, 255, 255, .12);
   border: 1px solid rgba(255, 255, 255, .25); border-radius: 999px; padding: 8px 14px; cursor: pointer;
 }
 .tl-tela-cheia[hidden] { display: none; }
-@media (prefers-reduced-motion: reduce) {
-  .tl.is-final .tl-relogio, .tl-flash.is-on { animation: none; }
-  .tl-flash.is-on { opacity: 1; transform: translate(-50%, -90%); }
-}
+@media (prefers-reduced-motion: reduce) { .tl-tela-cheia.is-chamando { animation: none; } }

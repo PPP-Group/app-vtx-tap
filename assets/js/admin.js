@@ -936,7 +936,8 @@
     const semPlaca = [];
     for (let n = 1; n <= total; n++) if (!placasDa(n).length) semPlaca.push(n);
     const foraDoTotal = S.etiquetas.filter((e) => e.mesa > total);
-    const semMesa = S.etiquetas.filter((e) => !e.mesa);
+    const semMesa = S.etiquetas.filter((e) => !e.mesa && !e.comanda);
+    const comandas = S.etiquetas.filter((e) => e.comanda).sort((a, b) => a.comanda - b.comanda);
     const areas = S.settings.mesas.areas;
     const areaErro = areas.map((a, i) => erroDaArea(a, areas, i, total)).find(Boolean);
     const mesasCfg = `<div class="panel stack" id="mesasCfg">
@@ -987,6 +988,7 @@
           <div class="placa-manual">
             <label class="field"><span>Código</span><input class="input mono" id="pmCodigo" maxlength="16" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="K7P2QXA"></label>
             <label class="field"><span>Mesa</span><input class="input mono" id="pmMesa" type="number" min="1" max="${total}" inputmode="numeric"></label>
+            <label class="field"><span>ou Comanda</span><input class="input mono" id="pmComanda" type="number" min="1" max="9999" inputmode="numeric"></label>
           </div>
           <button type="submit" class="btn btn-cobalt btn-sm">${icon('check')} Ligar plaquinha</button>
         </form>
@@ -995,8 +997,17 @@
       ${semMesa.length ? `<div class="note">${icon('nfc')}<span><b>${semMesa.length === 1 ? 'Plaquinha ativada sem mesa' : `${semMesa.length} plaquinhas ativadas sem mesa`}:</b>
         ${semMesa.map((e) => `<button type="button" class="link-cod mono" data-placa="${esc(e.codigo)}">${esc(e.codigo)}</button>`).join(' ')} · toque para escolher a mesa.</span></div>` : ''}
       ${foraDoTotal.length ? `<p class="note">${icon('msg')}<span>${foraDoTotal.length === 1 ? 'Uma plaquinha está ligada' : `${foraDoTotal.length} plaquinhas estão ligadas`} a mesa acima do total (${foraDoTotal.map((e) => `${esc(e.codigo)} → ${e.mesa}`).join(', ')}). Aumente o total ou altere a plaquinha.</span></p>` : ''}
-      <ul class="plist">${linhas.join('')}</ul>`;
+      <ul class="plist">${linhas.join('')}</ul>
+      <div class="panel stack comandas-box">
+        <h2>Comandas individuais</h2>
+        <p class="muted" style="font-size:13px">A mesma plaquinha serve de comanda: uma por pessoa (no happy hour da ${esc(nomeHH())}, por exemplo). Lida pelo cliente, abre a página com o número da comanda; lida pelo garçom logado durante a ${esc(nomeHH())}, soma o chopp no relógio.</p>
+        ${comandas.length ? `<ul class="comandas">${comandas.map((e) => `<li><button type="button" class="comanda-chip" data-placa="${esc(e.codigo)}" aria-label="Alterar a comanda ${e.comanda}">
+            <small>Comanda</small><b>${pad(e.comanda)}</b><span class="mono">${esc(e.codigo)}</span></button></li>`).join('')}</ul>`
+          : '<p class="muted">Nenhuma comanda ainda. Leia uma plaquinha nova (ou toque no código de uma sem mesa) e escolha <b>Comanda</b>.</p>'}
+      </div>`;
   }
+  const nomeHH = () => (S.settings.prorrogacao && S.settings.prorrogacao.nome) || 'Prorrogação';
+  const proximaComanda = () => { const usadas = new Set(S.etiquetas.map((e) => e.comanda).filter(Boolean)); let n = 1; while (usadas.has(n)) n++; return n; };
 
   /* Áreas do salão: faixas dentro do total e sem mesa em duas áreas. */
   function erroDaArea(a, areas, i, total) {
@@ -1026,10 +1037,15 @@
   /* Ligar uma plaquinha a uma mesa: aberto pela leitura da plaquinha (?vincular=) ou pela lista. */
   let vincCodigo = null;
   let vincMesa = null;
+  // 'mesa' ou 'comanda' (plaquinha individual).
+  let vincTipo = 'mesa';
+  let vincComanda = null;
   function abrirVincular(codigo) {
     vincCodigo = normCodigo(codigo);
     const atual = S.etiquetas.find((e) => e.codigo === vincCodigo);
     vincMesa = atual ? atual.mesa : null;
+    vincTipo = atual && atual.comanda ? 'comanda' : 'mesa';
+    vincComanda = atual && atual.comanda ? atual.comanda : null;
     renderVincular();
     openSheet('sh-vincular');
   }
@@ -1043,12 +1059,29 @@
         <b>${pad(n)}</b>${outras ? '<small>já tem</small>' : areaDe(n) ? `<small>${esc(areaDe(n))}</small>` : ''}</button>`;
     }
     $('#vincTitle').textContent = atual ? 'Alterar plaquinha' : 'Plaquinha nova';
+    const hoje = atual && atual.comanda ? ` · hoje é a comanda <b>${atual.comanda}</b>` : atual && atual.mesa ? ` · hoje na mesa <b>${atual.mesa}</b>` : '';
+    const tipos = `<div class="seg vinc-tipo" role="radiogroup" aria-label="Usar como">
+        <button type="button" role="radio" aria-checked="${vincTipo === 'mesa'}" data-vtipo="mesa">${icon('grid')} Mesa</button>
+        <button type="button" role="radio" aria-checked="${vincTipo === 'comanda'}" data-vtipo="comanda">${icon('ticket')} Comanda individual</button></div>`;
+    if (vincTipo === 'comanda') {
+      const n = vincComanda || proximaComanda();
+      $('#vincBody').innerHTML = `<div class="stack">
+        <p class="vinc-cod">Código <b class="mono">${esc(vincCodigo)}</b>${hoje}</p>
+        ${tipos}
+        <p class="muted">A plaquinha vira a comanda de uma pessoa. Cada número é de uma plaquinha só.</p>
+        <label class="field"><span>Número da comanda</span><input class="input mono vinc-comanda" id="vincComanda" type="number" min="1" max="9999" inputmode="numeric" value="${n}"></label>
+        <button type="button" class="btn btn-cobalt btn-block" data-vinc="comanda">${icon('check')} Ligar como comanda</button>
+        ${atual && (atual.mesa || atual.comanda) ? `<button type="button" class="btn btn-line btn-block" data-vinc="soltar">Desligar a plaquinha</button>` : ''}
+      </div>`;
+      return;
+    }
     $('#vincBody').innerHTML = `<div class="stack">
-      <p class="vinc-cod">Código <b class="mono">${esc(vincCodigo)}</b>${atual ? ` · hoje na mesa <b>${atual.mesa}</b>` : ''}</p>
+      <p class="vinc-cod">Código <b class="mono">${esc(vincCodigo)}</b>${hoje}</p>
+      ${tipos}
       <p class="muted">Em qual mesa esta plaquinha está colada?</p>
       <div class="vmesas">${grid}</div>
       <button type="button" class="btn btn-cobalt btn-block" data-vinc="salvar" ${vincMesa ? '' : 'disabled'}>${icon('check')} ${vincMesa ? `Ligar à mesa ${vincMesa}` : 'Escolha a mesa'}</button>
-      ${atual && atual.mesa ? `<button type="button" class="btn btn-line btn-block" data-vinc="soltar">Desligar desta mesa</button>` : ''}
+      ${atual && (atual.mesa || atual.comanda) ? `<button type="button" class="btn btn-line btn-block" data-vinc="soltar">${atual.mesa ? 'Desligar desta mesa' : 'Desligar a plaquinha'}</button>` : ''}
       <small class="help">Uma mesa pode ter mais de uma plaquinha (por exemplo, uma em cada ponta).</small>
     </div>`;
   }
@@ -1060,6 +1093,20 @@
       await store.vincularEtiqueta(codigo, mesa, S.user.nome);
       closeSheet();
       toast(`Plaquinha ligada à mesa ${mesa}.`, { tone: 'ok', ms: 6000, action: { label: 'Testar', run: () => window.open(tagUrl(codigo), '_blank', 'noopener') } });
+      queueRefresh();
+    } catch (e) {
+      console.error(e);
+      toast(e.message && !/fetch|network/i.test(e.message) ? e.message : 'Não foi possível salvar. Verifique a conexão.', { tone: 'error', ms: 4500 });
+    }
+  }
+  async function salvarComanda() {
+    const n = parseInt(($('#vincComanda') || {}).value, 10);
+    if (!(n >= 1 && n <= 9999)) return toast('Digite o número da comanda (1 a 9999).', { tone: 'error' });
+    const codigo = vincCodigo;
+    try {
+      await store.vincularComanda(codigo, n, S.user.nome);
+      closeSheet();
+      toast(`Plaquinha ligada como comanda ${n}.`, { tone: 'ok', ms: 6000, action: { label: 'Testar', run: () => window.open(tagUrl(codigo), '_blank', 'noopener') } });
       queueRefresh();
     } catch (e) {
       console.error(e);
@@ -2326,7 +2373,12 @@
       return renderVincular();
     }
     const vb = t.closest('[data-vinc]');
-    if (vb) return vb.dataset.vinc === 'salvar' ? salvarVinculo() : soltarVinculo();
+    if (vb) return vb.dataset.vinc === 'salvar' ? salvarVinculo() : vb.dataset.vinc === 'comanda' ? salvarComanda() : soltarVinculo();
+    const vt = t.closest('[data-vtipo]');
+    if (vt) {
+      vincTipo = vt.dataset.vtipo;
+      return renderVincular();
+    }
     const aBtn = t.closest('[data-area]');
     if (aBtn) {
       const areas = S.settings.mesas.areas.slice();
@@ -2437,7 +2489,14 @@
     e.preventDefault();
     const codigo = normCodigo($('#pmCodigo').value);
     const mesa = parseInt($('#pmMesa').value, 10);
+    const comanda = parseInt(($('#pmComanda') || {}).value, 10);
     if (!/^[A-Z0-9]{4,16}$/.test(codigo)) return toast('Digite o código da plaquinha (letras e números).', { tone: 'error' });
+    if (comanda && !mesa) {
+      vincCodigo = codigo;
+      return store.vincularComanda(codigo, comanda, S.user.nome)
+        .then(() => { toast(`Plaquinha ligada como comanda ${comanda}.`, { tone: 'ok' }); queueRefresh(); })
+        .catch((ex) => toast(ex.message || 'Não foi possível salvar.', { tone: 'error', ms: 4500 }));
+    }
     if (!(mesa >= 1 && mesa <= S.settings.mesas.total)) return toast(`Digite uma mesa entre 1 e ${S.settings.mesas.total}.`, { tone: 'error' });
     vincCodigo = codigo;
     vincMesa = mesa;

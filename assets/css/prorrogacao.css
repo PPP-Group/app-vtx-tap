@@ -1,0 +1,154 @@
+/*
+ * Prorrogação: o relógio animado (Prorrogacao.copo). Um copo de chopp que esvazia com o tempo
+ * e enche a cada chopp, com bolhas subindo, dígitos que rolam e espuma espirrando no "+1 min".
+ * Tamanhos: .pr--tv (telão), .pr--cel (página da mesa), .pr--painel (painel da equipe).
+ */
+.pr-copo {
+  --nivel: 0;
+  --chopp-1: #ffcf3f;
+  --chopp-2: #f29d0c;
+  --chopp-3: #b8640a;
+  --espuma: #fff8e6;
+  --dig: 1em;
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  display: grid;
+  place-items: center;
+  border-radius: 28px;
+  background: radial-gradient(120% 120% at 50% 110%, #2b1a05 0%, #120b02 70%);
+  color: #fff;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .08), inset 0 -30px 60px rgba(0, 0, 0, .35);
+}
+.pr--tv { width: min(92vw, 1500px); height: min(44vh, 520px); border-radius: clamp(24px, 3vw, 48px); font-size: clamp(90px, 21vw, 360px); }
+.pr--cel { width: 100%; height: 150px; border-radius: 22px; font-size: 76px; }
+.pr--painel { width: 100%; height: 190px; border-radius: 24px; font-size: clamp(64px, 11vw, 112px); }
+
+/* Chopp: sobe e desce pelo nível, com a onda da espuma por cima. */
+.pr-liquido {
+  position: absolute; inset: auto 0 0 0; z-index: -1;
+  height: calc(var(--nivel) * 100%);
+  background: linear-gradient(180deg, var(--chopp-1) 0%, var(--chopp-2) 55%, var(--chopp-3) 100%);
+  transition: height 1.1s cubic-bezier(.2, 1.3, .35, 1), background .6s;
+}
+.pr-onda {
+  position: absolute; left: -50%; top: -18px; width: 200%; height: 36px;
+  background:
+    radial-gradient(18px 16px at 18px 18px, var(--espuma) 98%, transparent) 0 0 / 36px 36px repeat-x,
+    linear-gradient(var(--espuma), var(--espuma)) 0 18px / 100% 18px no-repeat;
+  animation: pr-onda 3.2s linear infinite;
+  filter: drop-shadow(0 2px 2px rgba(0, 0, 0, .15));
+}
+@keyframes pr-onda { to { transform: translateX(36px); } }
+.pr-bolha {
+  position: absolute; bottom: -12px;
+  width: 7px; height: 7px; border-radius: 50%;
+  background: rgba(255, 255, 255, .55); box-shadow: inset -1px -1px 0 rgba(0, 0, 0, .08);
+  animation: pr-bolha 4s ease-in infinite;
+}
+.pr-bolha:nth-child(2) { left: 8%; animation-duration: 3.4s; animation-delay: -.4s; }
+.pr-bolha:nth-child(3) { left: 15%; width: 4px; height: 4px; animation-duration: 2.6s; animation-delay: -1.2s; }
+.pr-bolha:nth-child(4) { left: 23%; animation-duration: 4.4s; animation-delay: -2.1s; }
+.pr-bolha:nth-child(5) { left: 31%; width: 5px; height: 5px; animation-duration: 3s; animation-delay: -.9s; }
+.pr-bolha:nth-child(6) { left: 39%; width: 9px; height: 9px; animation-duration: 5s; animation-delay: -3s; }
+.pr-bolha:nth-child(7) { left: 47%; width: 4px; height: 4px; animation-duration: 2.8s; animation-delay: -1.7s; }
+.pr-bolha:nth-child(8) { left: 55%; animation-duration: 3.7s; animation-delay: -.2s; }
+.pr-bolha:nth-child(9) { left: 62%; width: 5px; height: 5px; animation-duration: 3.1s; animation-delay: -2.6s; }
+.pr-bolha:nth-child(10) { left: 70%; width: 8px; height: 8px; animation-duration: 4.6s; animation-delay: -1s; }
+.pr-bolha:nth-child(11) { left: 77%; width: 4px; height: 4px; animation-duration: 2.7s; animation-delay: -.6s; }
+.pr-bolha:nth-child(12) { left: 84%; animation-duration: 3.9s; animation-delay: -2.9s; }
+.pr-bolha:nth-child(13) { left: 90%; width: 5px; height: 5px; animation-duration: 3.3s; animation-delay: -1.4s; }
+.pr-bolha:nth-child(14) { left: 95%; width: 3px; height: 3px; animation-duration: 2.4s; animation-delay: -.3s; }
+.pr-bolha:nth-child(15) { left: 4%; width: 4px; height: 4px; animation-duration: 3.6s; animation-delay: -2.2s; }
+@keyframes pr-bolha {
+  0% { transform: translate(0, 0); opacity: 0; }
+  10% { opacity: 1; }
+  50% { transform: translate(6px, -50vh); }
+  100% { transform: translate(-4px, -100vh); opacity: .2; }
+}
+.pr--cel .pr-bolha, .pr--painel .pr-bolha { animation-name: pr-bolha-baixa; }
+@keyframes pr-bolha-baixa {
+  0% { transform: translate(0, 0); opacity: 0; }
+  10% { opacity: 1; }
+  50% { transform: translate(4px, -110px); }
+  100% { transform: translate(-3px, -230px); opacity: .2; }
+}
+/* Reflexo de vidro. */
+.pr-brilho {
+  position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background: linear-gradient(100deg, transparent 8%, rgba(255, 255, 255, .16) 12%, transparent 22%, transparent 78%, rgba(255, 255, 255, .07) 84%, transparent 90%);
+}
+
+/* Dígitos que rolam. */
+.pr-digitos {
+  position: relative; z-index: 1;
+  display: flex; align-items: center;
+  font-family: var(--font-display, 'Big Shoulders Display', Impact, sans-serif); font-weight: 900; line-height: 1;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 .03em 0 rgba(0, 0, 0, .35);
+  -webkit-text-stroke: .012em rgba(0, 0, 0, .25);
+}
+.pr-col { display: inline-block; height: 1em; overflow: hidden; width: .58em; text-align: center; }
+.pr-fita { display: flex; flex-direction: column; transition: transform .55s cubic-bezier(.25, 1.6, .45, 1); }
+.pr-fita > span { height: 1em; display: block; }
+.pr-sep { display: inline-block; width: .26em; text-align: center; transform: translateY(-.06em); animation: pr-sep 1s steps(1) infinite; }
+@keyframes pr-sep { 50% { opacity: .35; } }
+
+/* "+1 min" e a espuma espirrando. */
+.pr-pops { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
+.pr-pop {
+  position: absolute; left: 50%; top: 50%;
+  display: grid; justify-items: center; gap: .05em;
+  font-family: var(--font-display, Impact, sans-serif); font-weight: 900; line-height: .9; white-space: nowrap;
+  color: #fff; text-shadow: 0 0 .12em #ff9d00, 0 0 .4em rgba(255, 180, 0, .8), 0 .05em 0 rgba(0, 0, 0, .4);
+  font-size: .42em;
+  animation: pr-pop 2.3s cubic-bezier(.2, .9, .3, 1) forwards;
+}
+.pr-pop small { font-size: .42em; letter-spacing: .04em; text-transform: uppercase; }
+@keyframes pr-pop {
+  0% { transform: translate(-50%, -10%) scale(.2) rotate(-8deg); opacity: 0; }
+  14% { transform: translate(-50%, -55%) scale(1.25) rotate(3deg); opacity: 1; }
+  24% { transform: translate(-50%, -60%) scale(1) rotate(-1deg); }
+  75% { transform: translate(-50%, -95%) scale(1); opacity: 1; }
+  100% { transform: translate(-50%, -150%) scale(.9); opacity: 0; }
+}
+.pr-gota {
+  position: absolute; top: calc((1 - var(--nivel)) * 100%);
+  width: .08em; height: .08em; border-radius: 50%; background: var(--espuma);
+  box-shadow: 0 0 .05em rgba(255, 255, 255, .9);
+  animation: pr-gota var(--t, .9s) cubic-bezier(.15, .7, .4, 1) forwards;
+}
+@keyframes pr-gota {
+  0% { transform: translate(0, 0) scale(1); opacity: 1; }
+  100% { transform: translate(var(--dx), var(--dy)) scale(.3); opacity: 0; }
+}
+/* Chopp lido: o copo dá um soco de luz. */
+.pr-copo.is-chopp { animation: pr-chopp .9s cubic-bezier(.2, 1.4, .4, 1); }
+.pr-copo.is-chopp .pr-digitos { animation: pr-dig 0.9s cubic-bezier(.2, 1.6, .4, 1); }
+@keyframes pr-chopp {
+  0% { box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .08), 0 0 0 0 rgba(255, 190, 0, .0); }
+  25% { box-shadow: inset 0 0 0 3px rgba(255, 220, 120, .9), 0 0 60px 10px rgba(255, 190, 0, .55); }
+  100% { box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .08), 0 0 0 0 rgba(255, 190, 0, 0); }
+}
+@keyframes pr-dig { 0% { transform: scale(1); } 30% { transform: scale(1.12); } 100% { transform: scale(1); } }
+
+/* Último minuto: o chopp fica vermelho e o relógio bate como coração. */
+.pr-copo.is-final { --chopp-1: #ff7a6b; --chopp-2: #e3342f; --chopp-3: #8e1414; }
+.pr-copo.is-final .pr-digitos { animation: pr-coracao 1s ease-in-out infinite; }
+@keyframes pr-coracao { 0%, 100% { transform: scale(1); } 12% { transform: scale(1.08); } 24% { transform: scale(1); } 36% { transform: scale(1.05); } }
+.pr-copo.is-tremor { animation: pr-tremor .35s linear; }
+@keyframes pr-tremor {
+  20% { transform: translate(-.6%, .3%) rotate(-.4deg); }
+  40% { transform: translate(.6%, -.3%) rotate(.4deg); }
+  60% { transform: translate(-.4%, .2%); }
+  80% { transform: translate(.3%, 0); }
+}
+/* Sem happy hour rolando: copo vazio. */
+.pr-copo.is-parado .pr-digitos { opacity: .45; }
+.pr-copo.is-parado .pr-sep { animation: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pr-fita, .pr-liquido { transition: none; }
+  .pr-onda, .pr-bolha, .pr-sep, .pr-copo.is-final .pr-digitos, .pr-copo.is-chopp, .pr-copo.is-chopp .pr-digitos, .pr-copo.is-tremor { animation: none; }
+  .pr-pop { animation-duration: 2.3s; animation-timing-function: steps(1); }
+}

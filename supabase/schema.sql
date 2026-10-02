@@ -3807,43 +3807,6 @@ begin
   end if;
 end $$;
 
--- Situação para o telão, a página da mesa e o painel (sem login).
-create or replace function public.hh_status(p_restaurante uuid) returns jsonb
-language plpgsql security definer set search_path = public as $$
-declare
-  c jsonb; s public.hh_sessoes; u public.hh_sessoes; lim timestamptz; prox timestamptz;
-  tz text := public.fid_fuso(p_restaurante); agora timestamp := now() at time zone public.fid_fuso(p_restaurante);
-begin
-  if not public.restaurante_ativo(p_restaurante) or not public.plano_adicional(p_restaurante, 'prorrogacao') then
-    return jsonb_build_object('disponivel', false);
-  end if;
-  c := public.hh_cfg(p_restaurante);
-  if not (c ->> 'ativo')::boolean then return jsonb_build_object('disponivel', false); end if;
-  perform public.hh_tick(p_restaurante);
-  select * into s from public.hh_sessoes where restaurante_id = p_restaurante and encerrada_em is null;
-  if s.id is not null then lim := public.hh_limite(p_restaurante, s.inicio); end if;
-  select * into u from public.hh_sessoes where restaurante_id = p_restaurante and encerrada_em is not null order by encerrada_em desc limit 1;
-  if (c -> 'agenda' ->> 'ativo')::boolean then
-    select min(((agora::date + d) + (c -> 'agenda' ->> 'hora')::time) at time zone tz) into prox
-      from generate_series(0, 7) d
-     where (c -> 'agenda' -> 'dias') @> to_jsonb(extract(dow from agora::date + d)::int)
-       and ((agora::date + d) + (c -> 'agenda' ->> 'hora')::time) at time zone tz > now()
-       and not exists (select 1 from public.hh_sessoes x where x.restaurante_id = p_restaurante and x.agenda_dia = agora::date + d);
-  end if;
-  return jsonb_build_object('disponivel', true, 'agora', now(),
-    'nome', c -> 'nome', 'frase', c -> 'frase', 'produto', c -> 'produto', 'minutos', c -> 'minutos', 'teto', c -> 'teto',
-    'rodando', s.id is not null,
-    'sessao', case when s.id is not null then jsonb_build_object('id', s.id, 'inicio', s.inicio, 'fim', s.fim,
-        'leituras', s.leituras, 'minutos_ganhos', s.minutos_ganhos,
-        'limite_em', case when lim = 'infinity' then null else lim end,
-        'ultima', (select max(em) from public.hh_leituras where sessao_id = s.id and not desfeita)) end,
-    'ultima_sessao', case when u.id is not null then jsonb_build_object('inicio', u.inicio, 'fim', u.encerrada_em,
-        'leituras', u.leituras, 'minutos_ganhos', u.minutos_ganhos) end,
-    'recorde', (select jsonb_build_object('minutos', round(extract(epoch from (x.encerrada_em - x.inicio)) / 60), 'leituras', x.leituras, 'em', x.inicio)
-                  from public.hh_sessoes x where x.restaurante_id = p_restaurante and x.encerrada_em is not null
-                 order by x.encerrada_em - x.inicio desc limit 1),
-    'proxima', prox);
-end $$;
 
 -- A equipe só usa com o adicional contratado e ligado.
 create or replace function public.hh_exigir(p_restaurante uuid) returns jsonb
@@ -3868,7 +3831,7 @@ begin
   st := public.hh_status(r);
   return st || jsonb_build_object('config', public.hh_cfg(r),
     'leituras', coalesce((select jsonb_agg(jsonb_build_object('id', l.id, 'em', l.em, 'qtd', l.qtd, 'minutos', l.minutos, 'por', l.por,
-          'desfeita', l.desfeita, 'desfeita_por', l.desfeita_por) order by l.em desc)
+          'desfeita', l.desfeita, 'desfeita_por', l.desfeita_por, 'mesa', l.mesa, 'comanda', l.comanda) order by l.em desc)
         from (select l.* from public.hh_leituras l
                where l.sessao_id = coalesce((st -> 'sessao' ->> 'id')::uuid,
                        (select id from public.hh_sessoes where restaurante_id = r order by inicio desc limit 1))
@@ -3895,26 +3858,6 @@ begin
   return public.hh_painel();
 end $$;
 
--- Chopp servido: soma os minutos (respeitando o teto e o horário limite).
-create or replace function public.hh_somar(p_qtd int default 1) returns jsonb
-language plpgsql security definer set search_path = public as $$
-declare r uuid := public.meu_restaurante(); c jsonb; s public.hh_sessoes; q int; m numeric; pedido numeric; novo timestamptz;
-begin
-  c := public.hh_exigir(r);
-  perform public.hh_tick(r);
-  select * into s from public.hh_sessoes where restaurante_id = r and encerrada_em is null for update;
-  if s.id is null then raise exception 'A % não está rolando agora.', c ->> 'nome'; end if;
-  q := least(greatest(coalesce(p_qtd, 1), 1), 50);
-  pedido := q * (c ->> 'minutos')::int;
-  m := pedido;
-  if (c ->> 'teto')::int > 0 then m := least(m, greatest((c ->> 'teto')::int - s.minutos_ganhos, 0)); end if;
-  novo := least(s.fim + interval '1 minute' * m, public.hh_limite(r, s.inicio));
-  m := greatest(round((extract(epoch from (novo - s.fim)) / 60)::numeric, 2), 0);
-  novo := s.fim + interval '1 minute' * m;
-  insert into public.hh_leituras (sessao_id, restaurante_id, qtd, minutos, por) values (s.id, r, q, m, coalesce(public.fid_quem(), 'Equipe'));
-  update public.hh_sessoes set fim = novo, leituras = leituras + q, minutos_ganhos = minutos_ganhos + m where id = s.id;
-  return public.hh_painel() || jsonb_build_object('adicionados', m, 'travado', m < pedido);
-end $$;
 
 -- Desfaz a última leitura da sessão que está rolando (chopp lido duas vezes, engano).
 create or replace function public.hh_desfazer() returns jsonb
@@ -3954,10 +3897,200 @@ begin
       'public.hh_exigir(uuid)'] loop
     execute format('revoke execute on function %s from public, anon, authenticated', f);
   end loop;
-  execute 'revoke execute on function public.hh_status(uuid) from public';
-  execute 'grant execute on function public.hh_status(uuid) to anon, authenticated';
-  foreach f in array array['public.hh_painel()', 'public.hh_comecar(int)', 'public.hh_somar(int)', 'public.hh_desfazer()',
+  foreach f in array array['public.hh_painel()', 'public.hh_comecar(int)', 'public.hh_desfazer()',
       'public.hh_encerrar()'] loop
+    execute format('revoke execute on function %s from public, anon', f);
+    execute format('grant execute on function %s to authenticated', f);
+  end loop;
+end $$;
+
+-- ============================================================================
+-- Comandas individuais: a mesma plaquinha serve de comanda (uma por pessoa).
+-- Ligada a uma comanda, ela abre a página com "Comanda 12" em vez da mesa.
+-- Na Prorrogação, o garçom lê a comanda com o celular logado e soma o chopp.
+-- ============================================================================
+alter table public.etiquetas add column if not exists comanda int check (comanda between 1 and 9999);
+create unique index if not exists etiquetas_comanda_idx on public.etiquetas (restaurante_id, comanda) where comanda is not null;
+
+-- Ligou a uma mesa, desligou ou mudou de dono: deixa de ser comanda.
+create or replace function public.etiqueta_limpa_comanda() returns trigger
+language plpgsql set search_path = public as $$
+begin
+  if new.mesa is not null or new.vinculada_em is null
+     or (old.restaurante_id is not null and new.restaurante_id is distinct from old.restaurante_id) then
+    new.comanda := null;
+  end if;
+  return new;
+end $$;
+revoke execute on function public.etiqueta_limpa_comanda() from public, anon, authenticated;
+do $$
+begin
+  if not exists (select 1 from pg_trigger where tgname = 'etiqueta_limpa_comanda' and tgrelid = 'public.etiquetas'::regclass) then
+    create trigger etiqueta_limpa_comanda before update on public.etiquetas
+      for each row execute function public.etiqueta_limpa_comanda();
+  end if;
+end $$;
+
+-- Página da plaquinha: mesa ou comanda (sem login).
+create or replace function public.etiqueta_info(p_restaurante uuid, p_codigo text) returns jsonb
+language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('mesa', mesa, 'comanda', comanda)
+    from public.etiquetas where codigo = upper(btrim(p_codigo)) and restaurante_id = p_restaurante;
+$$;
+
+-- Equipe liga a plaquinha a uma comanda (número único no restaurante).
+create or replace function public.etiqueta_comanda(p_codigo text, p_comanda int) returns void
+language plpgsql security definer set search_path = public as $$
+declare
+  r uuid := public.meu_restaurante();
+  v_cod text := upper(regexp_replace(coalesce(p_codigo, ''), '[^A-Za-z0-9]', '', 'g'));
+  e public.etiquetas; outra text;
+begin
+  if r is null then raise exception 'Acesso negado.'; end if;
+  if p_comanda is null or p_comanda < 1 or p_comanda > 9999 then raise exception 'Número da comanda inválido (1 a 9999).'; end if;
+  select * into e from public.etiquetas where codigo = v_cod for update;
+  if not found then raise exception 'Plaquinha não encontrada. Confira o código.'; end if;
+  if e.restaurante_id is not null and e.restaurante_id <> r then raise exception 'Esta plaquinha é de outro restaurante.'; end if;
+  select codigo into outra from public.etiquetas where restaurante_id = r and comanda = p_comanda and codigo <> v_cod;
+  if outra is not null then raise exception 'A comanda % já está na plaquinha %.', p_comanda, outra; end if;
+  update public.etiquetas
+     set restaurante_id = r, ativada_em = coalesce(ativada_em, now()), mesa = null, comanda = p_comanda, vinculada_em = now(),
+         vinculada_por = (select nome from public.equipe_membros where user_id = auth.uid())
+   where codigo = v_cod;
+end $$;
+
+-- Leituras da Prorrogação: de qual mesa ou comanda veio o chopp.
+alter table public.hh_leituras add column if not exists etiqueta text;
+alter table public.hh_leituras add column if not exists mesa int;
+alter table public.hh_leituras add column if not exists comanda int;
+create index if not exists hh_leituras_etiqueta_idx on public.hh_leituras (etiqueta, em desc) where etiqueta is not null;
+
+-- Soma os chopps (interna): respeita o teto e o horário limite.
+create or replace function public.hh_somar_int(p_restaurante uuid, p_qtd int, p_etiqueta text, p_mesa int, p_comanda int) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare c jsonb; s public.hh_sessoes; q int; m numeric; pedido numeric; novo timestamptz; lid uuid;
+begin
+  c := public.hh_exigir(p_restaurante);
+  perform public.hh_tick(p_restaurante);
+  select * into s from public.hh_sessoes where restaurante_id = p_restaurante and encerrada_em is null for update;
+  if s.id is null then raise exception 'A % não está rolando agora.', c ->> 'nome'; end if;
+  q := least(greatest(coalesce(p_qtd, 1), 1), 50);
+  pedido := q * (c ->> 'minutos')::int;
+  m := pedido;
+  if (c ->> 'teto')::int > 0 then m := least(m, greatest((c ->> 'teto')::int - s.minutos_ganhos, 0)); end if;
+  novo := least(s.fim + interval '1 minute' * m, public.hh_limite(p_restaurante, s.inicio));
+  m := greatest(round((extract(epoch from (novo - s.fim)) / 60)::numeric, 2), 0);
+  novo := s.fim + interval '1 minute' * m;
+  insert into public.hh_leituras (sessao_id, restaurante_id, qtd, minutos, por, etiqueta, mesa, comanda)
+  values (s.id, p_restaurante, q, m, coalesce(public.fid_quem(), 'Equipe'), p_etiqueta, p_mesa, p_comanda)
+  returning id into lid;
+  update public.hh_sessoes set fim = novo, leituras = leituras + q, minutos_ganhos = minutos_ganhos + m where id = s.id;
+  return jsonb_build_object('leitura_id', lid, 'adicionados', m, 'travado', m < pedido);
+end $$;
+
+create or replace function public.hh_somar(p_qtd int default 1) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare r uuid := public.meu_restaurante(); x jsonb;
+begin
+  if r is null then raise exception 'Acesso negado.'; end if;
+  x := public.hh_somar_int(r, p_qtd, null, null, null);
+  return public.hh_painel() || x;
+end $$;
+
+-- Garçom leu a plaquinha (comanda ou mesa) com o celular logado: soma 1 chopp.
+-- A mesma plaquinha lida de novo em 20 segundos não conta (a página recarregou), a não ser com p_forcar.
+create or replace function public.hh_somar_etiqueta(p_codigo text, p_forcar boolean default false) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare r uuid := public.meu_restaurante(); e public.etiquetas; x jsonb; c jsonb;
+begin
+  if r is null then raise exception 'Acesso negado.'; end if;
+  c := public.hh_exigir(r);
+  select * into e from public.etiquetas where codigo = upper(btrim(p_codigo)) and restaurante_id = r;
+  if not found then raise exception 'Esta plaquinha não é deste restaurante.'; end if;
+  if e.mesa is null and e.comanda is null then raise exception 'Esta plaquinha ainda não está ligada a uma mesa ou comanda.'; end if;
+  if not coalesce(p_forcar, false) and exists (select 1 from public.hh_leituras
+      where etiqueta = e.codigo and not desfeita and em > now() - interval '20 seconds') then
+    return public.hh_status(r) || jsonb_build_object('repetida', true, 'mesa', e.mesa, 'comanda', e.comanda);
+  end if;
+  x := public.hh_somar_int(r, 1, e.codigo, e.mesa, e.comanda);
+  return public.hh_status(r) || x || jsonb_build_object('mesa', e.mesa, 'comanda', e.comanda);
+end $$;
+
+-- Desfaz uma leitura (o garçom tocou em "Desfazer" logo depois de ler a comanda).
+create or replace function public.hh_desfazer_leitura(p_id uuid) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare r uuid := public.meu_restaurante(); s public.hh_sessoes; l public.hh_leituras;
+begin
+  perform public.hh_exigir(r);
+  perform public.hh_tick(r);
+  select * into s from public.hh_sessoes where restaurante_id = r and encerrada_em is null for update;
+  if s.id is null then raise exception 'Não tem nada rolando para desfazer.'; end if;
+  select * into l from public.hh_leituras where id = p_id and sessao_id = s.id and not desfeita;
+  if l.id is null then raise exception 'Esta leitura já foi desfeita.'; end if;
+  update public.hh_leituras set desfeita = true, desfeita_em = now(), desfeita_por = coalesce(public.fid_quem(), 'Equipe') where id = l.id;
+  update public.hh_sessoes set fim = fim - interval '1 minute' * l.minutos, leituras = leituras - l.qtd, minutos_ganhos = minutos_ganhos - l.minutos
+   where id = s.id;
+  perform public.hh_tick(r);
+  return public.hh_status(r);
+end $$;
+
+-- Situação com a última leitura (para o telão mostrar "Comanda 12: +1 min") e quem mais prorrogou.
+create or replace function public.hh_status(p_restaurante uuid) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  c jsonb; s public.hh_sessoes; u public.hh_sessoes; lim timestamptz; prox timestamptz;
+  tz text := public.fid_fuso(p_restaurante); agora timestamp := now() at time zone public.fid_fuso(p_restaurante);
+begin
+  if not public.restaurante_ativo(p_restaurante) or not public.plano_adicional(p_restaurante, 'prorrogacao') then
+    return jsonb_build_object('disponivel', false);
+  end if;
+  c := public.hh_cfg(p_restaurante);
+  if not (c ->> 'ativo')::boolean then return jsonb_build_object('disponivel', false); end if;
+  perform public.hh_tick(p_restaurante);
+  select * into s from public.hh_sessoes where restaurante_id = p_restaurante and encerrada_em is null;
+  if s.id is not null then lim := public.hh_limite(p_restaurante, s.inicio); end if;
+  select * into u from public.hh_sessoes where restaurante_id = p_restaurante and encerrada_em is not null order by encerrada_em desc limit 1;
+  if (c -> 'agenda' ->> 'ativo')::boolean then
+    select min(((agora::date + d) + (c -> 'agenda' ->> 'hora')::time) at time zone tz) into prox
+      from generate_series(0, 7) d
+     where (c -> 'agenda' -> 'dias') @> to_jsonb(extract(dow from agora::date + d)::int)
+       and ((agora::date + d) + (c -> 'agenda' ->> 'hora')::time) at time zone tz > now()
+       and not exists (select 1 from public.hh_sessoes x where x.restaurante_id = p_restaurante and x.agenda_dia = agora::date + d);
+  end if;
+  return jsonb_build_object('disponivel', true, 'agora', now(),
+    'nome', c -> 'nome', 'frase', c -> 'frase', 'produto', c -> 'produto', 'minutos', c -> 'minutos', 'teto', c -> 'teto',
+    'rodando', s.id is not null,
+    'sessao', case when s.id is not null then jsonb_build_object('id', s.id, 'inicio', s.inicio, 'fim', s.fim,
+        'leituras', s.leituras, 'minutos_ganhos', s.minutos_ganhos,
+        'limite_em', case when lim = 'infinity' then null else lim end,
+        'ultima', (select max(em) from public.hh_leituras where sessao_id = s.id and not desfeita),
+        'ultima_leitura', (select jsonb_build_object('id', l.id, 'em', l.em, 'qtd', l.qtd, 'minutos', l.minutos, 'mesa', l.mesa, 'comanda', l.comanda)
+                             from public.hh_leituras l where l.sessao_id = s.id and not l.desfeita order by l.em desc limit 1),
+        'destaques', coalesce((select jsonb_agg(d order by (d ->> 'qtd')::int desc) from (
+            select jsonb_build_object('comanda', l.comanda, 'mesa', case when l.comanda is null then l.mesa end, 'qtd', sum(l.qtd)) d
+              from public.hh_leituras l where l.sessao_id = s.id and not l.desfeita and (l.comanda is not null or l.mesa is not null)
+             group by l.comanda, case when l.comanda is null then l.mesa end
+             order by sum(l.qtd) desc limit 3) t), '[]'::jsonb)) end,
+    'ultima_sessao', case when u.id is not null then jsonb_build_object('inicio', u.inicio, 'fim', u.encerrada_em,
+        'leituras', u.leituras, 'minutos_ganhos', u.minutos_ganhos) end,
+    'recorde', (select jsonb_build_object('minutos', round(extract(epoch from (x.encerrada_em - x.inicio)) / 60), 'leituras', x.leituras, 'em', x.inicio)
+                  from public.hh_sessoes x where x.restaurante_id = p_restaurante and x.encerrada_em is not null
+                 order by x.encerrada_em - x.inicio desc limit 1),
+    'proxima', prox);
+end $$;
+
+do $$
+declare f text;
+begin
+  foreach f in array array['public.hh_somar_int(uuid, int, text, int, int)'] loop
+    execute format('revoke execute on function %s from public, anon, authenticated', f);
+  end loop;
+  foreach f in array array['public.etiqueta_info(uuid, text)', 'public.hh_status(uuid)'] loop
+    execute format('revoke execute on function %s from public', f);
+    execute format('grant execute on function %s to anon, authenticated', f);
+  end loop;
+  foreach f in array array['public.etiqueta_comanda(text, int)', 'public.hh_somar_etiqueta(text, boolean)', 'public.hh_desfazer_leitura(uuid)',
+      'public.hh_somar(int)'] loop
     execute format('revoke execute on function %s from public, anon', f);
     execute format('grant execute on function %s to authenticated', f);
   end loop;
