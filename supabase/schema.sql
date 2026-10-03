@@ -5090,3 +5090,12 @@ alter function public.adicional_preco(text) set search_path = public;
 alter function private.email_mascarado(text) set search_path = public;
 alter function private.esc_html(text) set search_path = public;
 alter function private.email_html(text, text, text, text) set search_path = public;
+
+-- Índices das chaves estrangeiras que o Supabase apontou (crescimento com muitos restaurantes).
+create index if not exists fid_resgates_cartao_idx on public.fid_resgates (cartao_id) where cartao_id is not null;
+create index if not exists fid_resgates_premio_idx on public.fid_resgates (premio_id) where premio_id is not null;
+create index if not exists fid_resgates_cliente_idx on public.fid_resgates (restaurante_id, cpf);
+create index if not exists fid_selos_cartao_idx on public.fid_selos (cartao_id);
+create index if not exists fid_torcidas_cliente_idx on public.fid_torcidas (restaurante_id, cpf);
+create index if not exists hh_leituras_rest_idx on public.hh_leituras (restaurante_id, em desc);
+create index if not exists leituras_dia_codigo_idx on public.leituras_dia (codigo);
