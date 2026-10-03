@@ -416,7 +416,7 @@
     <div class="sec-h">
       <p class="kicker">O que muda no seu restaurante</p>
       <h2 id="ganhosTitulo">Quatro resultados, um sistema só</h2>
-      <p>Você escolhe o que usar e paga só por isso. Os quatro juntos saem mais baratos.</p>
+      <p>Você escolhe o que usar e paga só por isso. Juntos saem mais baratos.</p>
     </div>
     <div class="ganhos">
       <a class="ganho" href="#fidelidade"><span class="ico"><svg><use href="#i-gift"/></svg></span><h3>O cliente volta mais</h3><p>Cada compra vira pontos, e os pontos viram prêmios. Quem está perto do próximo prêmio volta para buscar.</p><span class="mais">Ver a fidelidade →</span></a>
@@ -488,7 +488,7 @@
 
     <div class="ctas">
       <a class="btn btn-ouro" data-contato href="#contato"><svg><use href="#i-msg"/></svg>Quero o clube de pontos</a>
-      <span style="color: var(--noite-2); font-size: 15px">A partir de <b class="num" style="color:#fff" data-preco-mes="fidelidade">R$ 199</b> por mês, sem limite de clientes.</span>
+      <span style="color: var(--noite-2); font-size: 15px">A partir de <b class="num" style="color:#fff" data-preco-mes="fidelidade">R$ 229</b> por mês, sem limite de clientes.</span>
     </div>
   </section>
 
@@ -541,7 +541,7 @@
         <div class="calc-lado calc-vtx">
           <span class="calc-rot">Com o seu delivery na VTX Tap</span>
           <p class="calc-conta">Mensalidade fixa, <b>sem porcentagem</b> sobre as vendas</p>
-          <p class="calc-valor"><b id="rVtx">R$ 149</b><small>por mês, com pedidos ilimitados</small></p>
+          <p class="calc-valor"><b id="rVtx">R$ 169</b><small>por mês, com pedidos ilimitados</small></p>
           <span class="calc-barra"><i id="bVtx"></i></span>
         </div>
         <div class="calc-eco"><span>Fica no seu caixa</span><b id="rEco">R$ 0</b><small id="rAno"></small></div>
@@ -556,7 +556,7 @@
 
     <div class="ctas">
       <a class="btn btn-ouro" data-contato href="#contato"><svg><use href="#i-msg"/></svg>Quero o meu delivery</a>
-      <span style="color:#E6D9FF; font-size: 15px"><b class="num" style="color:#fff" data-preco-mes="delivery">R$ 149</b> por mês, fixo, com pedidos ilimitados.</span>
+      <span style="color:#E6D9FF; font-size: 15px"><b class="num" style="color:#fff" data-preco-mes="delivery">R$ 169</b> por mês, fixo, com pedidos ilimitados.</span>
     </div>
   </section>
 
@@ -757,10 +757,10 @@
       const s = Object.fromEntries(P.SERVICOS.map((x) => [x.id, x]));
       document.querySelectorAll('[data-preco-mes]').forEach((el) => { const x = s[el.dataset.precoMes]; if (x) el.textContent = brl(x.preco); });
       const todos = P.combo(Object.fromEntries(P.SERVICOS.map((x) => [x.id, true])));
-      const txt = { pagina: 'Cardápio, Wi-Fi, Google e comentários.', garcom: 'O sino na mesa e o painel de chamados.', fidelidade: 'Pontos pela nota, prêmios, níveis e ranking.', delivery: 'Pedidos ilimitados, sem comissão.' };
-      const ordem = ['fidelidade', 'delivery', 'garcom', 'pagina'];
+      const txt = { pagina: 'Cardápio, Wi-Fi, Google, comentários e o sino para chamar o garçom.', fidelidade: 'Pontos pela nota, prêmios, níveis e ranking.', delivery: 'Pedidos ilimitados, sem comissão.' };
+      const ordem = ['fidelidade', 'delivery', 'pagina'];
       $('precosCards').innerHTML = ordem.map((id) => `<article class="preco-card"><h3>${s[id].nome}</h3><p class="valor num">${brl(s[id].preco)}<span>/mês</span></p><p>${txt[id]}</p></article>`).join('')
-        + `<article class="preco-card combo"><span class="tag">Os quatro</span><h3>Tudo junto</h3><p class="valor num">${brl(todos.total)}<span>/mês</span></p>
+        + `<article class="preco-card combo"><span class="tag">Os três</span><h3>Tudo junto</h3><p class="valor num">${brl(todos.total)}<span>/mês</span></p>
           <p class="eco">Economia de ${brl(todos.economia)}/mês</p>
           <ul>${ordem.map((id) => `<li>${s[id].nome}</li>`).join('')}</ul></article>`;
       $('rVtx').textContent = brl(s.delivery.preco);
@@ -774,7 +774,7 @@
       $('oCom').textContent = String(com).replace('.', ',') + '%';
       const vendas = ped * tic;
       const comissao = vendas * com / 100;
-      const vtx = P ? P.SERVICOS.find((x) => x.id === 'delivery').preco : 149;
+      const vtx = P ? P.SERVICOS.find((x) => x.id === 'delivery').preco : 169;
       const eco = Math.max(0, comissao - vtx);
       $('rVendas').textContent = brl(vendas);
       $('rPct').textContent = String(com).replace('.', ',') + '%';

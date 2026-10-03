@@ -1975,7 +1975,7 @@
         <h2>Mudar o plano</h2>
         <div class="plano-ops">${SERVICOS.map(([k, n, v, d]) => `<label class="plano-op ${ed.servicos[k] ? 'is-on' : ''}">
             <span><b>${n}</b><small>${d}</small></span>
-            <span class="plano-op-preco">R$ ${v}/mês</span>
+            <span class="plano-op-preco">${v ? `R$ ${v}/mês` : 'incluso'}</span>
             <span class="switch"><input type="checkbox" data-plano-sv="${k}" ${ed.servicos[k] ? 'checked' : ''} aria-label="${n}"><span></span></span>
           </label>`).join('')}</div>
         <h3 class="plano-sub">Adicionais</h3>
