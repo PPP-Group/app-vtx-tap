@@ -18,7 +18,7 @@
 //     se as rotas não aparecerem, o arquivo anterior volta.
 //
 // Variáveis:
-//   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY   obrigatórias
+//   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY   obrigatórias (a chave secreta nova sb_secret_..., ou a service_role antiga)
 //   APP_URL          endereço interno do app no EasyPanel (padrão http://vtx_tap:80 = <projeto>_<serviço>)
 //   TRAEFIK_ARQUIVO  arquivo da configuração dinâmica (padrão /traefik/vtx-dominios.yaml)
 //   CERT_RESOLVER    resolvedor de certificados do Traefik (padrão letsencrypt)
@@ -48,7 +48,8 @@ const semPonto = (s) => String(s || '').toLowerCase().replace(/\.$/, '');
 export async function rpc(nome, args = {}) {
   const r = await fetch(`${cfg.url}/rest/v1/rpc/${nome}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', apikey: cfg.chave, Authorization: `Bearer ${cfg.chave}` },
+    // Chave nova (sb_secret_...) vai só no apikey: ela não é JWT. A service_role antiga (eyJ...) vai nos dois.
+    headers: { 'Content-Type': 'application/json', apikey: cfg.chave, ...(cfg.chave.startsWith('eyJ') ? { Authorization: `Bearer ${cfg.chave}` } : {}) },
     body: JSON.stringify(args),
     signal: AbortSignal.timeout(10000),
   });

@@ -12,8 +12,10 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
 const URL_ = Deno.env.get('SUPABASE_URL')!;
-const ANON = Deno.env.get('SUPABASE_ANON_KEY')!;
-const SERVICE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+// Chave pública nova (sb_publishable_..., no secret VTX_PUBLISHABLE_KEY) ou, até a troca, a anon antiga.
+const ANON = Deno.env.get('VTX_PUBLISHABLE_KEY') || Deno.env.get('SUPABASE_ANON_KEY')!;
+// Chave secreta nova (sb_secret_..., no secret VTX_SECRET_KEY) ou, até a troca, a service_role antiga.
+const SERVICE = Deno.env.get('VTX_SECRET_KEY') || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
