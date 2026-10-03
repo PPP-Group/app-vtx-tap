@@ -15,75 +15,93 @@ que continua funcionando sempre.
    - marca **No ar** quando o site abre com HTTPS.
 4. Na primeira vez que o domínio fica no ar, ele entra no plano: **R$ 190 uma vez + R$ 19/mês**.
 
+## Atenção: o Traefik é de todos os sites do servidor
+
+O VPS (Hostinger, IP 72.60.49.32, EasyPanel, projeto `sites`) também roda o n8n, a Franccino e outros sites, todos atrás do mesmo Traefik.
+
+- O Traefik lê a pasta `/etc/easypanel/traefik/config` inteira, com o `main.yaml` do EasyPanel e o `vtx-dominios.yaml` deste roteador.
+- **Se um arquivo dessa pasta for inválido, o Traefik para de carregar a pasta toda.** Nenhum domínio novo de nenhum site ganha rota nem certificado: aparece o 404 do EasyPanel ou um certificado autoassinado.
+
+**O que aconteceu em out/2026.**
+- Com zero domínios cadastrados, a versão antiga escrevia `routers: {}` e deixava o middleware e o service soltos. O Traefik 3 recusou com "routers cannot be a standalone element", e os domínios da Franccino ficaram sem SSL.
+- Correção paliativa: o `vtx-dominios` foi desligado e o arquivo foi tirado da pasta.
+
+**Como a versão atual se protege** (`main.mjs`, com testes em `main.test.mjs`):
+- **Sem domínio no ar, o arquivo é apagado.** Nunca sai bloco vazio.
+- **Com domínios**, a configuração é montada, validada e só então gravada. Ela sempre tem router, service e middleware com conteúdo, e só entram nomes de domínio válidos.
+- **Se a validação falhar, nada é gravado** e continua o último arquivo bom.
+- **A gravação é atômica:** um `.tmp`, que o Traefik ignora, e depois a troca com `rename`.
+- **Com `TRAEFIK_API`,** o roteador confere na API do Traefik se as rotas carregaram. Se não carregaram, volta o arquivo anterior.
+- **Foi testada com o Traefik 3 de verdade:**
+  - o arquivo antigo reproduz o erro e derruba a rota de outro site;
+  - o novo carrega com zero, um e vários domínios sem nenhum erro;
+  - a rota do outro site continua em todos os casos.
+
+Nunca edite o `main.mjs` direto no VPS. O deploy do EasyPanel sobrescreve a pasta `code/` com o que está no GitHub, e a imagem que roda é a do último build. Mude no repositório e faça o Deploy.
+
 ## O que já está pronto
 
 - Supabase: tabela `dominios`, funções `dominios_lista` e `dominio_marcar`, e a Edge Function `dominio` publicada.
-- Código do roteador em `deploy/dominios` (`Dockerfile` + `main.mjs`).
+- Código do roteador em `deploy/dominios` (`Dockerfile` + `main.mjs` + testes).
 - Tela do painel em Ajustes › Endereço.
 
-Falta só **subir o roteador no EasyPanel** e **testar com um domínio de verdade**.
+Falta **subir a versão corrigida do roteador** e **testar com um domínio de verdade**.
 
 ---
 
-## Parte 1: pegar os dados necessários (5 min)
+## Parte 1: antes de religar (segurança)
 
-1. **URL do Supabase**: Supabase › Project Settings › API › Project URL
-   (`https://cmockootzrjkcuxkxlvy.supabase.co`).
-2. **Chave service_role** (secreta): Supabase › Project Settings › API Keys › `service_role` / `secret` › Reveal.
-   - Ela vai **só** no app `vtx-dominios`, nunca no app principal nem no navegador.
-3. **Nome interno do app principal no EasyPanel**: é `<projeto>_<app>`, tudo em minúsculas.
-   - Exemplo: projeto `vtx`, app `tap` dá `vtx_tap`.
-   - Confira no EasyPanel: abra o app principal; o nome aparece no topo e em *Advanced › Service name*.
-   - O `APP_URL` fica `http://vtx_tap:80` (com o nome certo).
+A `SUPABASE_SERVICE_ROLE_KEY` e o token da API da Hostinger apareceram em texto durante a investigação. Gere chaves novas antes de religar:
 
-## Parte 2: criar o app do roteador no EasyPanel (10 min)
+1. **Supabase**: em Project Settings › API Keys, gere uma chave secreta nova (*secret* / *service_role*). Use a nova no `vtx-dominios` e revogue a antiga.
+   - Se o projeto ainda usa as chaves JWT antigas (`service_role`), o caminho é *JWT Keys › Rotate*.
+   - Esse rotate troca também a chave pública (anon) do app principal, então atualize a `SUPABASE_ANON_KEY` do `app-vtx-tap` no mesmo momento.
+2. **Hostinger**: gere um token novo da API e apague o antigo. Atualize o `HOSTINGER_API_TOKEN` no Traefik, se o resolvedor `hostinger` (o do domínio coringa) continuar em uso.
 
-1. EasyPanel › abra o **mesmo projeto** do app principal › **+ Service › App**. Nome: `vtx-dominios`.
-2. **Source**:
-   - GitHub, repositório `PPP-Group/app-vtx-tap`, branch `master`.
-   - **Build path: `deploy/dominios`**.
-   - Build: **Dockerfile** (o arquivo `Dockerfile` dessa pasta).
-3. **Environment**: cole e troque os valores:
+## Parte 2: subir a versão corrigida (10 min)
+
+O app `vtx-dominios` já existe no projeto `sites` (hoje com 0 réplicas). Confira:
+
+1. **Source**:
+   - GitHub, repositório `PPP-Group/app-vtx-tap`, branch `master`;
+   - **Build path: `deploy/dominios`**;
+   - Build: **Dockerfile**.
+2. **Environment**:
 
    ```
    SUPABASE_URL=https://cmockootzrjkcuxkxlvy.supabase.co
-   SUPABASE_SERVICE_ROLE_KEY=COLE-A-CHAVE-SERVICE-ROLE
-   APP_URL=http://vtx_tap:80
+   SUPABASE_SERVICE_ROLE_KEY=A-CHAVE-NOVA
+   APP_URL=http://app-vtx-tap:80
    ```
 
-   Opcionais, só se o seu Traefik usar outros nomes (veja a Parte 3):
-   `CERT_RESOLVER=letsencrypt`, `ENTRY_HTTP=http`, `ENTRY_HTTPS=https`, `INTERVALO=30`.
-4. **Mounts › Add Bind Mount**:
-   - Host path: `/etc/easypanel/traefik/config`
-   - Mount path: `/traefik`
-
-   É a pasta de onde o Traefik do EasyPanel lê as configurações. O roteador grava ali o arquivo `vtx-dominios.yaml`.
-5. **Domains**: deixe **vazio**. Este app não recebe visitas; não precisa de domínio nem de porta.
-6. Clique em **Deploy**.
-7. Abra **Logs**. Tem que aparecer uma linha assim:
+   - `APP_URL` é o nome interno do app principal no projeto `sites`.
+   - Não ponha `CERT_RESOLVER=hostinger`: o padrão `letsencrypt` é o certo para os domínios dos restaurantes.
+   - Opcional: `TRAEFIK_API=http://<endereço interno da API do Traefik>:8080`, se a API do Traefik estiver ligada na rede interna. Com ela o roteador confere se as rotas carregaram e desfaz se não carregaram. Sem ela, confira pelo log (passo 6).
+3. **Mounts**: um *Bind mount* com host `/etc/easypanel/traefik/config` e container `/traefik`.
+4. **Domains**: vazio. **Ports**: nenhuma.
+5. Clique em **Deploy**, que faz o build pelo GitHub e gera a imagem nova. Só depois volte para **1 réplica**.
+6. Espere o primeiro ciclo (30 s) e confira no servidor:
 
    ```
-   Roteador de domínios: app http://vtx_tap:80, arquivo /traefik/vtx-dominios.yaml, certificados letsencrypt
+   docker logs --tail 50 $(docker ps -q -f name=traefik | head -1) 2>&1 | grep -i error
+   ls -la /etc/easypanel/traefik/config/
+   cat /etc/easypanel/traefik/config/vtx-dominios.yaml
    ```
 
-   - **Erro de HTTP 401/403** em `dominios_lista`: a chave service_role está errada.
-   - **"EACCES" ou "permission denied" em /traefik**: o Bind Mount não foi criado, ou o caminho está errado.
+   - **Não pode aparecer** `Error while building configuration`.
+   - Sem domínio no ar, o `vtx-dominios.yaml` **não existe**: o `cat` dá "No such file". Isso é o certo.
+   - Com domínio, o arquivo tem `routers:`, `middlewares:` e `services:`, todos preenchidos.
+   - No log do `vtx-dominios` aparece `Roteador de domínios: app http://app-vtx-tap:80, arquivo /traefik/vtx-dominios.yaml, certificados letsencrypt…`.
+   - Se aparecer erro no Traefik: volte o `vtx-dominios` para 0 réplicas, apague o `vtx-dominios.yaml` e mande o log.
+7. O backup antigo (`vtx-dominios.yaml.bak`) pode ser apagado depois que tudo estiver certo.
 
 ## Parte 3: conferir os nomes do Traefik (5 min)
 
-O roteador usa por padrão o resolvedor `letsencrypt` e os entrypoints `http` e `https`, que são os nomes do EasyPanel. Para conferir:
+O roteador usa o resolvedor `letsencrypt` e os entrypoints `http` e `https`, que são os nomes do EasyPanel. Para conferir:
 
-1. No servidor (terminal da VPS ou *Console* do EasyPanel), rode:
-
-   ```
-   cat /etc/easypanel/traefik/config/main.yaml | head -40
-   ```
-
-   ou abra *Settings › Traefik › Custom config* no EasyPanel.
-2. Procure `certResolver:` e os `entryPoints:` das rotas que já existem.
-3. Se aparecer outro nome (ex.: `certResolver: le`), ponha o mesmo em `CERT_RESOLVER` no app `vtx-dominios` e faça o Deploy de novo.
-
-Se você criou o resolvedor `hostinger` para o domínio coringa, não use ele aqui. Para os domínios dos restaurantes o certificado é o normal, por HTTP, e o resolvedor padrão do EasyPanel (`letsencrypt`) funciona.
+1. Rode `grep -n "certResolver\|entryPoints" /etc/easypanel/traefik/config/main.yaml | head`.
+2. Se aparecer outro nome, ponha o mesmo em `CERT_RESOLVER`, `ENTRY_HTTP` ou `ENTRY_HTTPS` e faça o Deploy de novo.
+   - Se um nome for inválido, o roteador nem começa e não grava nada: mostra "Variáveis inválidas".
 
 ## Parte 4: testar com um domínio de verdade (15 min + espera do DNS)
 
@@ -129,10 +147,11 @@ Esse funcionaria até sem nada, por causa do coringa; melhor ainda é um domíni
 | Fica em **Gerando o certificado** por mais de 10 min | Logs do `vtx-dominios`: o arquivo foi escrito? Logs do Traefik (EasyPanel › Settings › Traefik): erro do Let's Encrypt? O nome do resolvedor está certo (Parte 3)? A porta 80 da VPS está aberta? (O Let's Encrypt valida por HTTP.) |
 | Abre com **certificado inválido** | Normalmente é a nuvem laranja da Cloudflare, ou o resolvedor errado. |
 | Abre **404 do Traefik** | O `APP_URL` está errado: o nome interno do app principal não é esse. Corrija e faça o Deploy. |
+| Outros sites do servidor sem SSL | Veja o log do Traefik (passo 6 da Parte 2). Se o erro apontar para `vtx-dominios.yaml`, deixe o roteador com 0 réplicas, apague o arquivo e abra um chamado com o log. |
 | Abre outro restaurante | O domínio foi cadastrado no restaurante errado. Em Ajustes › Endereço, toque em **Trocar ou remover** e cadastre no certo. |
 
-## Segurança (aproveitando que vai mexer no servidor)
+## Segurança
 
-- Gere um **token novo da API da Hostinger** e apague o antigo, que apareceu em conversa e deve ser tratado como exposto. Depois atualize o `HOSTINGER_API_TOKEN` no Traefik.
-- Tire `TRAEFIK_LOG_LEVEL=DEBUG` das variáveis do Traefik. O log em DEBUG pode mostrar dados sensíveis e enche o disco.
-- A chave `service_role` fica **só** no app `vtx-dominios`.
+- A chave secreta do Supabase fica **só** no app `vtx-dominios`. Gere uma nova sempre que ela aparecer em conversa ou log.
+- Tire `TRAEFIK_LOG_LEVEL=DEBUG` das variáveis do Traefik: o log em DEBUG pode mostrar dados sensíveis e enche o disco.
+- Não mexa no `main.yaml` do EasyPanel, na configuração global do Traefik nem nos serviços de outros projetos (Franccino, n8n).
