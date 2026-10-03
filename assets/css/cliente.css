@@ -626,6 +626,36 @@ a.info-row:hover span { color: var(--ink); text-decoration: underline; }
 .fid-boosts .i, .fid-agora .i { width: 18px; height: 18px; flex: none; color: var(--brass-lo); }
 .fid-agora { background: var(--brass-soft); }
 
+/* Cartão fidelidade: cartão de papel com um carimbo por compra; o último espaço é o prêmio. */
+.fid-cartao { position: relative; display: grid; gap: 14px; padding: 18px 18px 16px; border-radius: 20px; background: var(--surface); box-shadow: var(--shadow-1); }
+.fid-cartao::before { content: ''; position: absolute; inset: 6px; border-radius: 15px; border: 1.5px dashed var(--line); pointer-events: none; }
+.fid-cartao-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.fid-cartao-top span { display: grid; gap: 2px; }
+.fid-cartao-top small { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.fid-cartao-top b { font-family: var(--font-display); font-weight: 900; font-size: 30px; line-height: 1; text-transform: uppercase; color: var(--ink); }
+.fid-cartao-top > .i { width: 26px; height: 26px; color: var(--brass-lo); }
+.fid-carimbos { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(var(--cols, 5), minmax(0, 1fr)); gap: 10px; }
+.fid-carimbos li { aspect-ratio: 1; max-width: 58px; width: 100%; justify-self: center; display: grid; place-items: center; border-radius: 50%;
+  border: 2px dashed var(--line); color: var(--muted); font-family: var(--font-mono); font-size: 13px; }
+.fid-carimbos li .i { width: 46%; height: 46%; }
+.fid-carimbos li.is-premio { border-style: solid; border-color: var(--brass); color: var(--brass-lo); background: var(--brass-soft); }
+.fid-carimbos li.is-on { border: 0; background: var(--cobalt); color: #fff; transform: rotate(var(--r, 0deg));
+  box-shadow: inset 0 0 0 3px color-mix(in srgb, #fff 22%, transparent), 0 2px 6px -2px rgba(var(--cobalt-rgb), .6); }
+.fid-carimbos li.is-on.is-premio { background: var(--brass); color: #231703; }
+.fid-cartao-txt { font-size: 14.5px; color: var(--ink-2); }
+.fid-cartao-vence { font-size: 12.5px; color: var(--muted); }
+.fid-cartao.is-completo { background: var(--brass-soft); }
+.fid-cartao.is-completo::before { border-color: color-mix(in srgb, var(--brass) 55%, transparent); }
+.fid-completo { display: grid; gap: 10px; }
+.fid-ola { font-size: 17px; }
+.fid-progs { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.fid-progs li { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 14px; background: var(--surface-2); font-size: 14px; }
+.fid-progs li .i { width: 18px; height: 18px; flex: none; margin-top: 1px; color: var(--cobalt-ink); }
+.fid-progs small { display: block; margin-top: 2px; font-size: 13px; color: var(--muted); }
+.fid-progs-nota { font-size: 13px; margin-top: -6px; }
+:root[data-theme="dark"] .fid-cartao-top > .i, :root[data-theme="dark"] .fid-carimbos li.is-premio { color: var(--brass-hi); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .fid-cartao-top > .i, :root:not([data-theme="light"]) .fid-carimbos li.is-premio { color: var(--brass-hi); } }
+
 .fid-como { margin: 0; padding-left: 1.3em; display: grid; gap: 6px; font-size: 14.5px; color: var(--ink-2); }
 .fid-h3 { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
 .fid-vazio { font-size: 14px; }
@@ -832,3 +862,13 @@ button.fid-nivel { cursor: pointer; }
 .hh-garcom-acts .btn-cobalt { background: #fff; color: #13321f; }
 .hh-garcom-acts .icon-btn { margin-left: auto; color: #fff; }
 @keyframes hh-garcom { from { transform: translateY(120%); } }
+
+/* Os dois programas: alternar entre cartão e pontos (o fora do horário é só para ver) */
+.fid-vista { display: grid; grid-template-columns: 1fr 1fr; }
+.fid-vista button { display: flex; align-items: center; justify-content: center; gap: 6px; min-width: 0; padding-inline: 8px; }
+.fid-vista-nome { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fid-vista .fid-agora-tag { flex: none; margin-left: 0; }
+.fid-agora-tag { display: inline-block; margin-left: 4px; padding: 1px 7px; border-radius: 999px; background: var(--leaf-soft); color: var(--leaf);
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; vertical-align: 1px; }
+.fid-so-ver .i, .fid-so-ver-txt .i { width: 16px; height: 16px; flex: none; }
+.fid-so-ver-txt { display: flex; align-items: center; gap: 6px; justify-content: center; font-size: 13px; }

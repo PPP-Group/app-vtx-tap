@@ -56,6 +56,8 @@
   const nowIso = () => new Date().toISOString();
 
   /* ---------- Fidelidade: regras puras (as mesmas de public.fid_* no schema.sql) ---------- */
+  // Cartão fidelidade (selos): cada compra vale um selo; completou, ganha o prêmio (public.fid_selos_cfg).
+  const SELOS_PADRAO = { nome: 'Cartão fidelidade', total: 10, premio: '1 refeição grátis', detalhe: '', valorMinimo: 0, umPorDia: true, validadeDias: 90 };
   const FID_PADRAO = {
     ativo: false, nome: 'Clube de pontos', pontosPorReal: 1, boosts: [], cnpjs: [], prazoDias: 7, inicio: null,
     manual: false, regulamento: '', fuso: 'America/Sao_Paulo', indicacao: { ativo: true, indicador: 50, indicado: 20, quando: 'cadastro' },
@@ -66,6 +68,10 @@
     transferencia: { ativo: true, minimo: 10, maximoDia: 0 },
     // Pontos vencem depois de quantidade dias/meses (os mais antigos primeiro). desde = dia em que a regra foi ligada.
     validade: { ativo: false, quantidade: 12, unidade: 'meses', desde: null },
+    // Tipo: 'pontos' (clube de pontos), 'selos' (cartão fidelidade) ou 'ambos' (cada um no seu horário).
+    // O horário em que a nota foi emitida escolhe o programa; fora de todos os horários, não conta.
+    modo: 'pontos', selos: SELOS_PADRAO,
+    horarios: { selos: { dias: [1, 2, 3, 4, 5], de: '11:00', ate: '15:00' }, pontos: { dias: [], de: '18:00', ate: '02:00' } },
   };
   const soDigitos = (s) => String(s || '').replace(/\D/g, '');
   // Aniversário: a data "AAAA-MM-DD" (campo de data) vira AAAAMMDD para o banco (public.fid_nascimento).
@@ -181,6 +187,40 @@
     return { ...lista[i], indice: i, pontos_nivel: pontosNivel,
       proximo: prox ? { id: prox.id, nome: prox.nome, cor: prox.cor, minimo: prox.minimo, falta: prox.minimo - pontosNivel } : null };
   }
+  const fidModo = (r) => (r && ['selos', 'ambos'].includes(r.modo) ? r.modo : 'pontos');
+  function fidSelosCfg(regras) {
+    const s = { ...SELOS_PADRAO, ...((regras && regras.selos) || {}) };
+    return {
+      nome: String(s.nome || '').trim().slice(0, 40) || SELOS_PADRAO.nome,
+      total: Math.round(Math.min(Math.max(+s.total || 10, 3), 30)),
+      premio: String(s.premio || '').trim().slice(0, 60) || SELOS_PADRAO.premio,
+      detalhe: String(s.detalhe || '').slice(0, 160),
+      valorMinimo: Math.round(Math.min(Math.max(+s.valorMinimo || 0, 0), 1e4) * 100) / 100,
+      umPorDia: s.umPorDia !== false,
+      validadeDias: Math.round(Math.min(Math.max(+s.validadeDias || 0, 0), 730)),
+    };
+  }
+  // A hora cai no horário do programa? { dias, de, ate } (pode virar a meia-noite). Sem dias nem horas: nunca.
+  function fidNaJanela(j, quando) {
+    if (!j || typeof j !== 'object') return false;
+    const d = new Date(quando);
+    const dia = d.getDay();
+    const min = d.getHours() * 60 + d.getMinutes();
+    const dias = Array.isArray(j.dias) ? j.dias.map(Number) : [];
+    const noDia = (x) => !dias.length || dias.includes(x);
+    const ini = minutos(j.de);
+    const fim = minutos(j.ate);
+    if (ini == null || fim == null) return dias.length > 0 && dias.includes(dia);
+    if (fim > ini) return noDia(dia) && min >= ini && min < fim;
+    return (noDia(dia) && min >= ini) || (noDia((dia + 6) % 7) && min < fim);
+  }
+  // Programa de uma compra: 'pontos', 'selos' ou null (fora dos horários).
+  function fidProgramaEm(regras, quando) {
+    const m = fidModo(regras);
+    if (m !== 'ambos') return m;
+    const h = (regras && regras.horarios) || {};
+    return fidNaJanela(h.selos, quando) ? 'selos' : fidNaJanela(h.pontos, quando) ? 'pontos' : null;
+  }
   // Na demonstração o programa já vem no ar, para dar para experimentar.
   const FID_DEMO = {
     ativo: true, nome: 'Clube de pontos', pontosPorReal: 1,
@@ -206,6 +246,11 @@
     aniversario: { ...FID_PADRAO.aniversario, ...((f && f.aniversario) || {}) },
     transferencia: { ...FID_PADRAO.transferencia, ...((f && f.transferencia) || {}) },
     validade: { ...FID_PADRAO.validade, ...((f && f.validade) || {}) },
+    selos: { ...FID_PADRAO.selos, ...((f && f.selos) || {}) },
+    horarios: {
+      selos: { ...FID_PADRAO.horarios.selos, ...((f && f.horarios && f.horarios.selos) || {}) },
+      pontos: { ...FID_PADRAO.horarios.pontos, ...((f && f.horarios && f.horarios.pontos) || {}) },
+    },
   });
 
   // Mensalidade do plano (assets/js/precos.js, a mesma tabela de public.plano_preco).
@@ -503,13 +548,71 @@
     function bonusIndicacao(db, cpf) {
       const r = regras(db).indicacao || {};
       const c = cliDe(db, cpf);
-      if (!r.ativo || !c || !c.indicado_por || c.bonus_indicacao) return;
+      if (!r.ativo || fidModo(regras(db)) === 'selos' || !c || !c.indicado_por || c.bonus_indicacao) return;
       c.bonus_indicacao = true;
       if (+r.indicado > 0) mover(db, cpf, 'boas_vindas', +r.indicado, { descricao: 'Bônus de boas-vindas (indicação)' });
       if (+r.indicador > 0 && cliDe(db, c.indicado_por)) {
         mover(db, c.indicado_por, 'indicacao', +r.indicador, { descricao: `Indicação: ${c.nome.split(' ')[0]} ${r.quando === 'compra' ? 'fez a primeira compra' : 'entrou no clube'}` });
       }
     }
+    /* Cartão fidelidade (mesmas regras de public.fid_carimbar e companhia). */
+    const cartoes = (db) => { const f = F(db); f.cartoes = f.cartoes || []; f.selos = f.selos || []; return f; };
+    function carimbar(db, cpf, valor, quando, chave, pedidoId, descricao, por) {
+      const s = fidSelosCfg(regras(db));
+      const f = cartoes(db);
+      const em = new Date(quando);
+      const dia = diaIso(em);
+      if (!cliDe(db, cpf)) return { ok: false, motivo: 'Cliente não encontrado.' };
+      if (s.valorMinimo > 0 && (+valor || 0) < s.valorMinimo) return { ok: false, motivo: `A compra de ${brlTxt(valor)} ficou abaixo do mínimo de ${brlTxt(s.valorMinimo)} para ganhar selo.` };
+      if (s.umPorDia && f.selos.some((x) => x.cpf === cpf && x.dia === dia)) return { ok: false, motivo: `Já tem selo do dia ${dia.slice(8, 10)}/${dia.slice(5, 7)} no cartão. Vale 1 selo por dia.` };
+      let k = f.cartoes.filter((c) => c.cpf === cpf && c.status === 'aberto').sort((a, b) => (a.criado_em < b.criado_em ? 1 : -1))[0];
+      if (k && k.vence_em && new Date(k.vence_em) < em) { k.status = 'vencido'; k = null; }
+      if (!k) {
+        k = { id: uid(), cpf, total: s.total, selos: 0, premio: s.premio, status: 'aberto', criado_em: nowIso(), vence_em: null, completo_em: null };
+        f.cartoes.push(k);
+      }
+      f.selos.push({ id: uid(), cartao_id: k.id, cpf, dia, valor: valor ?? null, nota_chave: chave || null, pedido_id: pedidoId || null, descricao: descricao || null, por: por || null, criado_em: nowIso() });
+      k.selos += 1;
+      if (!k.vence_em && s.validadeDias > 0) k.vence_em = new Date(+em + s.validadeDias * DIA).toISOString();
+      if (k.selos >= k.total) Object.assign(k, { status: 'completo', completo_em: nowIso() });
+      return { ok: true, cartao: k.id, selos: k.selos, total: k.total, completo: k.status === 'completo', premio: k.premio };
+    }
+    // Nota cancelada (ou de outro CPF): o selo sai do cartão. Cartão já trocado fica como está.
+    function descarimbar(db, chave) {
+      const f = cartoes(db);
+      const sl = f.selos.find((x) => x.nota_chave === chave);
+      const k = sl && f.cartoes.find((c) => c.id === sl.cartao_id);
+      if (!k || k.status === 'resgatado') return false;
+      f.selos = f.selos.filter((x) => x !== sl);
+      k.selos = Math.max(k.selos - 1, 0);
+      if (k.status === 'completo') Object.assign(k, { status: 'aberto', completo_em: null });
+      return true;
+    }
+    function cartaoResumo(db, cpf) {
+      const f = cartoes(db);
+      const meus = f.cartoes.filter((c) => c.cpf === cpf);
+      const a = meus.filter((c) => c.status === 'aberto').sort((x, y) => (x.criado_em < y.criado_em ? 1 : -1))[0];
+      return {
+        aberto: a ? { id: a.id, selos: a.selos, total: a.total, premio: a.premio, vence_em: a.vence_em, vencido: !!(a.vence_em && new Date(a.vence_em) < new Date()),
+          dias: f.selos.filter((x) => x.cartao_id === a.id).map((x) => x.dia) } : null,
+        completos: meus.filter((c) => c.status === 'completo').sort((x, y) => (x.completo_em > y.completo_em ? 1 : -1))
+          .map(({ id, premio, total, completo_em }) => ({ id, premio, total, completo_em })),
+        resgatados: meus.filter((c) => c.status === 'resgatado').length,
+      };
+    }
+    // Programa que a nota alimentou e, se virou selo, como ficou o cartão.
+    function notaExtra(db, chave) {
+      const f = cartoes(db);
+      const n = f.notas.find((x) => x.chave === chave);
+      if (!n) return {};
+      const sl = f.selos.find((x) => x.nota_chave === chave);
+      const k = sl && f.cartoes.find((c) => c.id === sl.cartao_id);
+      return { programa: n.programa || 'pontos', cartao: k ? { selos: k.selos, total: k.total, premio: k.premio, completo: ['completo', 'resgatado'].includes(k.status) } : null };
+    }
+    // Com os dois programas, cada um só deixa trocar e transferir no próprio horário (public.fid_fora_do_horario).
+    const foraDoHorario = (db, prog) => (fidModo(regras(db)) === 'ambos' && fidProgramaEm(regras(db), new Date()) !== prog
+      ? (prog === 'selos' ? 'O cartão só pode ser trocado no horário dele. Agora ele fica só para ver.' : 'Os pontos só podem ser usados no horário deles. Agora eles ficam só para ver.') : null);
+    const horaTxt = (d) => `${String(d.getHours()).padStart(2, '0')}h${String(d.getMinutes()).padStart(2, '0')}`;
     function creditar(db, n, valor, emitida, por) {
       if (!n || n.status !== 'pendente') return null;
       const quando = new Date(emitida || n.lida_em);
@@ -519,11 +622,21 @@
       if (ped) {
         ped.nota_chave = n.chave;
         Object.assign(n, { status: 'recusada', valor, emitida_em: quando.toISOString(), conferida_em: nowIso(), conferida_por: por,
-          motivo: `Esta compra já ganhou pontos pelo pedido nº ${ped.numero} do delivery.` });
+          motivo: `Esta compra já contou pelo pedido nº ${ped.numero} do delivery.` });
         return null;
       }
+      // Pontos ou selo: decide o horário em que a nota foi emitida. Fora de todos os horários, não conta.
+      const prog = fidProgramaEm(regras(db), quando);
+      const recusar = (motivo) => { Object.assign(n, { status: 'recusada', valor, emitida_em: quando.toISOString(), conferida_em: nowIso(), conferida_por: por, motivo }); return null; };
+      if (!prog) return recusar(`A compra foi às ${horaTxt(quando)}, fora dos horários do programa de fidelidade.`);
+      if (prog === 'selos') {
+        const st = carimbar(db, n.cpf, valor, quando, n.chave, null, `Compra de ${brlTxt(valor)}`, por);
+        if (!st.ok) return recusar(st.motivo);
+        Object.assign(n, { status: 'creditada', valor, emitida_em: quando.toISOString(), pontos: 0, mult: null, programa: 'selos', conferida_em: nowIso(), conferida_por: por, motivo: null });
+        return 0;
+      }
       const calc = fidCalcular(regras(db), valor, emitida || n.lida_em, nivelDe(db, n.cpf), extraDe(db, n.cpf, emitida || n.lida_em));
-      Object.assign(n, { status: 'creditada', valor, emitida_em: emitida || n.emitida_em || n.lida_em, pontos: calc.pontos, mult: calc.mult, conferida_em: nowIso(), conferida_por: por, motivo: null });
+      Object.assign(n, { status: 'creditada', valor, emitida_em: emitida || n.emitida_em || n.lida_em, pontos: calc.pontos, mult: calc.mult, programa: 'pontos', conferida_em: nowIso(), conferida_por: por, motivo: null });
       mover(db, n.cpf, 'compra', calc.pontos, {
         descricao: `Compra de ${brlTxt(valor)}${calc.boost ? ` · ${calc.boost}` : ''}${calc.nivel ? ` · nível ${calc.nivel}` : ''}${calc.mult > 1 ? ` (${multTxt(calc.mult)}x)` : ''}`,
         valor, mult: calc.mult, nota_chave: n.chave, por,
@@ -551,7 +664,7 @@
         return { status: 'recusada', motivo };
       }
       const pts = creditar(db, n, x.valor, x.emitida_em, 'XML da nota');
-      return pts == null ? { status: 'recusada', motivo: n.motivo } : { status: 'creditada', pontos: pts, valor: x.valor };
+      return pts == null ? { status: 'recusada', motivo: n.motivo } : { status: 'creditada', pontos: pts, valor: x.valor, ...notaExtra(db, chave) };
     }
     // Pedido entregue do delivery vira pontos (mesmas regras de public.fid_creditar_pedido).
     function creditarPedido(db, p) {
@@ -573,7 +686,15 @@
       const n = f.notas.find((x) => x.cpf === cpf && x.status === 'creditada' && !ligadas.has(x.chave)
         && (Math.abs(x.valor - p.total) <= 0.05 || Math.abs(x.valor - p.subtotal) <= 0.05)
         && new Date(x.emitida_em) >= em - 3600e3 && new Date(x.emitida_em) <= +em + 12 * 3600e3);
-      if (n) { Object.assign(p, { fid_situacao: 'nota', cpf, nota_chave: n.chave, fid_pontos: n.pontos }); return { status: 'nota', pontos: n.pontos }; }
+      if (n) { Object.assign(p, { fid_situacao: 'nota', cpf, nota_chave: n.chave, fid_pontos: n.pontos, fid_selo: n.programa === 'selos' }); return { status: 'nota', pontos: n.pontos }; }
+      const prog = fidProgramaEm(regras(db), p.criado_em);
+      if (!prog) { Object.assign(p, { fid_situacao: 'fora', cpf }); return { status: 'fora' }; }
+      if (prog === 'selos') {
+        const st = carimbar(db, cpf, p.total, p.criado_em, null, p.id, `Delivery nº ${p.numero} · ${brlTxt(p.total)}`, 'Delivery');
+        if (!st.ok) { Object.assign(p, { fid_situacao: 'fora', cpf }); return { status: 'fora', motivo: st.motivo }; }
+        Object.assign(p, { fid_situacao: 'creditado', cpf, fid_pontos: 0, fid_selo: true });
+        return { status: 'creditado', pontos: 0, selo: true };
+      }
       const calc = fidCalcular(regras(db), p.total, p.criado_em, nivelDe(db, cpf), extraDe(db, cpf, p.criado_em));
       Object.assign(p, { fid_situacao: 'creditado', cpf, fid_pontos: calc.pontos });
       mover(db, cpf, 'compra', calc.pontos, {
@@ -714,7 +835,7 @@
       const b = Math.round(Math.min(Math.max(+a.bonus || 0, 0), 1e5));
       const c = cliDe(db, cpf);
       const agora = new Date();
-      if (!a.ativo || b <= 0 || !noAr(db) || !c || c.aniversario_mes !== agora.getMonth() + 1 || (c.aniversario_ano || 0) >= agora.getFullYear()) return 0;
+      if (!a.ativo || b <= 0 || !noAr(db) || fidModo(regras(db)) === 'selos' || !c || c.aniversario_mes !== agora.getMonth() + 1 || (c.aniversario_ano || 0) >= agora.getFullYear()) return 0;
       c.aniversario_ano = agora.getFullYear();
       mover(db, cpf, 'aniversario', b, { descricao: 'Presente de aniversário', por: 'Aniversário' });
       return b;
@@ -1033,6 +1154,9 @@
           transferencia: r.transferencia && r.transferencia.ativo ? { ativo: true, minimo: Math.max(+r.transferencia.minimo || 1, 1), maximoDia: Math.max(+r.transferencia.maximoDia || 0, 0) } : { ativo: false },
           validade: validadeMs(db) ? { ativo: true, quantidade: +r.validade.quantidade || 12, unidade: r.validade.unidade === 'dias' ? 'dias' : 'meses' } : { ativo: false },
           eventos: eventosPublicos(db),
+          modo: fidModo(r),
+          selos: fidModo(r) !== 'pontos' ? fidSelosCfg(r) : null,
+          horarios: fidModo(r) === 'ambos' ? { selos: r.horarios.selos, pontos: r.horarios.pontos } : null,
           premios: F(db).premios.filter((p) => p.ativo && (!p.aniversario || (r.aniversario && r.aniversario.ativo)))
             .sort((a, b) => (b.aniversario ? 1 : 0) - (a.aniversario ? 1 : 0) || a.ordem - b.ordem || a.pontos - b.pontos)
             .map(({ id, nome, descricao, pontos, imagem, nivel_min, aniversario }) => ({ id, nome, descricao, pontos, imagem, nivel_min: nivel_min || null, aniversario: !!aniversario })),
@@ -1046,7 +1170,8 @@
         const c = cliDe(db, cpf);
         if (!c) return { status: 'novo' };
         if (vencer(db, cpf) + bonusAniversario(db, cpf)) write(db);
-        return { status: 'ok', nome: c.nome.split(' ')[0], pontos: c.pontos, nivel: nivelDe(db, cpf), pendentes: F(db).notas.filter((n) => n.cpf === cpf && n.status === 'pendente').length, tem_pin: !!F(db).pins[cpf] };
+        return { status: 'ok', nome: c.nome.split(' ')[0], pontos: c.pontos, nivel: nivelDe(db, cpf), pendentes: F(db).notas.filter((n) => n.cpf === cpf && n.status === 'pendente').length, tem_pin: !!F(db).pins[cpf],
+          cartao: fidModo(regras(db)) !== 'pontos' ? cartaoResumo(db, cpf) : null };
       },
       async fidIndicador(codigo) {
         const c = F(read()).clientes.find((x) => x.codigo === String(codigo || '').toUpperCase().replace(/[^A-Z0-9]/g, ''));
@@ -1125,18 +1250,19 @@
         const ano = new Date().getFullYear();
         return {
           status: 'ok', ...c, nivel, indicacoes: f.clientes.filter((x) => x.indicado_por === cpf).length,
+          cartao: fidModo(regras(db)) !== 'pontos' ? cartaoResumo(db, cpf) : null,
           aniversariante: c.aniversario_mes === new Date().getMonth() + 1,
           a_vencer: aVencer(db, cpf),
           torcidas: Object.fromEntries(f.torcidas.filter((t) => t.cpf === cpf).map((t) => [t.evento_id, t.time])),
           presentes_ano: [...new Set(f.resgates.filter((x) => x.cpf === cpf && x.status !== 'cancelado' && new Date(x.criado_em).getFullYear() === ano
             && (f.premios.find((p) => p.id === x.premio_id) || {}).aniversario).map((x) => x.premio_id))],
           notas: f.notas.filter((n) => n.cpf === cpf).sort((a, b) => desc(a.lida_em, b.lida_em)).slice(0, 20)
-            .map((n) => ({ chave: n.chave, status: n.status, valor: n.valor ?? n.valor_informado, pontos: n.pontos, lida_em: n.lida_em, motivo: n.motivo })),
+            .map((n) => ({ chave: n.chave, status: n.status, valor: n.valor ?? n.valor_informado, pontos: n.pontos, programa: n.programa || null, lida_em: n.lida_em, motivo: n.motivo })),
           movimentos: f.movimentos.filter((m) => m.cpf === cpf).slice(-40).reverse()
             .map(({ tipo, pontos, descricao, criado_em }) => ({ tipo, pontos, descricao, criado_em })),
           resgates: f.resgates.filter((x) => x.cpf === cpf && (x.status === 'pendente' || Date.now() - new Date(x.criado_em) < 60 * DIA))
             .sort((a, b) => desc(a.criado_em, b.criado_em)).slice(0, 15)
-            .map((x) => ({ id: x.id, premio: x.premio_nome, pontos: x.pontos, codigo: x.codigo, status: x.status, criado_em: x.criado_em })),
+            .map((x) => ({ id: x.id, premio: x.premio_nome, pontos: x.pontos, codigo: x.codigo, status: x.status, cartao: !!x.cartao_id, criado_em: x.criado_em })),
         };
       },
       async fidSair(token) {
@@ -1150,7 +1276,7 @@
         const chave = chaveDoTexto(qr);
         if (!chave) return { status: 'nova' };
         const n = F(db).notas.find((x) => x.chave === chave);
-        if (n) return n.cpf !== soDigitos(cpf) ? { status: 'erro', mensagem: 'Esta nota já foi registrada em outra conta.' } : { status: 'repetida', nota: n.status, pontos: n.pontos, motivo: n.motivo };
+        if (n) return n.cpf !== soDigitos(cpf) ? { status: 'erro', mensagem: 'Esta nota já foi registrada em outra conta.' } : { status: 'repetida', nota: n.status, pontos: n.pontos, motivo: n.motivo, ...notaExtra(db, chave) };
         const prob = chaveProblema(db, chave);
         return prob ? { status: 'erro', mensagem: prob } : { status: 'nova' };
       },
@@ -1166,7 +1292,7 @@
         if (prob) return { status: 'erro', mensagem: prob };
         const f = F(db);
         const n = f.notas.find((x) => x.chave === chave);
-        if (n) return n.cpf !== cpf ? { status: 'erro', mensagem: 'Esta nota já foi registrada em outra conta.' } : { status: 'repetida', nota: n.status, pontos: n.pontos, motivo: n.motivo };
+        if (n) return n.cpf !== cpf ? { status: 'erro', mensagem: 'Esta nota já foi registrada em outra conta.' } : { status: 'repetida', nota: n.status, pontos: n.pontos, motivo: n.motivo, ...notaExtra(db, chave) };
         const url = /^https?:\/\/[a-z0-9.-]+\.gov\.br\//i.test(String(qr).trim()) ? String(qr).trim().slice(0, 600) : null;
         f.notas.push({ chave, cpf, url, status: 'pendente', valor_informado: valor > 0 && valor < 1e5 ? Math.round(valor * 100) / 100 : null, valor: null, emitida_em: null, pontos: null, mult: null, lida_em: nowIso(), lida_por: 'Cliente', conferida_em: null, conferida_por: null, motivo: null });
         const r = f.xml.some((x) => x.chave === chave) ? conferirXml(db, chave) : { status: 'pendente' };
@@ -1234,7 +1360,7 @@
         if (!p) return null;
         const conf = mergeSettings(db.configuracao, true);
         const { lat, lng, ...endereco } = p.endereco;
-        return { status: 'ok', pedido: { ...p, endereco, token: undefined, cliente: undefined, cpf: undefined, fid: { cpf: !!p.cpf, situacao: p.fid_situacao || null, pontos: p.fid_pontos ?? null } },
+        return { status: 'ok', pedido: { ...p, endereco, token: undefined, cliente: undefined, cpf: undefined, fid: { cpf: !!p.cpf, situacao: p.fid_situacao || null, pontos: p.fid_pontos ?? null, selo: !!p.fid_selo } },
           restaurante: { nome: conf.restaurante.nome, telefone: conf.restaurante.telefone, whatsapp: conf.delivery.whatsapp, pix: p.pagamento.forma === 'pix' ? conf.delivery.pix : null, tempo: conf.delivery.tempo } };
       },
       /* ---------- Domínio próprio: demonstração (sem DNS de verdade, avança um passo a cada conferência) ---------- */
@@ -1352,6 +1478,7 @@
         const cpf = sessaoDe(db, token);
         if (!cpf) return { status: 'sem_sessao' };
         if (!noAr(db)) return { status: 'inativo' };
+        if (foraDoHorario(db, 'pontos')) return { status: 'erro', mensagem: foraDoHorario(db, 'pontos') };
         const f = F(db);
         const p = f.premios.find((x) => x.id === premioId && x.ativo);
         if (!p) return { status: 'erro', mensagem: 'Este prêmio não está mais disponível.' };
@@ -1381,6 +1508,26 @@
         if (p.pontos > 0) mover(db, cpf, 'resgate', -p.pontos, { descricao: `Resgate: ${p.nome}`, resgate_id: x.id, por: 'Cliente' });
         write(db);
         return { status: 'ok', pontos: c.pontos, resgate: { id: x.id, premio: p.nome, pontos: p.pontos, codigo: x.codigo, status: 'pendente', criado_em: x.criado_em } };
+      },
+
+      // Cartão completo vira código para mostrar ao garçom (public.fid_resgatar_cartao).
+      async fidResgatarCartao(token, cartaoId) {
+        const db = read();
+        const cpf = sessaoDe(db, token);
+        if (!cpf) return { status: 'sem_sessao' };
+        if (!noAr(db)) return { status: 'inativo' };
+        if (foraDoHorario(db, 'selos')) return { status: 'erro', mensagem: foraDoHorario(db, 'selos') };
+        const f = cartoes(db);
+        const k = f.cartoes.find((c) => c.id === cartaoId && c.cpf === cpf);
+        if (!k || k.status !== 'completo') return { status: 'erro', mensagem: 'Este cartão não está completo ou já foi trocado.' };
+        if (f.resgates.filter((x) => x.cpf === cpf && x.status === 'pendente').length >= 3) {
+          return { status: 'erro', mensagem: 'Você já tem 3 resgates esperando a entrega. Mostre os códigos ao garçom.' };
+        }
+        const x = { id: uid(), cpf, premio_id: null, premio_nome: k.premio, pontos: 0, codigo: String(Math.floor(Math.random() * 1e4)).padStart(4, '0'), status: 'pendente', cartao_id: k.id, criado_em: nowIso(), resolvido_em: null, resolvido_por: null };
+        f.resgates.push(x);
+        k.status = 'resgatado';
+        write(db);
+        return { status: 'ok', resgate: { id: x.id, premio: x.premio_nome, pontos: 0, codigo: x.codigo, status: 'pendente', cartao: true, criado_em: x.criado_em } };
       },
 
       async fidDefinirAniversario(token, mes) {
@@ -1414,6 +1561,7 @@
         const cpf = sessaoDe(db, token);
         if (!cpf) return { status: 'sem_sessao' };
         if (!noAr(db)) return { status: 'inativo' };
+        if (foraDoHorario(db, 'pontos')) return { status: 'erro', mensagem: foraDoHorario(db, 'pontos') };
         const t = regras(db).transferencia || {};
         if (!t.ativo) return { status: 'erro', mensagem: 'A transferência de pontos está desligada neste restaurante.' };
         const min = Math.max(+t.minimo || 1, 1);
@@ -1467,6 +1615,9 @@
           resgates_pendentes: f.resgates.filter((x) => x.status === 'pendente').length,
           compras_30d: cred.length, valor_30d: cred.reduce((t, n) => t + (+n.valor || 0), 0),
           entregues_30d: f.resgates.filter((x) => x.status === 'entregue' && new Date(x.resolvido_em) > mes).length,
+          selos_30d: (f.selos || []).filter((x) => new Date(x.criado_em) > mes).length,
+          cartoes_30d: (f.cartoes || []).filter((c) => c.completo_em && new Date(c.completo_em) > mes).length,
+          cartoes_abertos: (f.cartoes || []).filter((c) => c.status === 'aberto' && c.selos > 0 && !(c.vence_em && new Date(c.vence_em) < new Date())).length,
           ultimo_xml: f.xml.map((x) => x.importada_em).sort().pop() || null,
         };
       },
@@ -1496,6 +1647,8 @@
           movimentos: f.movimentos.filter((m) => m.cpf === cpf).slice(-60).reverse(),
           notas: f.notas.filter((n) => n.cpf === cpf).sort((a, b) => (a.lida_em < b.lida_em ? 1 : -1)).slice(0, 40),
           resgates: f.resgates.filter((x) => x.cpf === cpf).sort((a, b) => (a.criado_em < b.criado_em ? 1 : -1)).slice(0, 30),
+          cartoes: (f.cartoes || []).filter((k) => k.cpf === cpf).sort((a, b) => (a.criado_em < b.criado_em ? 1 : -1)).slice(0, 12)
+            .map((k) => ({ ...k, fid_selos: (f.selos || []).filter((x) => x.cartao_id === k.id) })),
         };
       },
       async fidTopProdutos(cpf, dias) {
@@ -1512,7 +1665,7 @@
         if (!(valor > 0 && valor < 1e5)) falha('Informe o valor total da nota.');
         const pts = creditar(db, n, Math.round(valor * 100) / 100, emitida || n.lida_em, quem(db));
         write(db);
-        return pts ?? 0;
+        return pts == null ? { status: 'recusada', motivo: n.motivo } : { status: 'creditada', pontos: pts, ...notaExtra(db, chave) };
       },
       async fidRecusarNota(chave, motivo) {
         const db = read();
@@ -1544,7 +1697,8 @@
             const n = f.notas.find((y) => y.chave === it.chave);
             if (n && n.status === 'creditada') {
               Object.assign(n, { status: 'estornada', motivo: 'Nota cancelada pelo restaurante.' });
-              mover(db, n.cpf, 'estorno', -(n.pontos || 0), { descricao: `Nota cancelada: ${brlTxt(n.valor)}`, valor: n.valor, nota_chave: n.chave, por: quem(db) });
+              if (n.programa === 'selos') descarimbar(db, n.chave);
+              else mover(db, n.cpf, 'estorno', -(n.pontos || 0), { descricao: `Nota cancelada: ${brlTxt(n.valor)}`, valor: n.valor, nota_chave: n.chave, por: quem(db) });
               k.estornadas++;
             } else if (n && n.status === 'pendente') conferirXml(db, it.chave);
             continue;
@@ -1564,12 +1718,18 @@
           } else if (n && n.status === 'creditada' && n.conferida_por !== 'XML da nota') {
             if (cpf !== n.cpf) {
               Object.assign(n, { status: 'estornada', motivo: 'O CPF do XML é diferente do cadastro.', conferida_em: nowIso(), conferida_por: 'XML da nota' });
-              mover(db, n.cpf, 'ajuste', -(n.pontos || 0), { descricao: 'Ajuste pelo XML: a nota tem outro CPF', valor: n.valor, nota_chave: n.chave, por: quem(db) });
+              if (n.programa === 'selos') descarimbar(db, n.chave);
+              else mover(db, n.cpf, 'ajuste', -(n.pontos || 0), { descricao: 'Ajuste pelo XML: a nota tem outro CPF', valor: n.valor, nota_chave: n.chave, por: quem(db) });
               k.ajustadas++;
               if (cpf) {
                 f.notas = f.notas.filter((y) => y.chave !== it.chave);
                 conta(autoCreditar(db, it.chave));
               }
+              continue;
+            }
+            if (n.programa === 'selos') {
+              Object.assign(n, { valor: x.valor, emitida_em: x.emitida_em, conferida_em: nowIso(), conferida_por: 'XML da nota' });
+              k.ja_conferidas++;
               continue;
             }
             const calc = fidCalcular(r, x.valor, x.emitida_em, nivelDe(db, n.cpf), extraDe(db, n.cpf, x.emitida_em));
@@ -1592,7 +1752,9 @@
         const x = F(db).resgates.find((y) => y.id === id && y.status === 'pendente');
         if (!x) falha('Este resgate já foi resolvido.');
         Object.assign(x, { status: entregar ? 'entregue' : 'cancelado', resolvido_em: nowIso(), resolvido_por: quem(db) });
-        if (!entregar && x.pontos > 0) mover(db, x.cpf, 'estorno', x.pontos, { descricao: `Resgate cancelado: ${x.premio_nome}`, resgate_id: x.id, por: quem(db) });
+        const k = !entregar && x.cartao_id && cartoes(db).cartoes.find((c) => c.id === x.cartao_id && c.status === 'resgatado');
+        if (k) k.status = 'completo';
+        else if (!entregar && x.pontos > 0) mover(db, x.cpf, 'estorno', x.pontos, { descricao: `Resgate cancelado: ${x.premio_nome}`, resgate_id: x.id, por: quem(db) });
         write(db);
       },
       async fidLancar(cpf, valor, descricao) {
@@ -1604,6 +1766,14 @@
         if (!(valor > 0 && valor < 1e5)) falha('Informe o valor da compra.');
         descricao = String(descricao || '').trim().slice(0, 100);
         if (!descricao) falha('Informe o motivo (ex.: pedido do delivery nº 123).');
+        const prog = fidProgramaEm(r, new Date());
+        if (!prog) falha('Agora está fora dos horários do programa de fidelidade.');
+        if (prog === 'selos') {
+          const st = carimbar(db, cpf, valor, new Date(), null, null, `Lançado: ${descricao} · ${brlTxt(valor)}`, quem(db));
+          if (!st.ok) falha(st.motivo);
+          write(db);
+          return 0;
+        }
         const calc = fidCalcular(r, valor, nowIso(), nivelDe(db, cpf), extraDe(db, cpf, nowIso()));
         mover(db, cpf, 'manual', calc.pontos, { descricao: `Lançado: ${descricao} · ${brlTxt(valor)}`, valor, mult: calc.mult, por: quem(db) });
         bonusIndicacao(db, cpf);
@@ -1741,14 +1911,17 @@
       /* ---------- Prorrogação (mesmas regras de public.hh_*) ---------- */
       async hhStatus() {
         const db = read();
+        const antes = JSON.stringify(db);
         const st = hhStatusDe(db);
-        write(db);
+        // Só grava se o relógio fechou ou abriu alguma sessão: gravar avisa a tela, que lê de novo (sem fim).
+        if (JSON.stringify(db) !== antes) write(db);
         return st;
       },
       async hhPainel() {
         const db = read();
+        const antes = JSON.stringify(db);
         const st = hhStatusDe(db);
-        write(db);
+        if (JSON.stringify(db) !== antes) write(db);
         const h = HH(db);
         const atual = st.sessao ? st.sessao.id : (h.sessoes[h.sessoes.length - 1] || {}).id;
         return { ...st, config: mergeSettings(db.configuracao, true).prorrogacao,
@@ -2235,6 +2408,9 @@
       async fidResgatar(token, premioId) {
         return must(await sb.rpc('fid_resgatar', { p_token: token, p_premio: premioId }));
       },
+      async fidResgatarCartao(token, cartaoId) {
+        return must(await sb.rpc('fid_resgatar_cartao', { p_token: token, p_cartao: cartaoId }));
+      },
 
       /* ---------- Fidelidade: equipe (leitura pelas regras de acesso, mudanças pelas funções) ---------- */
       async fidResumo() {
@@ -2244,7 +2420,7 @@
         const [notas, resgates] = await Promise.all([
           sb.from('fid_notas').select('chave, cpf, url, valor_informado, lida_em, lida_por, fid_clientes(nome, telefone)')
             .eq('restaurante_id', rid).eq('status', 'pendente').order('lida_em', { ascending: false }).limit(200),
-          sb.from('fid_resgates').select('id, cpf, premio_nome, pontos, codigo, criado_em, fid_clientes(nome, telefone)')
+          sb.from('fid_resgates').select('id, cpf, premio_nome, pontos, codigo, cartao_id, criado_em, fid_clientes(nome, telefone)')
             .eq('restaurante_id', rid).eq('status', 'pendente').order('criado_em').limit(200),
         ]);
         return { notas: must(notas), resgates: must(resgates) };
@@ -2259,11 +2435,13 @@
         return must(await q);
       },
       async fidCliente(cpf) {
-        const [c, m, n, x] = await Promise.all([
+        const [c, m, n, x, k] = await Promise.all([
           sb.from('fid_clientes').select('*').eq('restaurante_id', rid).eq('cpf', cpf).maybeSingle(),
           sb.from('fid_movimentos').select('*').eq('restaurante_id', rid).eq('cpf', cpf).order('criado_em', { ascending: false }).order('id', { ascending: false }).limit(60),
           sb.from('fid_notas').select('*').eq('restaurante_id', rid).eq('cpf', cpf).order('lida_em', { ascending: false }).limit(40),
           sb.from('fid_resgates').select('*').eq('restaurante_id', rid).eq('cpf', cpf).order('criado_em', { ascending: false }).limit(30),
+          sb.from('fid_cartoes').select('*, fid_selos(id, dia, valor, descricao, por, criado_em)').eq('restaurante_id', rid).eq('cpf', cpf)
+            .order('criado_em', { ascending: false }).limit(12),
         ]);
         const cliente = must(c);
         if (!cliente) return null;
@@ -2272,7 +2450,8 @@
           const i = must(await sb.from('fid_clientes').select('nome').eq('restaurante_id', rid).eq('cpf', cliente.indicado_por).maybeSingle());
           cliente.indicado_por_nome = i ? i.nome : null;
         }
-        return { cliente, movimentos: must(m), notas: must(n), resgates: must(x) };
+        // Sem a tabela do cartão (banco ainda não atualizado): a ficha abre sem ele.
+        return { cliente, movimentos: must(m), notas: must(n), resgates: must(x), cartoes: k.error ? [] : k.data || [] };
       },
       async fidRecentes() {
         return must(await sb.from('fid_movimentos').select('*, fid_clientes(nome, telefone)').eq('restaurante_id', rid)
@@ -2455,7 +2634,8 @@
     delivery: { PADRAO: DELIVERY_PADRAO, distanciaKm, taxa: taxaEntrega },
     prorrogacao: { PADRAO: PRORROGACAO_PADRAO, cfg: hhCfg, frase: hhFrase },
     opcoes,
-    fid: { PADRAO: FID_PADRAO, cpfValido, chaveValida, chaveDoTexto, valorDoQr, boost: fidBoost, calcular: fidCalcular, niveis: fidNiveis, nivelDe: fidNivelDe, soDigitos },
+    fid: { PADRAO: FID_PADRAO, cpfValido, chaveValida, chaveDoTexto, valorDoQr, boost: fidBoost, calcular: fidCalcular, niveis: fidNiveis, nivelDe: fidNivelDe, soDigitos,
+      modo: fidModo, selosCfg: fidSelosCfg, naJanela: fidNaJanela, programaEm: fidProgramaEm },
     create() {
       const b = cfg.backend || {};
       if (b.tipo === 'supabase' && b.supabaseUrl && b.supabaseAnonKey) return SupabaseAdapter();

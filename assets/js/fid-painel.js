@@ -4,7 +4,8 @@
  *   Clientes: busca, ficha (extrato, notas, prêmios), PIN, editar, excluir, exportar
  *   Prêmios:  catálogo com foto
  *   Clássicos: dia de jogo em que os pontos de quem torce pelo vencedor valem mais
- *   Regras:   pontos por real, dias em dobro, CNPJ, prazo, indicação, aniversário, transferência, validade, regulamento
+ *   Regras:   tipo (pontos, cartão fidelidade ou os dois por horário), pontos por real, dias em dobro, cartão de selos,
+ *             CNPJ, prazo, indicação, aniversário, transferência, validade, regulamento
  *
  *   FidPainel.iniciar(ctx)  ctx = { store, S, rerender(), chrome(), ding(), isDemo, prepararImagem(file, tipo) }
  *   FidPainel.atualizar() / FidPainel.html() / FidPainel.badge()
@@ -35,6 +36,17 @@
     return c.aniversario_mes ? `${MESES[c.aniversario_mes - 1]} (sem o dia e o ano)` : 'Não informado';
   }
   const STATUS = { pendente: 'Conferir', creditada: 'Creditada', recusada: 'Recusada', estornada: 'Estornada', entregue: 'Entregue', cancelado: 'Cancelado' };
+  const CARTAO_ST = { aberto: 'Em andamento', completo: 'Completo', resgatado: 'Trocado', vencido: 'Venceu' };
+  const DIA_NOME = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
+  // Pontos ou cartão de selos (ou os dois, cada um no seu horário).
+  const modo = () => F.modo(regras());
+  const selosN = (n) => `${num(n)} ${n === 1 ? 'selo' : 'selos'}`;
+  // Banco anterior ao cartão de selos devolvia só os pontos (0 = a nota não contou).
+  const aprovado = (r) => (typeof r === 'number' ? (r ? { status: 'creditada', pontos: r } : { status: 'recusada' }) : r);
+  // "+12 pontos" ou "+1 selo (7 de 10)" para o resultado de uma nota.
+  const ganhoTxt = (r) => (r.programa === 'selos'
+    ? (r.cartao ? (r.cartao.completo ? `+1 selo: ${r.cartao.premio ? `cartão completo (${r.cartao.premio})` : 'cartão completo'}!` : `+1 selo (${r.cartao.selos} de ${r.cartao.total})`) : '+1 selo')
+    : `+${pts(r.pontos || 0)}`);
 
   let ctx = null;
   const P = {
@@ -135,6 +147,8 @@
 
   /* ============================== Tela ============================== */
   function html() {
+    const abas = TABS.filter((t) => !(modo() === 'selos' && ['premios', 'ranking', 'eventos'].includes(t.id)));
+    if (!abas.some((t) => t.id === P.tab)) P.tab = 'hoje';
     const tab = P.tab;
     // Redesenho (ex.: atualização automática) no meio da edição: guarda o que já foi digitado.
     if (tab === 'regras' && $('#fpRegras') && !P.jaLido) lerRegras();
@@ -148,13 +162,13 @@
       premios: 'O que o cliente pode trocar pelos pontos. Aparece na página da mesa na hora.',
       ranking: 'Os 10 clientes que mais ganharam pontos e os produtos mais pedidos nas notas.',
       eventos: 'Dia de clássico: o cliente escolhe o time e, se ele vencer, os pontos do dia valem mais.',
-      regras: 'Quanto vale cada real, dias com pontos em dobro, aniversário, validade e o regulamento.',
+      regras: 'Tipo de fidelidade (pontos, cartão de selos ou os dois), as regras de cada um e o regulamento.',
     }[tab];
     setTimeout(carregarAba, 0);
     return `<div class="vhead"><div><h1>${esc(r.nome || 'Fidelidade')}</h1><p>${intro}</p></div>
         <span class="fp-status ${r.ativo ? 'is-on' : ''}">${r.ativo ? 'No ar' : 'Pausado'}</span></div>
       <div class="aj-tabs" role="tablist" aria-label="Seções da fidelidade">
-        ${TABS.map((t) => `<button type="button" role="tab" aria-selected="${t.id === tab}" data-fp-tab="${t.id}">${t.label}${t.id === 'hoje' && badge() ? ` <span class="badge">${badge()}</span>` : ''}</button>`).join('')}
+        ${abas.map((t) => `<button type="button" role="tab" aria-selected="${t.id === tab}" data-fp-tab="${t.id}">${t.label}${t.id === 'hoje' && badge() ? ` <span class="badge">${badge()}</span>` : ''}</button>`).join('')}
       </div>
       ${{ hoje: tHoje, clientes: tClientes, premios: tPremios, ranking: tRanking, eventos: tEventos, regras: tRegras }[tab]()}`;
   }
@@ -169,15 +183,17 @@
       <div class="fp-kpis">
         <div class="fp-kpi"><small>Clientes</small><b>${num(s.clientes)}</b><span>${s.novos_30d ? `+${num(s.novos_30d)} em 30 dias` : 'no programa'}</span></div>
         <div class="fp-kpi"><small>Compras (30 dias)</small><b>${num(s.compras_30d)}</b><span>${brl(s.valor_30d || 0)}</span></div>
-        <div class="fp-kpi"><small>Pontos em aberto</small><b>${num(s.pontos)}</b><span>nas contas</span></div>
-        <div class="fp-kpi"><small>Prêmios entregues</small><b>${num(s.entregues_30d)}</b><span>em 30 dias</span></div>
+        ${modo() !== 'pontos' ? `<div class="fp-kpi"><small>Selos (30 dias)</small><b>${num(s.selos_30d)}</b><span>${num(s.cartoes_abertos)} ${s.cartoes_abertos === 1 ? 'cartão' : 'cartões'} em andamento</span></div>` : ''}
+        ${modo() !== 'selos' ? `<div class="fp-kpi"><small>Pontos em aberto</small><b>${num(s.pontos)}</b><span>nas contas</span></div>` : ''}
+        ${modo() === 'selos' ? `<div class="fp-kpi"><small>Cartões completos</small><b>${num(s.cartoes_30d)}</b><span>em 30 dias</span></div>` : ''}
+        ${modo() !== 'ambos' ? `<div class="fp-kpi"><small>Prêmios entregues</small><b>${num(s.entregues_30d)}</b><span>em 30 dias</span></div>` : ''}
       </div>
       <div class="fp-grid">
         <div class="aj-col">
           <section class="panel stack">
             <div class="fp-h"><h2>Prêmios para entregar</h2>${P.pend.resgates.length ? `<span class="badge">${P.pend.resgates.length}</span>` : ''}</div>
             ${P.pend.resgates.length ? `<ul class="fp-lista">${P.pend.resgates.map(resgateItem).join('')}</ul>`
-              : '<p class="muted">Nenhuma troca esperando. Quando um cliente trocar pontos, o pedido aparece aqui com um código de 4 números.</p>'}
+              : `<p class="muted">Nenhuma troca esperando. Quando um cliente trocar ${modo() === 'selos' ? 'um cartão completo' : modo() === 'ambos' ? 'pontos ou um cartão completo' : 'pontos'}, o pedido aparece aqui com um código de 4 números.</p>`}
           </section>
           <section class="panel stack">
             <div class="fp-h"><h2>Notas para conferir</h2>${P.pend.notas.length ? `<span class="badge">${P.pend.notas.length}</span>` : ''}</div>
@@ -189,7 +205,7 @@
         <div class="aj-col">
           <section class="panel stack">
             <h2>Arquivo de notas do caixa</h2>
-            <p class="muted">Envie os XML das NFC-e (ou o ZIP que o sistema do caixa exporta). Toda nota com CPF de cliente cadastrado ganha pontos, mesmo que o cliente não tenha lido o QR. Notas canceladas saem da conta.</p>
+            <p class="muted">Envie os XML das NFC-e (ou o ZIP que o sistema do caixa exporta). Toda nota com CPF de cliente cadastrado ganha ${modo() === 'selos' ? 'selo' : modo() === 'ambos' ? 'pontos ou selo' : 'pontos'}, mesmo que o cliente não tenha lido o QR. Notas canceladas saem da conta.</p>
             <label class="btn btn-cobalt ${P.importando ? 'is-busy' : ''}">${icon('upload')} ${P.importando ? 'Importando…' : 'Enviar XML ou ZIP'}
               <input type="file" class="sr-only" accept=".xml,.zip,text/xml,application/xml,application/zip" multiple data-fp-xml ${P.importando ? 'disabled' : ''}></label>
             <small class="help">${s.ultimo_xml ? `Última importação: ${dataHora(s.ultimo_xml)}.` : 'Nenhuma importação ainda.'} Pode enviar o mesmo arquivo de novo: nada é contado duas vezes.</small>
@@ -197,7 +213,7 @@
           </section>
           <section class="panel stack">
             <h2>Lançar nota no balcão</h2>
-            <p class="muted">O cliente está sem celular? Leia o QR da nota dele aqui. Com o valor, os pontos entram na hora.</p>
+            <p class="muted">O cliente está sem celular? Leia o QR da nota dele aqui. Com o valor, ${modo() === 'selos' ? 'o selo entra' : modo() === 'ambos' ? 'os pontos ou o selo entram' : 'os pontos entram'} na hora.</p>
             <button type="button" class="btn btn-line" data-fp-lancar>${icon('receipt')} Ler nota de um cliente</button>
           </section>
           <section class="panel stack">
@@ -216,7 +232,7 @@
     return `<li class="fp-item">
       <div class="fp-cod mono">${esc(x.codigo)}</div>
       <div class="fp-item-body"><b>${esc(x.premio_nome)}</b>
-        <small><button type="button" class="link" data-fp-cliente="${esc(x.cpf)}">${esc(nomeDe(x))}</button> · ${pts(x.pontos)} · ${dataHora(x.criado_em)}</small></div>
+        <small><button type="button" class="link" data-fp-cliente="${esc(x.cpf)}">${esc(nomeDe(x))}</button> · ${x.cartao_id ? 'cartão completo' : pts(x.pontos)} · ${dataHora(x.criado_em)}</small></div>
       <div class="fp-item-acts">
         <button type="button" class="btn btn-cobalt btn-sm" data-fp-entregar="${esc(x.id)}">${icon('check')} Entregue</button>
         <button type="button" class="btn btn-quiet btn-sm" data-fp-cancelar="${esc(x.id)}">Cancelar</button>
@@ -328,8 +344,11 @@
     const c = f.cliente;
     const r = regras();
     $('#fpTitle').textContent = c.nome;
+    const ks = f.cartoes || [];
+    const aberto = ks.find((k) => k.status === 'aberto');
     $('#fpBody').innerHTML = `<div class="stack-lg fp-ficha">
-      <div class="fp-saldo"><b class="mono">${num(c.pontos)}</b><span>pontos</span></div>
+      ${modo() !== 'selos' || c.pontos ? `<div class="fp-saldo"><b class="mono">${num(c.pontos)}</b><span>pontos</span></div>` : ''}
+      ${modo() !== 'pontos' || ks.length ? cartoesFicha(ks, aberto) : ''}
       ${c.nivel_atual ? `<div class="fp-nivel-ficha" style="--nv:${esc(c.nivel_atual.cor)}"><span class="fp-selo">${esc(c.nivel_atual.nome)}</span>
         <small>${num(c.nivel_atual.pontos_nivel)} pontos de nível${c.nivel_atual.proximo ? ` · faltam ${num(c.nivel_atual.proximo.falta)} para ${esc(c.nivel_atual.proximo.nome)}` : ' · nível mais alto'}</small></div>` : ''}
       ${editando ? `<form class="stack" id="fpEditar" novalidate>
@@ -370,12 +389,27 @@
       <section class="stack"><h3 class="fp-h3">Notas</h3>${f.notas.length ? `<ul class="fp-mov">${f.notas.map((n) => `<li>
           <span>nº ${num(+n.chave.slice(25, 34))}${n.valor ? ` · ${brl(n.valor)}` : ''}</span>
           <span class="muted">${dataHora(n.emitida_em || n.lida_em)}${n.motivo ? ` · ${esc(n.motivo)}` : ''}</span>
-          <b class="fp-st fp-st--${n.status}">${n.status === 'creditada' && n.pontos != null ? `+${num(n.pontos)}` : STATUS[n.status]}</b></li>`).join('')}</ul>` : '<p class="muted">Nenhuma nota.</p>'}</section>
-      <section class="stack"><h3 class="fp-h3">Extrato</h3>${f.movimentos.length ? `<ul class="fp-mov">${f.movimentos.map((m) => `<li>
+          <b class="fp-st fp-st--${n.status}">${n.status === 'creditada' && n.programa === 'selos' ? '+1 selo' : n.status === 'creditada' && n.pontos != null ? `+${num(n.pontos)}` : STATUS[n.status]}</b></li>`).join('')}</ul>` : '<p class="muted">Nenhuma nota.</p>'}</section>
+      ${modo() === 'selos' && !f.movimentos.length ? '' : `<section class="stack"><h3 class="fp-h3">Extrato</h3>${f.movimentos.length ? `<ul class="fp-mov">${f.movimentos.map((m) => `<li>
           <span>${esc(m.descricao || TIPO[m.tipo] || m.tipo)}</span>
           <span class="muted">${dataHora(m.criado_em)}${m.por ? ` · ${esc(m.por)}` : ''}</span>
-          <b class="${m.pontos < 0 ? 'fp-neg' : 'fp-pos'}">${m.pontos > 0 ? '+' : ''}${num(m.pontos)}</b></li>`).join('')}</ul>` : '<p class="muted">Sem movimentos.</p>'}</section>
+          <b class="${m.pontos < 0 ? 'fp-neg' : 'fp-pos'}">${m.pontos > 0 ? '+' : ''}${num(m.pontos)}</b></li>`).join('')}</ul>` : '<p class="muted">Sem movimentos.</p>'}</section>`}
     </div>`;
+  }
+  // Cartão em andamento (com os selos) e o histórico dos cartões do cliente.
+  function cartoesFicha(ks, aberto) {
+    const selosDe = (k) => (k.fid_selos || []).slice().sort((a, b) => (a.criado_em < b.criado_em ? 1 : -1));
+    const vence = aberto && aberto.vence_em ? (new Date(aberto.vence_em) < new Date() ? ' · venceu' : ` · vence ${data(aberto.vence_em)}`) : '';
+    return `<section class="stack"><h3 class="fp-h3">Cartão fidelidade</h3>
+      ${aberto ? `<div class="fp-cartao"><div class="fp-cartao-dots" aria-hidden="true">${Array.from({ length: aberto.total }, (_, i) => `<i class="${i < aberto.selos ? 'is-on' : ''}"></i>`).join('')}</div>
+          <span><b>${num(aberto.selos)} de ${num(aberto.total)}</b> <span class="muted">· ${esc(aberto.premio)}${vence}</span></span></div>
+        ${selosDe(aberto).length ? `<ul class="fp-mov">${selosDe(aberto).map((x) => `<li><span>${esc(x.descricao || 'Selo')}</span>
+            <span class="muted">${data(x.dia + 'T12:00:00')}${x.por ? ` · ${esc(x.por)}` : ''}</span><b class="fp-pos">+1</b></li>`).join('')}</ul>` : ''}`
+        : '<p class="muted">Nenhum cartão em andamento. O próximo selo começa um cartão novo.</p>'}
+      ${ks.filter((k) => k !== aberto).length ? `<ul class="fp-mov">${ks.filter((k) => k !== aberto).map((k) => `<li>
+          <span>Cartão de ${data(k.criado_em)} · ${esc(k.premio)}</span><span class="muted">${num(k.selos)} de ${num(k.total)} selos${k.completo_em ? ` · completo em ${data(k.completo_em)}` : ''}</span>
+          <b class="fp-st fp-st--${k.status === 'resgatado' ? 'entregue' : k.status === 'vencido' ? 'cancelado' : 'creditada'}">${CARTAO_ST[k.status]}</b></li>`).join('')}</ul>` : ''}
+    </section>`;
   }
 
   /* ---------- Prêmios ---------- */
@@ -495,13 +529,21 @@
     const r = P.regras || (P.regras = JSON.parse(JSON.stringify(regras())));
     const ind = r.indicacao || {};
     const link = linkPrograma();
+    const m = F.modo(r);
+    const so = m === 'selos' ? 'hidden' : '';
     return `<form class="fp-grid" id="fpRegras" novalidate>
       <div class="aj-col">
         <section class="panel stack">
           <div class="set-row fp-row"><div><h3>Programa no ar</h3><p>Mostra o atalho na página da mesa e aceita notas.</p></div>
             <label class="switch"><input type="checkbox" name="ativo" ${r.ativo ? 'checked' : ''} aria-label="Programa no ar"><span></span></label></div>
-          <label class="field"><span>Nome do programa</span><input class="input" name="nome" maxlength="40" value="${esc(r.nome)}" placeholder="Clube de pontos"></label>
-          <label class="field"><span>Pontos a cada R$ 1</span><input class="input mono" name="pontosPorReal" type="number" min="0.01" max="100" step="0.01" value="${esc(r.pontosPorReal)}">
+          <div class="field"><span>Tipo de fidelidade</span>
+            <div class="fp-tipos" role="radiogroup" aria-label="Tipo de fidelidade">${[
+              ['pontos', 'Pontos', 'Cada real vira pontos para trocar por prêmios.'],
+              ['selos', 'Cartão fidelidade', 'Cada compra vale 1 selo. Completou o cartão, ganha o prêmio.'],
+              ['ambos', 'Os dois, por horário', 'Ex.: cartão no almoço e pontos à noite.'],
+            ].map(([v, t, d]) => `<label class="fp-tipo"><input type="radio" name="modo" value="${v}" ${m === v ? 'checked' : ''}><span><b>${t}</b><small>${d}</small></span></label>`).join('')}</div></div>
+          <label class="field" ${so}><span>Nome do programa de pontos</span><input class="input" name="nome" maxlength="40" value="${esc(r.nome)}" placeholder="Clube de pontos"></label>
+          <label class="field" ${so}><span>Pontos a cada R$ 1</span><input class="input mono" name="pontosPorReal" type="number" min="0.01" max="100" step="0.01" value="${esc(r.pontosPorReal)}">
             <small class="help">Ex.: 1 dá 1 ponto por real; 0,5 dá 1 ponto a cada R$ 2. Centavos não contam.</small></label>
           <label class="field"><span>CNPJ das notas</span><textarea class="input mono" name="cnpjs" rows="2" placeholder="00.000.000/0000-00">${esc((r.cnpjs || []).map(fmtCnpj).join('\n'))}</textarea>
             <small class="help">Só notas emitidas por estes CNPJs valem pontos. Um por linha, se o restaurante tiver mais de um.</small></label>
@@ -510,18 +552,20 @@
             ${campoData('inicio', r.inicio, 'Vale para compras desde')}
           </div>
         </section>
-        <section class="panel stack">
+        ${m !== 'pontos' ? selosForm(r) : ''}
+        ${m === 'ambos' ? horariosForm(r) : ''}
+        <section class="panel stack" ${so}>
           <div class="fp-h"><h2>Dias com mais pontos</h2><button type="button" class="btn btn-line btn-sm" data-fp-boost="novo">${icon('plus')} Adicionar</button></div>
           ${(r.boosts || []).length ? r.boosts.map(boostForm).join('') : '<p class="muted">Ex.: terça com pontos em dobro, ou happy hour com 1,5x.</p>'}
         </section>
-        ${niveisForm(r)}
+        ${niveisForm(r, so)}
       </div>
       <div class="aj-col">
-        <section class="panel stack">
+        <section class="panel stack" ${so}>
           <div class="set-row fp-row"><div><h3>Ranking do clube</h3><p>Mostra aos clientes o top 10 de quem mais ganhou pontos (primeiro nome e inicial).</p></div>
             <label class="switch"><input type="checkbox" name="rankAtivo" ${!r.ranking || r.ranking.ativo !== false ? 'checked' : ''} aria-label="Ranking do clube"><span></span></label></div>
         </section>
-        <section class="panel stack">
+        <section class="panel stack" ${so}>
           <div class="set-row fp-row"><div><h3>Indicação</h3><p>O cliente convida alguém com o código dele e os dois ganham pontos.</p></div>
             <label class="switch"><input type="checkbox" name="indAtivo" ${ind.ativo ? 'checked' : ''} aria-label="Indicação"><span></span></label></div>
           <div class="fp-manual-row">
@@ -533,16 +577,16 @@
             <option value="compra" ${ind.quando === 'compra' ? 'selected' : ''}>Na primeira compra do indicado (mais seguro)</option>
           </select></label>
         </section>
-        ${anivForm(r)}
-        ${transfForm(r)}
-        ${validadeForm(r)}
+        ${anivForm(r, so)}
+        ${transfForm(r, so)}
+        ${validadeForm(r, so)}
         ${sefazForm(r)}
         <section class="panel stack">
-          <div class="set-row fp-row"><div><h3>Lançamento manual</h3><p>Deixa a equipe lançar compras sem nota (ex.: delivery) na ficha do cliente. Fica registrado quem lançou.</p></div>
+          <div class="set-row fp-row"><div><h3>Lançamento manual</h3><p>Deixa a equipe lançar compras sem nota (ex.: delivery) na ficha do cliente${m !== 'pontos' ? ', como pontos ou selo conforme o horário' : ''}. Fica registrado quem lançou.</p></div>
             <label class="switch"><input type="checkbox" name="manual" ${r.manual ? 'checked' : ''} aria-label="Lançamento manual"><span></span></label></div>
         </section>
         <section class="panel stack">
-          <label class="field"><span>Regulamento</span><textarea class="input" name="regulamento" rows="7" maxlength="6000" placeholder="Como os pontos funcionam, validade, prêmios, dados pessoais…">${esc(r.regulamento || '')}</textarea></label>
+          <label class="field"><span>Regulamento</span><textarea class="input" name="regulamento" rows="7" maxlength="6000" placeholder="${m === 'selos' ? 'Como o cartão funciona, quantos selos, validade, prêmio, dados pessoais…' : 'Como os pontos funcionam, validade, prêmios, dados pessoais…'}">${esc(r.regulamento || '')}</textarea></label>
         </section>
         <section class="panel stack fp-link">
           <h2>Link do programa</h2>
@@ -556,9 +600,9 @@
         <button type="button" class="btn btn-quiet" data-fp-regras="desfazer">Desfazer</button></div>
     </form>`;
   }
-  function anivForm(r) {
+  function anivForm(r, so = '') {
     const a = r.aniversario || {};
-    return `<section class="panel stack">
+    return `<section class="panel stack" ${so}>
       <div class="set-row fp-row"><div><h3>Aniversário</h3><p>O cliente informa o mês do aniversário no cadastro. No mês dele, ganha presente.</p></div>
         <label class="switch"><input type="checkbox" name="anAtivo" ${a.ativo ? 'checked' : ''} aria-label="Aniversário"><span></span></label></div>
       <div class="fp-manual-row">
@@ -569,9 +613,9 @@
       <small class="help">Os pontos de presente entram uma vez por ano, quando o cliente abre a conta ou compra no mês do aniversário. Para dar um prêmio (ex.: uma sobremesa), crie o prêmio na aba Prêmios e marque “Presente de aniversário”.</small>
     </section>`;
   }
-  function transfForm(r) {
+  function transfForm(r, so = '') {
     const t = r.transferencia || {};
-    return `<section class="panel stack">
+    return `<section class="panel stack" ${so}>
       <div class="set-row fp-row"><div><h3>Transferir pontos</h3><p>O cliente manda pontos para um amigo do clube (pelo CPF ou código de indicação), confirmando com o PIN.</p></div>
         <label class="switch"><input type="checkbox" name="trAtivo" ${t.ativo ? 'checked' : ''} aria-label="Transferir pontos"><span></span></label></div>
       <div class="fp-manual-row">
@@ -581,9 +625,9 @@
       <small class="help">Os pontos saem do ranking de quem manda e entram no de quem recebe. Não contam para subir de nível.</small>
     </section>`;
   }
-  function validadeForm(r) {
+  function validadeForm(r, so = '') {
     const v = r.validade || {};
-    return `<section class="panel stack">
+    return `<section class="panel stack" ${so}>
       <div class="set-row fp-row"><div><h3>Validade dos pontos</h3><p>Pontos que não forem usados vencem depois do prazo (os mais antigos primeiro). Pontos vencidos saem do saldo e do ranking.</p></div>
         <label class="switch"><input type="checkbox" name="vaAtivo" ${v.ativo ? 'checked' : ''} aria-label="Validade dos pontos"><span></span></label></div>
       <div class="fp-manual-row">
@@ -617,10 +661,50 @@
       ${quem || !adm ? `<p class="help">${quem}${adm ? '' : 'Só o administrador liga ou desliga.'}</p>` : ''}
     </section>`;
   }
-  function niveisForm(r) {
+  // Cartão fidelidade: quantos selos, o prêmio e as regras contra abuso.
+  function selosForm(r) {
+    const c = { ...F.PADRAO.selos, ...(r.selos || {}) };
+    return `<section class="panel stack">
+      <h2>Cartão fidelidade</h2>
+      <div class="fp-manual-row">
+        <label class="field"><span>Nome do cartão</span><input class="input" name="seNome" maxlength="40" value="${esc(c.nome)}" placeholder="Ex.: Cartão do almoço"></label>
+        <label class="field"><span>Selos para completar</span><input class="input mono" name="seTotal" type="number" min="3" max="30" value="${esc(c.total)}"></label>
+      </div>
+      <label class="field"><span>Prêmio de quem completar</span><input class="input" name="sePremio" maxlength="60" value="${esc(c.premio)}" placeholder="Ex.: 1 almoço grátis"></label>
+      <label class="field"><span>Detalhe do prêmio (opcional)</span><input class="input" name="seDetalhe" maxlength="160" value="${esc(c.detalhe || '')}" placeholder="Ex.: prato executivo de até R$ 35, sem bebida"></label>
+      <div class="fp-manual-row">
+        <label class="field"><span>Valor mínimo da nota (R$)</span><input class="input mono" name="seMinimo" type="number" min="0" max="10000" step="0.01" value="${esc(c.valorMinimo || 0)}">
+          <small class="help">Compras abaixo disso não ganham selo. 0 = qualquer valor.</small></label>
+        <label class="field"><span>Validade do cartão (dias)</span><input class="input mono" name="seValidade" type="number" min="0" max="730" value="${esc(c.validadeDias)}">
+          <small class="help">Conta do primeiro selo. 0 = não vence.</small></label>
+      </div>
+      <label class="check"><input type="checkbox" name="seUmPorDia" ${c.umPorDia !== false ? 'checked' : ''}> <span>No máximo 1 selo por dia para cada cliente (evita dividir a conta em várias notas)</span></label>
+      <small class="help">O número de selos e o prêmio valem para os cartões novos: quem já começou termina o cartão com as regras de quando começou. Uma nota vale um selo só, uma vez.</small>
+    </section>`;
+  }
+  // Os dois programas: o horário em que a nota foi emitida escolhe qual vale.
+  function horariosForm(r) {
+    const h = r.horarios || F.PADRAO.horarios;
+    const janela = (k, titulo) => {
+      const j = { ...F.PADRAO.horarios[k], ...(h[k] || {}) };
+      return `<fieldset class="fp-janela">
+        <legend>${titulo}</legend>
+        <div class="fp-dias" role="group" aria-label="Dias">${DIAS.map(([d, l]) => `<label><input type="checkbox" name="h-${k}-dia" value="${d}" ${(j.dias || []).includes(d) ? 'checked' : ''}><span>${l}</span></label>`).join('')}</div>
+        <div class="fp-manual-row">${campoHora(`h-${k}-de`, j.de, 'Das')}${campoHora(`h-${k}-ate`, j.ate, 'Até')}</div>
+      </fieldset>`;
+    };
+    return `<section class="panel stack">
+      <h2>Horário de cada programa</h2>
+      <p class="muted">Vale o horário em que a nota foi emitida, não o da leitura do QR. Compras fora destes horários não entram no programa. Sem dias marcados, vale todo dia.</p>
+      ${janela('selos', `${esc((r.selos && r.selos.nome) || 'Cartão fidelidade')} (selos)`)}
+      ${janela('pontos', `${esc(r.nome || 'Clube de pontos')} (pontos)`)}
+      <small class="help">O horário pode virar a meia-noite (ex.: das 18:00 às 02:00).</small>
+    </section>`;
+  }
+  function niveisForm(r, so = '') {
     const n = r.niveis || { ativo: false, base: 'sempre', meses: 12, lista: [] };
     const lista = n.lista || [];
-    return `<section class="panel stack fp-niveis">
+    return `<section class="panel stack fp-niveis" ${so}>
       <div class="set-row fp-row"><div><h3>Níveis do clube</h3><p>Ex.: Bronze, Prata e Ouro. O cliente sobe de nível com os pontos que ganha nas compras e ganha vantagens em cada um.</p></div>
         <label class="switch"><input type="checkbox" name="nvAtivo" ${n.ativo ? 'checked' : ''} aria-label="Níveis do clube"><span></span></label></div>
       <div class="fp-manual-row">
@@ -684,6 +768,18 @@
     const v = (n) => f.elements[n];
     const r = P.regras;
     r.ativo = v('ativo').checked;
+    r.modo = (f.querySelector('[name="modo"]:checked') || {}).value || 'pontos';
+    if (v('seTotal')) {
+      r.selos = {
+        nome: v('seNome').value.trim().slice(0, 40), total: Math.round(+v('seTotal').value || 0), premio: v('sePremio').value.trim().slice(0, 60),
+        detalhe: v('seDetalhe').value.trim().slice(0, 160), valorMinimo: Math.round(Math.max(0, +String(v('seMinimo').value).replace(',', '.') || 0) * 100) / 100,
+        umPorDia: v('seUmPorDia').checked, validadeDias: Math.round(+v('seValidade').value || 0),
+      };
+    }
+    if (f.querySelector('[name="h-selos-de"]')) {
+      const jan = (k) => ({ dias: [...f.querySelectorAll(`[name="h-${k}-dia"]:checked`)].map((x) => +x.value), de: v(`h-${k}-de`).value.trim(), ate: v(`h-${k}-ate`).value.trim() });
+      r.horarios = { selos: jan('selos'), pontos: jan('pontos') };
+    }
     r.nome = v('nome').value.trim().slice(0, 40) || 'Clube de pontos';
     r.pontosPorReal = Math.max(0, +String(v('pontosPorReal').value).replace(',', '.') || 0);
     r.cnpjs = [...new Set(v('cnpjs').value.split(/[\n,;]+/).map(F.soDigitos).filter(Boolean))];
@@ -736,6 +832,30 @@
   }
   function validarRegras(r) {
     if ((P.regrasInvalidas || []).length) return `Data inválida em “${P.regrasInvalidas[0]}”. Use dd/mm/aaaa.`;
+    if (r.modo !== 'pontos') {
+      const c = r.selos || {};
+      if (!(c.total >= 3 && c.total <= 30)) return 'Cartão fidelidade: o cartão tem de 3 a 30 selos.';
+      if (!c.premio) return 'Cartão fidelidade: escreva o prêmio de quem completar o cartão.';
+      if (!(c.valorMinimo >= 0 && c.valorMinimo <= 10000)) return 'Cartão fidelidade: o valor mínimo vai de R$ 0 a R$ 10.000.';
+      if (!(c.validadeDias >= 0 && c.validadeDias <= 730)) return 'Cartão fidelidade: a validade vai de 0 (não vence) a 730 dias.';
+    }
+    if (r.modo === 'ambos') {
+      const h = r.horarios || {};
+      for (const [k, nome] of [['selos', 'Horário do cartão'], ['pontos', 'Horário dos pontos']]) {
+        const j = h[k] || {};
+        if (!j.de || !j.ate) return `${nome}: preencha o início e o fim.`;
+        if (!horaOk(j.de) || !horaOk(j.ate)) return `${nome}: horário inválido. Use hh:mm, de 00:00 a 23:59.`;
+        if (j.de === j.ate) return `${nome}: o início e o fim não podem ser iguais.`;
+      }
+      // Cada horário vale para um programa só: confere a semana de 5 em 5 minutos.
+      const dom = new Date(2024, 0, 7);
+      for (let t = 0; t < 7 * 24 * 60; t += 5) {
+        const d = new Date(dom.getFullYear(), dom.getMonth(), dom.getDate(), 0, t);
+        if (F.naJanela(h.selos, d) && F.naJanela(h.pontos, d)) {
+          return `Os horários do cartão e dos pontos se cruzam (${DIA_NOME[d.getDay()]} às ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}). Cada horário vale para um programa só.`;
+        }
+      }
+    }
     for (const b of r.boosts) {
       if (!horaOk(b.de) || !horaOk(b.ate)) return `${b.nome || 'Dia com mais pontos'}: horário inválido. Use hh:mm, de 00:00 a 23:59.`;
     }
@@ -968,11 +1088,12 @@
       const entregar = !!ent.dataset.fpEntregar;
       const id = ent.dataset.fpEntregar || ent.dataset.fpCancelar;
       const x = P.pend.resgates.find((r) => r.id === id);
-      if (!entregar && !confirm(`Cancelar a troca${x ? ` de ${x.premio_nome}` : ''}? Os ${x ? pts(x.pontos) : 'pontos'} voltam para o cliente.`)) return;
+      const doCartao = !!(x && x.cartao_id);
+      if (!entregar && !confirm(`Cancelar a troca${x ? ` de ${x.premio_nome}` : ''}? ${doCartao ? 'O cartão volta a ficar completo para o cliente trocar depois.' : `Os ${x ? pts(x.pontos) : 'pontos'} voltam para o cliente.`}`)) return;
       ent.disabled = true;
       try {
         await ctx.store.fidResgateDecidir(id, entregar);
-        toast(entregar ? 'Prêmio entregue.' : 'Troca cancelada; os pontos voltaram.', { tone: 'ok' });
+        toast(entregar ? 'Prêmio entregue.' : doCartao ? 'Troca cancelada; o cartão voltou a ficar completo.' : 'Troca cancelada; os pontos voltaram.', { tone: 'ok' });
       } catch (ex) {
         toast(erroMsg(ex), { tone: 'error' });
       }
@@ -1164,6 +1285,7 @@
     }
     if (t.closest('#fpRegras')) {
       marcarSujo();
+      if (t.name === 'modo') { lerRegras(); return redesenhar(); }
       if (t.name === 'nvBase') $('.fp-meses').hidden = t.value !== 'meses';
       if (t.name === 'sefazAtivo') $('.fp-conf').dataset.sefaz = t.checked ? 'on' : 'off';
     }
@@ -1251,8 +1373,9 @@
         const d = dataIso(f.elements.data.value);
         if (d === undefined) throw new Error('Data da compra inválida. Use dd/mm/aaaa.');
         if (d && d > new Date().toISOString().slice(0, 10)) throw new Error('A data da compra não pode ser no futuro.');
-        const pontos = await ctx.store.fidAprovarNota(f.dataset.fpAprovar, valor, d ? new Date(`${d}T12:00:00-03:00`).toISOString() : null);
-        toast(pontos ? `Nota aprovada: +${pts(pontos)}.` : 'Esta compra já ganhou pontos pelo pedido do delivery: a nota não conta de novo.', { tone: pontos ? 'ok' : 'ink', ms: pontos ? 3000 : 5000 });
+        const r = aprovado(await ctx.store.fidAprovarNota(f.dataset.fpAprovar, valor, d ? new Date(`${d}T12:00:00-03:00`).toISOString() : null));
+        const ok = r && r.status === 'creditada';
+        toast(ok ? `Nota aprovada: ${ganhoTxt(r)}.` : `A nota não valeu: ${(r && r.motivo) || 'recusada'}`, { tone: ok ? 'ok' : 'ink', ms: ok ? 3000 : 6000 });
         return recarregar();
       }
       if (id === 'fpRegras') {
@@ -1306,7 +1429,7 @@
         const valor = valorDe(f.elements.valor.value);
         if (!(valor > 0)) throw new Error('Informe o valor da compra.');
         const pontos = await ctx.store.fidLancar(P.ficha.cliente.cpf, valor, f.elements.descricao.value.trim() || 'Lançamento manual');
-        toast(`+${pts(pontos || 0)} lançados.`, { tone: 'ok' });
+        toast(modo() !== 'pontos' && !pontos ? 'Selo lançado no cartão.' : `+${pts(pontos || 0)} lançados.`, { tone: 'ok' });
         P.ficha = await ctx.store.fidCliente(P.ficha.cliente.cpf);
         renderFicha();
         recarregar();
@@ -1333,13 +1456,13 @@
               const r = await ctx.store.fidSefaz({ cpf, qr: tx });
               if (r.status === 'creditada') {
                 closeSheet();
-                toast(`+${pts(r.pontos || 0)} creditados. Nota conferida na SEFAZ${r.itens ? ` (${r.itens} ${r.itens === 1 ? 'produto' : 'produtos'})` : ''}.`, { tone: 'ok', ms: 5000 });
+                toast(`${ganhoTxt(r)}. Nota conferida na SEFAZ${r.itens ? ` (${r.itens} ${r.itens === 1 ? 'produto' : 'produtos'})` : ''}.`, { tone: 'ok', ms: 5000 });
                 return recarregar();
               }
               if (['repetida', 'recusada', 'erro', 'sem_cadastro', 'inativo'].includes(r.status)) {
                 const msg = r.status === 'repetida' ? `Esta nota já foi lida: cada nota vale uma vez (${STATUS[r.nota] || r.nota}).`
                   : r.status === 'sem_cadastro' ? 'Este CPF não tem cadastro no programa.'
-                  : r.status === 'inativo' ? 'O programa está pausado.' : r.motivo || r.mensagem || 'Esta nota não vale pontos.';
+                  : r.status === 'inativo' ? 'O programa está pausado.' : r.motivo || r.mensagem || 'Esta nota não vale no programa.';
                 $('#fpBody').innerHTML = `<div class="stack"><p class="form-error">${esc(msg)}</p><button type="button" class="btn btn-quiet btn-block" data-close>Fechar</button></div>`;
                 return;
               }
@@ -1366,14 +1489,15 @@
         const r = await ctx.store.fidRegistrarNota({ cpf: f.dataset.cpf, qr: f.dataset.qr, valor });
         if (r.status === 'creditada') {
           closeSheet();
-          toast(`+${pts(r.pontos)} creditados.`, { tone: 'ok' });
+          toast(`${ganhoTxt(r)}.`, { tone: 'ok' });
           return recarregar();
         }
         if (r.status === 'repetida') throw new Error(`Esta nota já foi registrada (${STATUS[r.nota] || r.nota}).`);
-        if (r.status !== 'pendente') throw new Error(r.mensagem || r.motivo || 'Esta nota não vale pontos.');
-        const pontos = await ctx.store.fidAprovarNota(F.chaveDoTexto(f.dataset.qr), valor, null);
+        if (r.status !== 'pendente') throw new Error(r.mensagem || r.motivo || 'Esta nota não vale no programa.');
+        const a = aprovado(await ctx.store.fidAprovarNota(F.chaveDoTexto(f.dataset.qr), valor, null));
         closeSheet();
-        toast(pontos ? `+${pts(pontos)} creditados.` : 'Esta compra já ganhou pontos pelo pedido do delivery: a nota não conta de novo.', { tone: pontos ? 'ok' : 'ink', ms: pontos ? 3000 : 5000 });
+        const ok = a && a.status === 'creditada';
+        toast(ok ? `${ganhoTxt(a)}.` : `A nota não valeu: ${(a && a.motivo) || 'recusada'}`, { tone: ok ? 'ok' : 'ink', ms: ok ? 3000 : 6000 });
         return recarregar();
       }
     } catch (ex) {
