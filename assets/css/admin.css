@@ -12,6 +12,7 @@
 .login-kicker { font-family: var(--font-display); font-weight: 800; font-size: 14px; letter-spacing: .3em; text-transform: uppercase; opacity: .85; }
 .login-name { font-family: var(--font-display); font-weight: 900; font-size: 44px; line-height: .95; text-transform: uppercase; }
 .login-hint { font-size: 13px; color: var(--muted); text-align: center; }
+.login-sub { margin: 0; font-family: var(--font-display); font-weight: 900; font-size: 26px; text-transform: uppercase; line-height: 1; }
 .pin-input { font-family: var(--font-mono); letter-spacing: .5em; font-size: 22px; text-align: center; }
 .form-error { color: var(--pepper); font-size: 14px; font-weight: 500; min-height: 1.2em; }
 

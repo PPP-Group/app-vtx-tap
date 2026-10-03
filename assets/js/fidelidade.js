@@ -199,10 +199,11 @@
     const html = {
       inicio: tInicio, cadastro: tCadastro, conta: tConta, pin: tPin, resultado: tResultado, valor: tValor, ranking: tRanking,
       resgatar: tResgatar, codigo: tCodigo, indicar: tIndicar, regulamento: tRegulamento, niveis: tNiveis, transferir: tTransferir,
+      esqueci: tEsqueci, dados: tDados,
     }[S.tela]();
     corpo().innerHTML = html;
     $('#fidTitle').textContent = S.tela === 'inicio' ? nomeRest || 'Fidelidade' : S.tela === 'niveis' ? 'Níveis do clube' : S.tela === 'ranking' ? 'Ranking do clube'
-      : S.tela === 'transferir' ? 'Transferir pontos' : nomeProg();
+      : S.tela === 'transferir' ? 'Transferir pontos' : S.tela === 'esqueci' ? 'PIN novo' : S.tela === 'dados' ? 'Meus dados' : nomeProg();
     const foco = corpo().querySelector('[data-foco]');
     if (foco) setTimeout(() => foco.focus(), 60);
   }
@@ -426,7 +427,7 @@
       ${vendoPontos() ? `<section class="stack"><h3 class="fid-h3">${podePontos() ? 'Troque seus pontos' : 'Prêmios'}</h3>${premiosHtml(podePontos())}</section>` : ''}
       ${vendoSelos() ? `<ul class="fid-boosts">${selosRegras().map((t) => `<li>${icon('check')}<span>${esc(t)}</span></li>`).join('')}</ul>` : ''}
       ${c ? extrato(c) : `<button type="button" class="btn btn-line btn-block" data-fid-ir="pin">${icon('lock')} Ver ${temPontos() ? 'extrato' : 'notas'} (PIN)</button>`}
-      <p class="fid-rodape">${prog.regulamento ? '<button type="button" class="link" data-fid-ir="regulamento">Regulamento</button> · ' : ''}<button type="button" class="link" data-fid-sair>Não é você? Sair</button></p>
+      <p class="fid-rodape"><button type="button" class="link" data-fid-dados>Meus dados e PIN</button> · ${prog.regulamento ? '<button type="button" class="link" data-fid-ir="regulamento">Regulamento</button> · ' : ''}<button type="button" class="link" data-fid-sair>Não é você? Sair</button></p>
     </div>`;
   }
 
@@ -514,9 +515,77 @@
       <label class="field"><span>PIN</span><input class="input mono pin-input" id="fidPin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="current-password" data-foco></label>
       <p class="form-error" id="fidErro" role="alert">${esc(S.aviso || '')}</p>
       <button type="submit" class="btn btn-cobalt btn-block">Continuar</button>
-      <p class="help">Esqueceu o PIN? Peça para a equipe do restaurante redefinir. Depois, o próximo PIN que você digitar aqui passa a valer.</p>
+      <button type="button" class="btn btn-line btn-block" data-fid-esqueci>Esqueci meu PIN</button>
       <button type="button" class="btn btn-quiet btn-block" data-fid-ir="conta">Voltar</button>
     </form>`;
+  }
+
+  // Esqueci o PIN: código no e-mail do cadastro e PIN novo, sem depender da equipe.
+  function tEsqueci() {
+    const x = S.esq || {};
+    return `<form class="stack fid" id="fidCodigoForm" novalidate>
+      <p>${x.email ? `Enviamos um código de 6 números para <b>${esc(x.email)}</b>. Ele vale 15 minutos. Confira também a caixa de spam.`
+        : 'Se o seu cadastro tem e-mail, enviamos um código de 6 números para ele. Ele vale 15 minutos. Confira também a caixa de spam.'}</p>
+      ${x.demo ? `<p class="note">Demonstração: o código é <b class="mono">${esc(x.demo)}</b>.</p>` : ''}
+      <label class="field"><span>Código do e-mail</span><input class="input mono" id="fidCodigo" inputmode="numeric" maxlength="6" autocomplete="one-time-code" data-foco></label>
+      <label class="field"><span>Crie um PIN novo (4 números)</span><input class="input mono pin-input" id="fidPinNovo" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="new-password"></label>
+      <p class="form-error" id="fidErro" role="alert">${esc(S.aviso || '')}</p>
+      <button type="submit" class="btn btn-cobalt btn-block">Salvar o PIN novo</button>
+      <button type="button" class="btn btn-quiet btn-block" data-fid-esqueci>Mandar outro código</button>
+      <p class="help">Não tem mais acesso ao e-mail? A equipe do restaurante pode redefinir o seu PIN. Seus pontos e selos ficam guardados no seu CPF.</p>
+      <button type="button" class="btn btn-quiet btn-block" data-fid-ir="pin">Voltar</button>
+    </form>`;
+  }
+
+  // Meus dados: e-mail, celular, ofertas, trocar o PIN e apagar a conta. Tudo pede o PIN atual.
+  function tDados() {
+    const d = S.dados;
+    if (!d) return '<p class="muted fid">Carregando…</p>';
+    const pinCampo = (id) => `<label class="field"><span>Seu PIN atual</span><input class="input mono pin-input" id="${id}" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="current-password"></label>`;
+    return `<div class="stack-lg fid">
+      <form class="stack" id="fidDadosForm" novalidate>
+        <h3 class="fid-h3">Seus dados</h3>
+        <p class="muted">${esc(d.nome)} · CPF ${esc(d.cpf)}</p>
+        <label class="field"><span>E-mail (recebe o código se você esquecer o PIN)</span><input class="input" id="fdEmail" type="email" maxlength="120" autocomplete="email" value="${esc(d.email || '')}"></label>
+        <label class="field"><span>Celular</span><input class="input" id="fdTel" type="tel" inputmode="tel" maxlength="16" autocomplete="tel" value="${esc(d.telefone || '')}"></label>
+        <label class="check"><input type="checkbox" id="fdMkt" ${d.marketing ? 'checked' : ''}> <span>Quero receber novidades e ofertas do restaurante.</span></label>
+        ${pinCampo('fdPin')}
+        <p class="form-error" id="fidErro" role="alert"></p>
+        <button type="submit" class="btn btn-cobalt btn-block">Salvar meus dados</button>
+      </form>
+      <form class="stack" id="fidTrocaPinForm" novalidate>
+        <h3 class="fid-h3">Trocar o PIN</h3>
+        ${pinCampo('ftAtual')}
+        <label class="field"><span>PIN novo (4 números)</span><input class="input mono pin-input" id="ftNovo" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="new-password"></label>
+        <button type="submit" class="btn btn-line btn-block">Trocar o PIN</button>
+      </form>
+      <form class="stack" id="fidApagarForm" novalidate>
+        <h3 class="fid-h3">Apagar minha conta</h3>
+        <p class="muted">Apaga o seu cadastro, os pontos, os selos e o histórico neste restaurante. Não dá para desfazer.</p>
+        ${pinCampo('faPin')}
+        <label class="check"><input type="checkbox" id="faOk"> <span>Entendi e quero apagar a minha conta.</span></label>
+        <button type="submit" class="btn btn-line btn-block">Apagar minha conta</button>
+      </form>
+      <button type="button" class="btn btn-quiet btn-block" data-fid-ir="conta">Voltar</button>
+    </div>`;
+  }
+  async function abrirDados() {
+    if (!S.token) { S.depoisPin = 'dados'; return ir('pin'); }
+    S.dados = null;
+    ir('dados');
+    const r = await store.fidMeusDados(S.token).catch(() => ({ status: 'erro' }));
+    if (r.status === 'sem_sessao') { S.token = null; gravar(); S.depoisPin = 'dados'; return ir('pin'); }
+    if (r.status !== 'ok') { toast('Não foi possível abrir os seus dados. Tente de novo.', { tone: 'error' }); return ir('conta'); }
+    S.dados = r;
+    if (S.tela === 'dados') render();
+  }
+  async function pedirCodigo() {
+    if (!S.cpf) return ir('inicio');
+    const r = await store.fidPinEsqueci(S.cpf).catch(() => ({ status: 'erro', mensagem: 'Sem conexão. Tente de novo.' }));
+    if (r.status !== 'enviado') return toast(r.mensagem || 'Não foi possível mandar o código agora.', { tone: 'error', ms: 5000 });
+    S.esq = { email: r.email, demo: r.demoCodigo || null };
+    S.aviso = null;
+    ir('esqueci');
   }
 
   function tResultado() {
@@ -862,6 +931,8 @@
       try { localStorage.setItem('fid-aniv-pular:' + S.cpf, '1'); } catch {}
       return render();
     }
+    if (t.closest('[data-fid-esqueci]')) return pedirCodigo();
+    if (t.closest('[data-fid-dados]')) return abrirDados();
     const irPara = t.closest('[data-fid-ir]');
     if (irPara) {
       S.aviso = null;
@@ -995,7 +1066,43 @@
         S.depoisPin = null;
         if (depois === 'torcer') return torcer();
         if (depois === 'cartao') return resgatarCartao();
+        if (depois === 'dados') return abrirDados();
         ir(depois === 'resgatar' && S.premio ? 'resgatar' : ['indicar', 'transferir'].includes(depois) ? depois : 'conta');
+      } else if (f.id === 'fidCodigoForm') {
+        const codigo = $('#fidCodigo').value.replace(/\D/g, '');
+        const pin = $('#fidPinNovo').value;
+        if (codigo.length !== 6) return erro('O código tem 6 números.');
+        if (!/^\d{4}$/.test(pin)) return erro('O PIN tem 4 números.');
+        const r = await store.fidPinCodigo(S.cpf, codigo, pin);
+        if (r.status !== 'ok') return erro(r.mensagem || 'Não foi possível trocar o PIN.');
+        S.token = r.token;
+        S.esq = null;
+        await atualizarConta();
+        carregarRanking();
+        toast('PIN novo salvo. Use ele nas próximas vezes.', { tone: 'ok', ms: 4500 });
+        ir('conta');
+      } else if (f.id === 'fidDadosForm') {
+        const r = await store.fidAtualizarMeusDados(S.token, { pin: $('#fdPin').value, email: $('#fdEmail').value, telefone: $('#fdTel').value, marketing: $('#fdMkt').checked });
+        if (r.status === 'sem_sessao') { S.token = null; gravar(); S.depoisPin = 'dados'; return ir('pin'); }
+        if (r.status !== 'ok') { $('#fdPin').value = ''; return erro(r.mensagem || 'Não foi possível salvar.'); }
+        toast('Dados salvos.', { tone: 'ok' });
+        return abrirDados();
+      } else if (f.id === 'fidTrocaPinForm') {
+        const novo = $('#ftNovo').value;
+        if (!/^\d{4}$/.test(novo)) return toast('O PIN novo tem 4 números.', { tone: 'error' });
+        const r = await store.fidTrocarPin(S.token, $('#ftAtual').value, novo);
+        if (r.status === 'sem_sessao') { S.token = null; gravar(); S.depoisPin = 'dados'; return ir('pin'); }
+        if (r.status !== 'ok') { $('#ftAtual').value = ''; return toast(r.mensagem || 'Não foi possível trocar o PIN.', { tone: 'error', ms: 4500 }); }
+        f.reset();
+        toast('PIN trocado.', { tone: 'ok' });
+      } else if (f.id === 'fidApagarForm') {
+        if (!$('#faOk').checked) return toast('Marque a confirmação para apagar a conta.', { tone: 'error' });
+        const r = await store.fidApagarMinhaConta(S.token, $('#faPin').value);
+        if (r.status !== 'ok') { $('#faPin').value = ''; return toast(r.mensagem || 'Não foi possível apagar agora.', { tone: 'error', ms: 4500 }); }
+        esquecer();
+        atualizarTile();
+        toast('Sua conta foi apagada.', { tone: 'ok' });
+        ir('inicio');
       } else if (f.id === 'fidAnivForm') {
         const data = $('#fidAnivMes').value;
         if (!data) return toast('Informe a data do seu aniversário.', { tone: 'error' });

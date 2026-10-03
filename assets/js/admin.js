@@ -102,6 +102,27 @@
     $('#login').hidden = false;
     $('#loginBrand').textContent = nomeRest();
     const criar = S.loginModo === 'criar';
+    // Esqueci o PIN: e-mail de recuperação → código → PIN novo.
+    if (S.loginModo === 'esqueci' || S.loginModo === 'codigo') {
+      const passo2 = S.loginModo === 'codigo';
+      $('#loginForm').innerHTML = `<h2 class="login-sub">Esqueci meu PIN</h2>
+        ${passo2
+          ? `<p class="muted">Enviamos um código de 6 números para <b>${esc(S.esqueci.mascara)}</b>. Ele vale 15 minutos.${S.esqueci.demo ? ` <span class="note">Demonstração: o código é <b class="mono">${esc(S.esqueci.demo)}</b>.</span>` : ''}</p>
+             <label class="field"><span>Código do e-mail</span><input class="input mono" id="lgCodigo" inputmode="numeric" maxlength="6" autocomplete="one-time-code" required></label>
+             <label class="field"><span>Crie um PIN novo</span><input class="input pin-input" id="lgPinNovo" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="new-password" required>
+               <small class="help">De 4 a 8 números.</small></label>
+             <p class="form-error" id="lgErr" role="alert">${esc(msg)}</p>
+             <button class="btn btn-cobalt btn-block" type="submit">Trocar o PIN e entrar</button>
+             <button class="btn btn-quiet btn-block" type="button" data-login="esqueci">Mandar outro código</button>`
+          : `<p class="muted">Digite o e-mail de recuperação da sua conta. Ele é cadastrado em Ajustes › Restaurante › Equipe.</p>
+             <label class="field"><span>E-mail</span><input class="input" id="lgEmail" type="email" autocomplete="email" maxlength="120" required value="${esc((S.esqueci && S.esqueci.email) || '')}"></label>
+             <p class="form-error" id="lgErr" role="alert">${esc(msg)}</p>
+             <button class="btn btn-cobalt btn-block" type="submit">Mandar código</button>
+             <p class="login-hint">Sem e-mail cadastrado? O administrador do restaurante troca o seu PIN em Ajustes › Restaurante › Equipe. Se você é o único administrador, fale com a Vortex: a central troca para você.</p>`}
+        <button class="btn btn-quiet btn-block" type="button" data-login="entrar">Voltar para entrar</button>`;
+      setTimeout(() => ($('#lgCodigo') || $('#lgEmail')).focus(), 50);
+      return;
+    }
     $('#loginForm').innerHTML = `${S.vincular ? `<p class="note">${icon('nfc')}<span>Entre para ligar a plaquinha <b class="mono">${esc(S.vincular)}</b> a uma mesa.</span></p>` : ''}
       <div class="seg login-tabs" role="tablist" aria-label="Acesso da equipe">
         <button type="button" role="tab" aria-selected="${!criar}" data-login="entrar">Entrar</button>
@@ -121,6 +142,7 @@
         : `<label class="field"><span>Seu PIN</span><input class="input pin-input" id="lgPin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="current-password" required></label>
            <p class="form-error" id="lgErr" role="alert">${esc(msg)}</p>
            <button class="btn btn-cobalt btn-block" type="submit">Entrar no painel</button>
+           <button class="btn btn-quiet btn-block" type="button" data-login="esqueci">Esqueci meu PIN</button>
            <p class="login-hint">Ainda não tem PIN? Toque em “Criar conta” com o código da equipe, ou peça para o administrador cadastrar você.</p>`}`;
     setTimeout(() => ($('#lgPin') || $('#lgNome')).focus(), 50);
   }
@@ -141,7 +163,35 @@
       campo && campo.focus();
     };
     let r;
-    if (S.loginModo === 'criar') {
+    if (S.loginModo === 'esqueci') {
+      const email = $('#lgEmail').value.trim();
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return falhar('Digite um e-mail válido.', $('#lgEmail'));
+      btn.disabled = true;
+      try {
+        const x = await store.auth.esqueci(email);
+        S.esqueci = { email, mascara: x.email || email, demo: x.demoCodigo || null };
+      } catch (ex) {
+        btn.disabled = false;
+        return falhar(ex.message, $('#lgEmail'));
+      }
+      S.loginModo = 'codigo';
+      return showLogin();
+    }
+    if (S.loginModo === 'codigo') {
+      const codigo = $('#lgCodigo').value.replace(/\D/g, '');
+      const pin = $('#lgPinNovo').value.trim();
+      if (codigo.length !== 6) return falhar('O código tem 6 números.', $('#lgCodigo'));
+      if (!/^\d{4,8}$/.test(pin)) return falhar('O PIN precisa ter de 4 a 8 números.', $('#lgPinNovo'));
+      btn.disabled = true;
+      try {
+        r = await store.auth.redefinir({ email: S.esqueci.email, codigo, pin });
+      } catch (ex) {
+        btn.disabled = false;
+        return falhar(ex.message, /PIN/.test(ex.message) ? $('#lgPinNovo') : $('#lgCodigo'));
+      }
+      S.loginModo = 'entrar';
+      toast('PIN trocado. Use o PIN novo nas próximas vezes.', { tone: 'ok' });
+    } else if (S.loginModo === 'criar') {
       const nome = $('#lgNome').value.trim();
       const pin = $('#lgPinNovo').value.trim();
       const senhaEquipe = $('#lgSenha').value;
@@ -1358,6 +1408,14 @@
         <section class="panel stack" aria-labelledby="hEquipe">
           <h2 id="hEquipe">Equipe</h2>
           <ul class="team-list" id="teamList"><li class="muted">Carregando…</li></ul>
+          <form class="team-add stack" id="meuEmailForm" novalidate>
+            <h3>Seu e-mail para recuperar o PIN</h3>
+            <p class="help">Se esquecer o PIN, toque em “Esqueci meu PIN” na entrada do painel: mandamos um código para este e-mail e você cria um PIN novo sozinho.</p>
+            <div class="team-add-row">
+              <label class="field"><span>E-mail</span><input class="input" name="email" id="meuEmail" type="email" maxlength="120" autocomplete="email" placeholder="voce@email.com"></label>
+            </div>
+            <button type="submit" class="btn btn-line btn-sm">${icon('check')} Salvar e-mail</button>
+          </form>
           ${S.user.admin ? `<form class="team-add stack" id="teamAddForm" novalidate>
             <h3>Cadastrar pessoa</h3>
             <div class="team-add-row">
@@ -1380,6 +1438,18 @@
           : '<small class="help">Quem cadastra e remove pessoas é o administrador do restaurante. Você pode trocar o seu PIN.</small>'}
         </section>
       </div>
+
+      ${S.user.admin ? `<section class="panel stack" aria-labelledby="hAvisos">
+        <h2 id="hAvisos">Avisos por e-mail</h2>
+        <p class="help">Para onde a VTX manda os avisos do restaurante. Só o administrador muda.</p>
+        <form class="stack" id="avisosForm" novalidate>
+          <label class="field"><span>E-mail dos avisos</span><input class="input" name="email" type="email" maxlength="120" autocomplete="email" placeholder="gerencia@seurestaurante.com.br"></label>
+          <label class="set-inline"><span>Novo cliente no clube</span><span class="switch"><input type="checkbox" name="novo_cliente"><span></span></span></label>
+          <label class="set-inline"><span>Novo pedido no delivery</span><span class="switch"><input type="checkbox" name="novo_pedido"><span></span></span></label>
+          <label class="set-inline"><span>E-mail de boas-vindas para quem entra no clube</span><span class="switch"><input type="checkbox" name="boas_vindas"><span></span></span></label>
+          <button type="submit" class="btn btn-line btn-sm">${icon('check')} Salvar avisos</button>
+        </form>
+      </section>` : ''}
 
       <section class="panel stack" aria-labelledby="hHoras">
         <h2 id="hHoras">Horário de funcionamento</h2>
@@ -1405,6 +1475,19 @@
     try {
       const lista = await store.auth.membros();
       if (!alvo()) return;
+      const eu = lista.find((m) => m.voce);
+      if (eu && $('#meuEmail') && !$('#meuEmail').value) $('#meuEmail').value = eu.email || '';
+      if ($('#avisosForm') && !$('#avisosForm').dataset.ok) {
+        $('#avisosForm').dataset.ok = '1';
+        store.meusAvisos().then((a) => {
+          const f = $('#avisosForm');
+          if (!f) return;
+          f.elements.email.value = a.email || '';
+          f.elements.novo_cliente.checked = a.novo_cliente !== false;
+          f.elements.novo_pedido.checked = !!a.novo_pedido;
+          f.elements.boas_vindas.checked = a.boas_vindas !== false;
+        }).catch(() => {});
+      }
       const adm = !!S.user.admin;
       alvo().innerHTML = lista.length
         ? lista.map((m) => `<li class="team-row">
@@ -1457,6 +1540,26 @@
       toast(ex.message, { tone: 'error', ms: 4500 });
     }
     carregarEquipe();
+  });
+  document.addEventListener('submit', async (e) => {
+    if (!['meuEmailForm', 'avisosForm'].includes(e.target.id)) return;
+    e.preventDefault();
+    const f = e.target;
+    const btn = f.querySelector('[type=submit]');
+    btn.disabled = true;
+    try {
+      if (f.id === 'meuEmailForm') {
+        await store.auth.meuEmail(f.elements.email.value.trim());
+        toast(f.elements.email.value.trim() ? 'E-mail salvo. Se esquecer o PIN, o código vai para ele.' : 'E-mail de recuperação removido.', { tone: 'ok' });
+      } else {
+        await store.salvarAvisos({ email: f.elements.email.value.trim(), novo_cliente: f.elements.novo_cliente.checked,
+          novo_pedido: f.elements.novo_pedido.checked, boas_vindas: f.elements.boas_vindas.checked });
+        toast('Avisos salvos.', { tone: 'ok' });
+      }
+    } catch (ex) {
+      toast(ex.message, { tone: 'error', ms: 4500 });
+    }
+    btn.disabled = false;
   });
   document.addEventListener('submit', async (e) => {
     if (e.target.id !== 'teamCodigoForm') return;
@@ -2580,6 +2683,13 @@
     route();
     window.addEventListener('hashchange', route);
     store.subscribe(queueRefresh);
+    // Cliente novo no clube: aviso na hora para a equipe.
+    if (store.onNovoCliente) store.onNovoCliente((c) => {
+      if (!temFid()) return;
+      const nome = firstName(c.nome) || 'Alguém';
+      toast(`${nome} entrou no clube.`, { tone: 'ok', ms: 5000, action: S.view !== 'fidelidade' ? { label: 'Ver', run: () => go('fidelidade') } : null });
+      notify({ id: 'cli-' + Date.now(), titulo: 'Novo cliente no clube', corpo: `${c.nome || nome} acabou de entrar no clube.` });
+    });
     refresh();
     setInterval(tick, 1000);
     // Rede de segurança caso o tempo real caia.

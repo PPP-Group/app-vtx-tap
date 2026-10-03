@@ -255,10 +255,24 @@
   .btn-cta { display: inline-flex; align-items: center; justify-content: center; min-height: 42px; padding: 0 18px; border-radius: 999px; background: var(--roxo); color: #fff; font: 700 15px var(--body); text-decoration: none; box-shadow: 0 10px 28px rgba(125, 39, 252, .38); white-space: nowrap; }
   .btn-cta:focus-visible { outline: 3px solid #A874FF; outline-offset: 3px; }
   @media (max-width: 760px) { .topo nav { display: none; } .btn-cta { margin-left: auto; } }
-  .fechamento { display: flex; flex-wrap: wrap; gap: 14px 24px; align-items: center; justify-content: space-between; padding: 26px; border-radius: 24px; background: var(--noite); color: var(--noite-ink); }
-  .fechamento h3 { font-family: var(--display); font-weight: 900; font-size: 30px; text-transform: uppercase; }
-  .fechamento p { color: var(--noite-2); max-width: 60ch; }
-  .fechamento .btn-cta { background: #FFC61A; color: #1D1400; box-shadow: none; min-height: 50px; padding: 0 22px; font-size: 16px; }
+  .contratar { display: grid; gap: 20px 32px; padding: clamp(22px, 4vw, 34px); border-radius: 24px; background: var(--noite); color: var(--noite-ink); }
+  @media (min-width: 860px) { .contratar { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); align-items: start; } }
+  .contratar h3 { font-family: var(--display); font-weight: 900; font-size: 34px; text-transform: uppercase; line-height: 1; }
+  .contratar p { color: var(--noite-2); max-width: 60ch; }
+  .stack-c { display: grid; gap: 12px; align-content: start; }
+  .ct-resumo { padding: 12px 14px; border-radius: 14px; background: rgba(255, 255, 255, .07); font-size: 14.5px; }
+  .ct-resumo b { color: #fff; }
+  .ct-form { display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); }
+  @media (min-width: 560px) { .ct-form { grid-template-columns: repeat(2, minmax(0, 1fr)); } .ct-form .btn-cta, .ct-erro, .ct-alt { grid-column: 1 / -1; } }
+  .ct-campo { display: grid; gap: 6px; font-size: 14px; font-weight: 600; color: var(--noite-2); }
+  .ct-campo input { min-height: 46px; padding: 0 14px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, .2); background: rgba(255, 255, 255, .06); color: #fff; font: 500 16px var(--body); }
+  .ct-campo input:focus-visible { outline: 3px solid #A874FF; outline-offset: 1px; }
+  .ct-erro { margin: 0; min-height: 1.2em; color: #FFB4B4; font-size: 14px; }
+  .ct-erro.is-ok { color: #7CE3B1; }
+  .contratar .btn-cta { background: #FFC61A; color: #1D1400; box-shadow: none; min-height: 50px; padding: 0 22px; font-size: 16px; border: 0; cursor: pointer; }
+  .contratar .btn-cta:disabled { opacity: .6; cursor: progress; }
+  .ct-alt { color: #CFC6F2; font-size: 14px; }
+  .ct-form .btn-cta { justify-self: stretch; }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 <link rel="stylesheet" href="/assets/css/campos.css">
@@ -268,7 +282,7 @@
   <div class="topo-in">
     <a href="/" data-home aria-label="VTX Tap, início"><img class="logo-escuro" src="/assets/img/vtx-tap-escuro.png" alt="VTX Tap" width="104" height="48"><img class="logo-claro" src="/assets/img/vtx-tap.png" alt="VTX Tap" width="104" height="48"></a>
     <nav aria-label="Seções"><a href="/#fidelidade" data-home>Fidelidade</a><a href="/#delivery" data-home>Delivery</a><a href="/#prorrogacao" data-home>Happy hour</a><a href="/#mesa" data-home>Na mesa</a><a href="#simTitulo">Simulador</a></nav>
-    <a class="btn-cta" href="https://ig.me/m/vortexsoftwareco" target="_blank" rel="noopener">Falar com a gente</a>
+    <a class="btn-cta" href="#contratar">Quero contratar</a>
   </div>
 </header>
 <div class="wrap">
@@ -437,6 +451,7 @@
           <div class="grupo-total"><span>Total por ano</span><b id="totAnual">R$ 0</b></div>
         </div>
         
+        <a class="btn-cta" href="#contratar" style="background:#FFC61A;color:#1D1400;box-shadow:none">Quero contratar este plano</a>
         <p class="nota">Mensalidades reajustadas uma vez por ano pelo IPCA.</p>
       </aside>
     </div>
@@ -515,10 +530,22 @@
     </div>
   </section>
 
-  <div class="fechamento">
-    <div><h3>Montou o seu?</h3><p>Mande uma mensagem com o número de mesas e os serviços: a gente confirma o orçamento e agenda a implantação.</p></div>
-    <a class="btn-cta" href="https://ig.me/m/vortexsoftwareco" target="_blank" rel="noopener">Falar com a gente</a>
-  </div>
+  <section class="contratar" id="contratar" aria-labelledby="ctTitulo">
+    <div class="stack-c">
+      <h3 id="ctTitulo">Quero contratar</h3>
+      <p>Mande o plano que você montou acima. A gente confirma pelo WhatsApp e agenda a implantação. Você recebe a cópia por e-mail.</p>
+      <p class="ct-resumo" id="ctResumo"></p>
+    </div>
+    <form class="ct-form" id="ctForm" novalidate>
+      <label class="ct-campo"><span>Seu nome</span><input id="ctNome" autocomplete="name" maxlength="80" required></label>
+      <label class="ct-campo"><span>Nome do restaurante</span><input id="ctEmpresa" autocomplete="organization" maxlength="100" required></label>
+      <label class="ct-campo"><span>E-mail</span><input id="ctEmail" type="email" autocomplete="email" maxlength="120" required></label>
+      <label class="ct-campo"><span>WhatsApp</span><input id="ctZap" type="tel" inputmode="tel" autocomplete="tel" maxlength="16" placeholder="(31) 99999-9999" required></label>
+      <p class="ct-erro" id="ctErro" role="alert"></p>
+      <button class="btn-cta" type="submit">Quero contratar este plano</button>
+      <a class="ct-alt" href="https://ig.me/m/vortexsoftwareco" target="_blank" rel="noopener">Prefere conversar antes? Fale com a gente no Instagram</a>
+    </form>
+  </section>
 
   <footer class="rodape">
     <span class="rodape-marca"><img class="logo-escuro" src="/assets/img/vtx-tap-escuro.png" alt="VTX Tap" width="110" height="51"><img class="logo-claro" src="/assets/img/vtx-tap.png" alt="" width="110" height="51"><a class="endosso-link" href="https://vortexsystems.tech" target="_blank" rel="noopener" aria-label="Uma solução Vortex: abrir o site da Vortex"><img class="logo-escuro endosso" src="/assets/img/marca/endosso-cor.svg" alt="" width="108" height="14"><img class="logo-claro endosso" src="/assets/img/marca/endosso-negativo.svg" alt="" width="108" height="14"></a></span>
@@ -526,6 +553,7 @@
   </footer>
 </div>
 
+<script src="/env.js"></script>
 <script src="/assets/js/precos.js"></script>
 <script src="/assets/js/campos.js"></script>
 <script>
@@ -594,6 +622,37 @@
       + '<tr><td>Personalizada sob demanda<small>Arte do restaurante, avaliada pelo nosso time.</small></td><td class="v" colspan="2">Sob consulta</td></tr>';
 
     let placasManual = false;
+    let ultimo = null;
+    // Pedido de contratação: vai para o banco (public.lead_enviar), que avisa a Vortex e manda a cópia por e-mail.
+    $('ctForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const erro = $('ctErro');
+      erro.className = 'ct-erro';
+      const env = window.NFC_ENV || {};
+      const dados = { nome: $('ctNome').value.trim(), empresa: $('ctEmpresa').value.trim(), email: $('ctEmail').value.trim(), whatsapp: $('ctZap').value.trim(),
+        mesas: ultimo && ultimo.mesas, mensal: ultimo && ultimo.mensal, plano: ultimo };
+      if (!dados.nome || !dados.empresa) { erro.textContent = 'Preencha o seu nome e o nome do restaurante.'; return; }
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(dados.email)) { erro.textContent = 'Digite um e-mail válido.'; return; }
+      if (dados.whatsapp.replace(/\D/g, '').length < 10) { erro.textContent = 'Digite o WhatsApp com DDD.'; return; }
+      if (!ultimo || !ultimo.itens.length) { erro.textContent = 'Escolha pelo menos um serviço no simulador.'; return; }
+      if (!env.SUPABASE_URL) { erro.textContent = 'Nesta página de teste o envio está desligado. Fale com a gente pelo Instagram.'; return; }
+      const btn = e.target.querySelector('[type=submit]');
+      btn.disabled = true;
+      try {
+        const r = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/lead_enviar`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json', apikey: env.SUPABASE_ANON_KEY },
+          body: JSON.stringify({ p: dados }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || j.status !== 'ok') throw new Error(j.mensagem || 'Não foi possível enviar agora.');
+        erro.className = 'ct-erro is-ok';
+        erro.textContent = `Recebemos. A gente fala com você pelo WhatsApp em breve, e a cópia foi para ${dados.email}.`;
+        e.target.reset();
+      } catch (ex) {
+        erro.textContent = `${ex.message} Se preferir, fale com a gente pelo Instagram.`;
+      }
+      btn.disabled = false;
+    });
     function calcular() {
       const m = Math.min(Math.max(Math.round(+$('mesasNum').value || 1), 1), 500);
       const q = Math.min(Math.max(Math.round(+$('placasNum').value || 1), 1), 1000);
@@ -655,6 +714,9 @@
         : cb.economia ? `Desconto aplicado: ${brl(cb.economia)} a menos por mês.`
         : 'Dois serviços juntos têm 10% de desconto, três têm 17% e os quatro saem por ' + brl(Precos.TODOS) + '.';
 
+      // Resumo para o pedido de contratação.
+      ultimo = { mesas: m, mensal: totM, unico: totU, itens: Precos.COBRADOS.filter((x) => sv[x.id]).map((x) => x.nome), placas: q, placa, dom, meses };
+      $('ctResumo').innerHTML = qtd ? `<b>${ultimo.itens.join(' + ')}</b> · ${m} mesas · <b>${brl(totM)}</b> por mês · ${brl(totU)} na contratação` : 'Escolha pelo menos um serviço no simulador.';
       if (INTERNO) interno({ q, pu: puPlaca, placa, totPlacas, impTotal, totM, dom, meses });
     }
 

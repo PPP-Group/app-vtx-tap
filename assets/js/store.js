@@ -26,6 +26,7 @@
  *   auth.estado()                → { temSenha } — se a senha da equipe já foi criada
  *   auth.entrar(pin) / auth.cadastrar({ nome, pin, senhaEquipe }) / auth.sessao() / auth.sair()
  *   auth.membros() / auth.remover(id) / auth.trocarSenha(senha)   (só administrador)
+ *   auth.esqueci(email) / auth.redefinir({ email, codigo, pin }) / auth.meuEmail(email)  (PIN esquecido: código no e-mail)
  *   auth.adicionar({ nome, pin, admin }) / auth.definirAdmin(id, admin) (só administrador) / auth.trocarPin(id|null, pin)
  *
  *   Programa de fidelidade (módulo liberado pela Vortex; regras em settings.fidelidade):
@@ -910,6 +911,17 @@
         listeners.add(fn);
         return () => listeners.delete(fn);
       },
+      // Cliente novo no clube (avisa o painel). Na demonstração, compara a lista a cada mudança.
+      onNovoCliente(fn) {
+        let vistos = new Set(F(read()).clientes.map((c) => c.cpf));
+        const run = () => {
+          const lista = F(read()).clientes;
+          lista.filter((c) => !vistos.has(c.cpf)).forEach((c) => fn({ nome: c.nome }));
+          vistos = new Set(lista.map((c) => c.cpf));
+        };
+        listeners.add(run);
+        return () => listeners.delete(run);
+      },
       watchCall(id, fn) {
         const run = () => fn(read().chamados.find((c) => c.id === id) || null);
         run();
@@ -1269,6 +1281,86 @@
         const db = read();
         delete F(db).sessoes[token];
         write(db);
+      },
+      // Esqueci o PIN (demonstração: o código volta na resposta em vez de ir por e-mail).
+      async fidPinEsqueci(cpf) {
+        const db = read();
+        cpf = soDigitos(cpf);
+        if (!cpfValido(cpf)) return { status: 'erro', mensagem: 'CPF inválido. Confira os números.' };
+        const c = cliDe(db, cpf);
+        if (!c || !c.email) return { status: 'enviado', email: null };
+        const codigo = String(Math.floor(100000 + Math.random() * 900000));
+        F(db).codigos = { ...(F(db).codigos || {}), [cpf]: { codigo, ate: Date.now() + 15 * 60e3 } };
+        write(db);
+        return { status: 'enviado', email: c.email.replace(/^(.{2})[^@]*/, '$1•••'), demoCodigo: codigo };
+      },
+      async fidPinCodigo(cpf, codigo, pin) {
+        const db = read();
+        cpf = soDigitos(cpf);
+        if (!/^\d{4}$/.test(pin || '')) return { status: 'erro', mensagem: 'O PIN tem 4 números.' };
+        const k = (F(db).codigos || {})[cpf];
+        if (!k || k.ate < Date.now()) return { status: 'erro', mensagem: 'Este código venceu. Peça um novo.' };
+        if (String(codigo) !== k.codigo) return { status: 'erro', mensagem: 'Código incorreto. Confira o e-mail.' };
+        const f = F(db);
+        delete f.codigos[cpf];
+        f.pins[cpf] = await hashTxt(cpf + ':' + pin);
+        for (const [t, c] of Object.entries(f.sessoes)) if (c === cpf) delete f.sessoes[t];
+        const token = uid();
+        f.sessoes[token] = cpf;
+        write(db);
+        return { status: 'ok', token };
+      },
+      async fidTrocarPin(token, atual, novo) {
+        const db = read();
+        const cpf = sessaoDe(db, token);
+        if (!cpf) return { status: 'sem_sessao' };
+        if (!/^\d{4}$/.test(novo || '')) return { status: 'erro', mensagem: 'O PIN novo tem 4 números.' };
+        const f = F(db);
+        if (f.pins[cpf] !== await hashTxt(cpf + ':' + atual)) return { status: 'erro', mensagem: 'PIN incorreto.' };
+        f.pins[cpf] = await hashTxt(cpf + ':' + novo);
+        for (const [t, c] of Object.entries(f.sessoes)) if (c === cpf && t !== token) delete f.sessoes[t];
+        write(db);
+        return { status: 'ok' };
+      },
+      async fidMeusDados(token) {
+        const db = read();
+        const cpf = sessaoDe(db, token);
+        if (!cpf) return { status: 'sem_sessao' };
+        const c = cliDe(db, cpf);
+        return { status: 'ok', nome: c.nome, email: c.email, telefone: c.telefone, marketing: !!c.marketing, nascimento: c.nascimento || null,
+          cpf: '•••.' + cpf.slice(3, 6) + '.' + cpf.slice(6, 9) + '-••' };
+      },
+      async fidAtualizarMeusDados(token, { pin, email, telefone, marketing }) {
+        const db = read();
+        const cpf = sessaoDe(db, token);
+        if (!cpf) return { status: 'sem_sessao' };
+        email = String(email || '').trim().toLowerCase();
+        telefone = soDigitos(telefone);
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return { status: 'erro', mensagem: 'E-mail inválido.' };
+        if (!/^[1-9][0-9]{9,10}$/.test(telefone)) return { status: 'erro', mensagem: 'Telefone inválido. Use DDD + número.' };
+        if (F(db).pins[cpf] !== await hashTxt(cpf + ':' + pin)) return { status: 'erro', mensagem: 'PIN incorreto.' };
+        Object.assign(cliDe(db, cpf), { email, telefone, marketing: marketing == null ? cliDe(db, cpf).marketing : !!marketing });
+        write(db);
+        return { status: 'ok' };
+      },
+      async fidApagarMinhaConta(token, pin) {
+        const db = read();
+        const cpf = sessaoDe(db, token);
+        if (!cpf) return { status: 'sem_sessao' };
+        if (F(db).pins[cpf] !== await hashTxt(cpf + ':' + pin)) return { status: 'erro', mensagem: 'PIN incorreto.' };
+        await this.fidExcluirCliente(cpf);
+        return { status: 'ok' };
+      },
+      async meusAvisos() {
+        return read().avisos || {};
+      },
+      async salvarAvisos(a) {
+        const email = String(a.email || '').trim().toLowerCase();
+        if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error('E-mail inválido.');
+        const db = read();
+        db.avisos = { email: email || null, novo_cliente: a.novo_cliente !== false, novo_pedido: !!a.novo_pedido, boas_vindas: a.boas_vindas !== false };
+        write(db);
+        return db.avisos;
       },
       async fidNotaSituacao({ cpf, qr }) {
         const db = read();
@@ -2074,7 +2166,8 @@
       },
       async membros() {
         const x = eu();
-        return equipe().membros.map((m) => ({ id: m.id, nome: m.nome, criado_em: m.criado_em, admin: !!m.admin, voce: !!x && x.id === m.id }));
+        return equipe().membros.map((m) => ({ id: m.id, nome: m.nome, criado_em: m.criado_em, admin: !!m.admin, voce: !!x && x.id === m.id,
+          email: !x || x.id !== m.id ? (m.email ? m.email.replace(/^(.{2})[^@]*/, '$1•••') : null) : m.email || null }));
       },
       async adicionar({ nome, pin, admin }) {
         soAdmin();
@@ -2112,6 +2205,34 @@
         if (String(senha || '').length < 6) falha('O código da equipe precisa ter pelo menos 6 caracteres.');
         salvar({ ...equipe(), senhaHash: await hash('senha:' + senha) });
       },
+      // Demonstração: o código não vai por e-mail, volta na resposta para aparecer na tela.
+      async esqueci(email) {
+        email = String(email || '').trim().toLowerCase();
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) falha('E-mail inválido.');
+        const m = equipe().membros.find((x) => x.email === email);
+        const codigo = String(Math.floor(100000 + Math.random() * 900000));
+        if (m) salvar({ ...equipe(), membros: equipe().membros.map((x) => (x.id === m.id ? { ...x, codigo, codigoAte: Date.now() + 15 * 60e3 } : x)) });
+        return { ok: true, email: email.replace(/^(.{2})[^@]*/, '$1•••'), demoCodigo: m ? codigo : null };
+      },
+      async redefinir({ email, codigo, pin }) {
+        email = String(email || '').trim().toLowerCase();
+        if (!/^\d{4,8}$/.test(pin)) falha('O PIN precisa ter de 4 a 8 números.');
+        const m = equipe().membros.find((x) => x.email === email);
+        if (!m || !m.codigo || m.codigoAte < Date.now()) falha('Este código venceu. Peça um novo.');
+        if (String(codigo) !== m.codigo) falha('Código incorreto. Confira o e-mail.');
+        const pinHash = await pinLivre(pin, m.id);
+        salvar({ ...equipe(), membros: equipe().membros.map((x) => (x.id === m.id ? { ...x, pinHash, codigo: null } : x)) });
+        abrir(m);
+        return { nome: m.nome, admin: !!m.admin };
+      },
+      async meuEmail(email) {
+        const x = eu();
+        if (!x) falha('Entre com seu PIN para continuar.');
+        email = String(email || '').trim().toLowerCase();
+        if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) falha('E-mail inválido.');
+        if (email && equipe().membros.some((m) => m.email === email && m.id !== x.id)) falha('Esse e-mail já está na conta de outra pessoa da equipe.');
+        salvar({ ...equipe(), membros: equipe().membros.map((m) => (m.id === x.id ? { ...m, email: email || null } : m)) });
+      },
     };
   }
 
@@ -2123,6 +2244,7 @@
     // Restaurante deste endereço: o subdomínio (ou ?r=). Num domínio próprio, sai de restaurante_por_dominio no init.
     let slug = cfg.backend.slug;
     const listeners = new Set();
+    const novosClientes = new Set();
     let sb;
     let rid = null;
 
@@ -2160,12 +2282,18 @@
           for (const table of ['chamados', 'comentarios', 'sessoes', 'mesas_abertas', 'etiquetas', 'fid_notas', 'fid_resgates', 'pedidos']) {
             ch.on('postgres_changes', { event: '*', schema: 'public', table, filter: 'restaurante_id=eq.' + rid }, () => listeners.forEach((f) => f()));
           }
+          ch.on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'fid_clientes', filter: 'restaurante_id=eq.' + rid },
+            (p) => novosClientes.forEach((f) => f({ nome: p.new && p.new.nome })));
           ch.subscribe();
         }
       },
       subscribe(fn) {
         listeners.add(fn);
         return () => listeners.delete(fn);
+      },
+      onNovoCliente(fn) {
+        novosClientes.add(fn);
+        return () => novosClientes.delete(fn);
       },
       watchCall(id, fn) {
         this.getCall(id).then(fn).catch(() => fn(null));
@@ -2542,6 +2670,31 @@
       async fidExcluirPremio(id) {
         must(await sb.from('fid_premios').delete().eq('id', id));
       },
+      async meusAvisos() {
+        return must(await sb.rpc('meus_avisos')) || {};
+      },
+      async salvarAvisos(a) {
+        return must(await sb.rpc('salvar_avisos', { p: a }));
+      },
+      // Cliente do clube: resolve sozinho (código no e-mail, trocar o PIN, dados e apagar a conta).
+      async fidPinEsqueci(cpf) {
+        return must(await sb.rpc('fid_pin_esqueci', { p_restaurante: rid, p_cpf: soDigitos(cpf) }));
+      },
+      async fidPinCodigo(cpf, codigo, pin) {
+        return must(await sb.rpc('fid_pin_codigo', { p_restaurante: rid, p_cpf: soDigitos(cpf), p_codigo: String(codigo), p_pin: pin }));
+      },
+      async fidTrocarPin(token, atual, novo) {
+        return must(await sb.rpc('fid_trocar_pin', { p_token: token, p_atual: atual, p_novo: novo }));
+      },
+      async fidMeusDados(token) {
+        return must(await sb.rpc('fid_meus_dados', { p_token: token }));
+      },
+      async fidAtualizarMeusDados(token, { pin, email, telefone, marketing }) {
+        return must(await sb.rpc('fid_atualizar_meus_dados', { p_token: token, p_pin: pin, p_email: email, p_telefone: telefone, p_marketing: marketing }));
+      },
+      async fidApagarMinhaConta(token, pin) {
+        return must(await sb.rpc('fid_apagar_minha_conta', { p_token: token, p_pin: pin }));
+      },
       async fidExportar() {
         const todos = [];
         for (let de = 0; ; de += 1000) {
@@ -2621,6 +2774,18 @@
         },
         async trocarSenha(senha) {
           await this.chamar('trocar_senha', { senha }, true);
+        },
+        // Esqueci o PIN: código no e-mail de recuperação; com ele, o PIN novo já entra.
+        async esqueci(email) {
+          return this.chamar('esqueci', { email });
+        },
+        async redefinir({ email, codigo, pin }) {
+          const r = await this.chamar('redefinir', { email, codigo, pin });
+          must(await sb.auth.setSession(r.sessao));
+          return { nome: r.nome, admin: !!r.admin };
+        },
+        async meuEmail(email) {
+          await this.chamar('meu_email', { email }, true);
         },
       },
     };
