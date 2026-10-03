@@ -4,6 +4,8 @@
  * extrato, o resgate de prêmios e o código de indicação. O aparelho lembra.
  * Pontos entram pela nota fiscal: o cliente lê o QR da NFC-e (com CPF na nota)
  * e o restaurante confere pelo XML ou à mão.
+ * O restaurante escolhe o tipo (prog.modo): clube de pontos, cartão fidelidade
+ * (cada compra vale um selo) ou os dois, cada um no seu horário.
  *
  *   Fidelidade.iniciar({ store, slug, nomeRestaurante }) → programa (ou null)
  *   Fidelidade.tile() → HTML do atalho na página
@@ -18,11 +20,21 @@
   let prog = null;
   let chave = 'fid';
   let nomeRest = '';
-  const S = { cpf: null, nome: null, pontos: null, nivel: null, pendentes: 0, token: null, conta: null, tela: 'inicio', indicacao: '', indicador: null, aviso: null, premio: null, resgate: null, ocupado: false };
+  const S = { cpf: null, nome: null, pontos: null, nivel: null, cartao: null, pendentes: 0, token: null, conta: null, tela: 'inicio', indicacao: '', indicador: null, aviso: null, premio: null, resgate: null, ocupado: false };
 
   const ler = () => { try { return JSON.parse(localStorage.getItem(chave)) || {}; } catch { return {}; } };
-  const gravar = () => { try { localStorage.setItem(chave, JSON.stringify({ cpf: S.cpf, nome: S.nome, pontos: S.pontos, nivel: S.nivel, token: S.token })); } catch {} };
-  const esquecer = () => { Object.assign(S, { cpf: null, nome: null, pontos: null, nivel: null, pendentes: 0, token: null, conta: null }); try { localStorage.removeItem(chave); } catch {} };
+  const gravar = () => { try { localStorage.setItem(chave, JSON.stringify({ cpf: S.cpf, nome: S.nome, pontos: S.pontos, nivel: S.nivel, cartao: S.cartao, token: S.token })); } catch {} };
+  const esquecer = () => { Object.assign(S, { cpf: null, nome: null, pontos: null, nivel: null, cartao: null, pendentes: 0, token: null, conta: null }); try { localStorage.removeItem(chave); } catch {} };
+
+  /* Tipo do programa: só pontos, só o cartão de selos ou os dois (cada um no seu horário). */
+  const modo = () => (prog && prog.modo) || 'pontos';
+  const temPontos = () => modo() !== 'selos';
+  const temSelos = () => modo() !== 'pontos';
+  const cfgSelos = () => (prog && prog.selos) || {};
+  const nomeProg = () => (modo() === 'selos' ? cfgSelos().nome || 'Cartão fidelidade' : prog.nome);
+  const selos = (n) => `${num(n)} ${n === 1 ? 'selo' : 'selos'}`;
+  // O que entra quando a nota é conferida: "os pontos", "o selo" ou "os pontos ou o selo".
+  const ganho = () => (modo() === 'ambos' ? 'os pontos ou o selo' : temSelos() ? 'o selo' : 'os pontos');
 
   const fmtCpf = (c) => F.soDigitos(c).slice(0, 11).replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d{1,2})$/, '$1-$2');
   const fmtTel = (t) => {
@@ -67,19 +79,82 @@
     return `${multTexto(b.mult)} ${diasTexto(b.dias)}${hora}${periodo}`;
   }
   const boostAgora = () => {
+    if (!temPontos()) return null;
     const b = F.boost({ boosts: prog.boosts }, new Date());
     return b.mult > 1 ? b : null;
   };
+  // "de segunda a sexta, das 11h às 15h"
+  const horaCurta = (h) => String(h || '').replace(':00', 'h').replace(/^0(\d)/, '$1');
+  const horarioTexto = (j) => `${diasTexto((j && j.dias) || [])}${j && j.de && j.ate ? `, das ${horaCurta(j.de)} às ${horaCurta(j.ate)}` : ''}`;
+
+  /* ---------- Cartão fidelidade (selos) ---------- */
+  // Cartão de papel: um carimbo por compra, o último espaço é o prêmio.
+  function cartaoHtml(k, o = {}) {
+    const c = cfgSelos();
+    const total = (k && k.total) || c.total || 10;
+    const feitos = Math.min((k && k.selos) || 0, total);
+    const premio = (k && k.premio) || c.premio || '';
+    const cols = total <= 5 ? total : total <= 12 ? Math.ceil(total / 2) : 6;
+    const falta = total - feitos;
+    const vence = k && k.vence_em && feitos > 0 && !o.completo;
+    return `<div class="fid-cartao ${o.completo ? 'is-completo' : ''}" style="--cols:${cols}">
+      <div class="fid-cartao-top"><span><small>${esc(o.titulo || c.nome || 'Cartão fidelidade')}</small><b>${o.completo ? 'Completo!' : `${num(feitos)} de ${num(total)}`}</b></span>${icon('gift')}</div>
+      <ol class="fid-carimbos" aria-label="${num(feitos)} de ${num(total)} selos">${Array.from({ length: total }, (_, i) => {
+        const on = o.completo || i < feitos;
+        const ultimo = i === total - 1;
+        return `<li class="${on ? 'is-on' : ''} ${ultimo ? 'is-premio' : ''}" style="--r:${((i * 37) % 17) - 8}deg">${on ? icon('check') : ultimo ? icon('gift') : `<span>${i + 1}</span>`}</li>`;
+      }).join('')}</ol>
+      <p class="fid-cartao-txt">${o.completo ? `Troque por <b>${esc(premio)}</b>.` : feitos ? `Faltam <b>${selos(falta)}</b> para ${esc(premio)}.` : `Junte ${selos(total)} e ganhe <b>${esc(premio)}</b>.`}</p>
+      ${vence ? `<small class="fid-cartao-vence">${k.vencido ? 'Este cartão venceu: o próximo selo começa um cartão novo.' : `Complete até ${dataCurta(k.vence_em)}.`}</small>` : ''}
+    </div>`;
+  }
+  function selosRegras() {
+    const c = cfgSelos();
+    return [
+      `A cada compra com CPF na nota, 1 selo${c.umPorDia ? ' (até 1 por dia)' : ''}.`,
+      ...(c.valorMinimo > 0 ? [`Vale para compras a partir de ${brl(c.valorMinimo)}.`] : []),
+      `Com ${selos(c.total || 10)}, você ganha ${c.premio || 'o prêmio'}.`,
+      ...(c.validadeDias > 0 ? [`O cartão vale ${c.validadeDias} dias a partir do primeiro selo.`] : []),
+      ...(c.detalhe ? [c.detalhe] : []),
+    ];
+  }
+  // Os dois programas, cada um no seu horário.
+  function programasHtml() {
+    if (modo() !== 'ambos' || !prog.horarios) return '';
+    const c = cfgSelos();
+    return `<ul class="fid-progs">
+      <li>${icon('check')}<span><b>${esc(c.nome || 'Cartão fidelidade')}</b> ${esc(horarioTexto(prog.horarios.selos))}<small>1 selo por compra. Com ${selos(c.total || 10)}, ${esc(c.premio || 'o prêmio')}.</small></span></li>
+      <li>${icon('sparkle')}<span><b>${esc(prog.nome)}</b> ${esc(horarioTexto(prog.horarios.pontos))}<small>${esc(regraTexto())}, para trocar por prêmios.</small></span></li>
+    </ul>
+    <p class="muted fid-progs-nota">Vale o horário da nota fiscal. Compras fora destes horários não entram no programa.</p>`;
+  }
+  // Cartões completos esperando a troca.
+  const completosHtml = (k) => ((k && k.completos) || []).map((x) => `<div class="fid-completo">
+      ${cartaoHtml(x, { completo: true })}
+      <button type="button" class="btn btn-cobalt btn-block" data-fid-cartao="${esc(x.id)}" ${S.ocupado ? 'disabled' : ''}>${icon('gift')} Trocar por ${esc(x.premio)}</button>
+    </div>`).join('');
 
   /* ---------- Atalho na página ---------- */
   function tile() {
     if (!prog || !prog.ativo) return '';
     const agora = boostAgora();
     const conhecido = S.cpf && S.pontos != null;
+    if (!temPontos()) {
+      const c = cfgSelos();
+      const k = S.cartao && S.cartao.aberto;
+      const prontos = S.cartao && S.cartao.completos ? S.cartao.completos.length : 0;
+      return `<button type="button" class="tile tile--fid" data-fid-abrir>
+      <span class="tile-fid-top">${icon('gift')} ${esc(nomeProg())}</span>
+      <div><h3>${conhecido ? (prontos ? 'Cartão completo!' : `${num(k ? k.selos : 0)} de ${num(k ? k.total : c.total)} selos`) : 'Ganhe selos'}</h3>
+        <p>${conhecido ? (prontos ? `Olá, ${esc(S.nome || '')}! Troque por ${esc(c.premio)}.` : `Olá, ${esc(S.nome || '')}! Leia a nota e ganhe mais um selo.`)
+          : `A cada visita, 1 selo. Com ${num(c.total)}, ${esc(c.premio)}.`}</p></div>
+      <span class="tile-go">${icon('arrow')}</span>
+    </button>`;
+    }
     return `<button type="button" class="tile tile--fid" data-fid-abrir>
       <span class="tile-fid-top">${icon('gift')} ${esc(prog.nome)}${conhecido && S.nivel ? ` <span class="fid-selo" style="--nv:${esc(S.nivel.cor)}">${esc(S.nivel.nome)}</span>` : ''}</span>
       <div><h3>${conhecido ? pts(S.pontos) : 'Ganhe pontos'}</h3>
-        <p>${conhecido ? `Olá, ${esc(S.nome || '')}! Leia a nota e troque por prêmios.` : `${esc(regraTexto())} e troque por prêmios.`}${agora ? ` <b>Agora: ${multTexto(agora.mult)}!</b>` : ''}</p></div>
+        <p>${conhecido ? `Olá, ${esc(S.nome || '')}! Leia a nota e troque por prêmios.` : `${esc(regraTexto())} e troque por prêmios.`}${agora ? ` <b>Agora: ${multTexto(agora.mult)}!</b>` : ''}${modo() === 'ambos' ? ` E no ${esc(cfgSelos().nome || 'cartão fidelidade')}, ${esc(cfgSelos().premio || 'um prêmio')} com ${num(cfgSelos().total || 10)} selos.` : ''}</p></div>
       <span class="tile-go">${icon('arrow')}</span>
     </button>`;
   }
@@ -97,13 +172,13 @@
     }[S.tela]();
     corpo().innerHTML = html;
     $('#fidTitle').textContent = S.tela === 'inicio' ? nomeRest || 'Fidelidade' : S.tela === 'niveis' ? 'Níveis do clube' : S.tela === 'ranking' ? 'Ranking do clube'
-      : S.tela === 'transferir' ? 'Transferir pontos' : prog.nome;
+      : S.tela === 'transferir' ? 'Transferir pontos' : nomeProg();
     const foco = corpo().querySelector('[data-foco]');
     if (foco) setTimeout(() => foco.focus(), 60);
   }
   const ir = (tela) => { if (tela !== 'valor') pararOcr(); S.tela = tela; render(); corpo().scrollTop = 0; };
 
-  const aniv = () => prog.aniversario && prog.aniversario.ativo ? prog.aniversario : null;
+  const aniv = () => temPontos() && prog.aniversario && prog.aniversario.ativo ? prog.aniversario : null;
   // Campo de data do aniversário (dia, mês e ano), até hoje.
   const hojeIso = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
   const campoNasc = (id, attrs = '') => `<input class="input" id="${id}" type="date" min="1900-01-01" max="${hojeIso()}" autocomplete="bday" ${attrs}>`;
@@ -125,13 +200,13 @@
   };
   const validadeTexto = () => {
     const v = prog.validade;
-    if (!v || !v.ativo) return '';
+    if (!temPontos() || !v || !v.ativo) return '';
     const n = v.quantidade;
     return `Os pontos valem por ${n} ${v.unidade === 'dias' ? (n === 1 ? 'dia' : 'dias') : n === 1 ? 'mês' : 'meses'}: os mais antigos vencem primeiro.`;
   };
 
   /* ---------- Dia de clássico ---------- */
-  const eventos = () => prog.eventos || [];
+  const eventos = () => (temPontos() && prog.eventos) || [];
   function eventosHtml() {
     if (!eventos().length) return '';
     const minhas = (S.conta && S.conta.torcidas) || {};
@@ -154,7 +229,7 @@
   }
 
   /* ---------- Níveis do clube ---------- */
-  const temNiveis = () => !!(prog.niveis && prog.niveis.ativo && (prog.niveis.lista || []).length);
+  const temNiveis = () => !!(temPontos() && prog.niveis && prog.niveis.ativo && (prog.niveis.lista || []).length);
   const pct = (m) => Math.round((m - 1) * 100);
   const vantagens = (l) => [
     ...(l.mult > 1 ? [`${pct(l.mult)}% a mais de pontos em cada compra`] : []),
@@ -235,12 +310,18 @@
   }
 
   function tInicio() {
+    const c = cfgSelos();
+    const hero = modo() === 'selos' ? `<small>Cartão fidelidade</small><b>${esc(nomeProg())}</b><p>A cada visita, 1 selo. Com ${selos(c.total || 10)}, você ganha ${esc(c.premio || 'o prêmio')}.</p>`
+      : modo() === 'ambos' ? `<small>Programa de fidelidade</small><b>${esc(prog.nome)}</b><p>Pontos e cartão fidelidade, cada um no seu horário.</p>`
+      : `<small>Programa de fidelidade</small><b>${esc(prog.nome)}</b><p>Ganhe ${esc(regraTexto())} e troque por prêmios.</p>`;
     return `<div class="stack-lg fid">
-      <div class="plate fid-hero"><span class="rivet r1"></span><span class="rivet r2"></span>
-        <small>Programa de fidelidade</small><b>${esc(prog.nome)}</b><p>Ganhe ${esc(regraTexto())} e troque por prêmios.</p></div>
-      ${boosts()}
+      <div class="plate fid-hero"><span class="rivet r1"></span><span class="rivet r2"></span>${hero}</div>
+      ${programasHtml()}
+      ${temSelos() ? cartaoHtml(null) : ''}
+      ${modo() === 'selos' ? `<ul class="fid-boosts">${selosRegras().map((t) => `<li>${icon('check')}<span>${esc(t)}</span></li>`).join('')}</ul>` : ''}
+      ${temPontos() ? boosts() : ''}
       <div id="fidRankSlot">${rankingCartao()}</div>
-      ${S.indicador ? `<p class="note">${icon('users')}<span>Você foi indicado por <b>${esc(S.indicador)}</b>. Cadastre-se e ganhe pontos de boas-vindas${prog.indicacao && prog.indicacao.quando === 'compra' ? ' na primeira compra' : ''}.</span></p>` : ''}
+      ${S.indicador && temPontos() ? `<p class="note">${icon('users')}<span>Você foi indicado por <b>${esc(S.indicador)}</b>. Cadastre-se e ganhe pontos de boas-vindas${prog.indicacao && prog.indicacao.quando === 'compra' ? ' na primeira compra' : ''}.</span></p>` : ''}
       <form class="stack" id="fidCpfForm" novalidate>
         <label class="field"><span>Seu CPF</span><input class="input mono" id="fidCpf" inputmode="numeric" autocomplete="off" maxlength="14" placeholder="000.000.000-00" data-foco value="${esc(fmtCpf(S.cpf || ''))}"></label>
         <p class="form-error" id="fidErro" role="alert">${esc(S.aviso || '')}</p>
@@ -249,22 +330,23 @@
       <ol class="fid-como">
         <li><b>Cadastre-se</b> com o seu CPF (uma vez só).</li>
         <li>Na hora de pagar, <b>peça CPF na nota</b>.</li>
-        <li><b>Leia o QR Code</b> da nota aqui. Os pontos entram depois que o restaurante confere a nota.</li>
-        <li>Troque os pontos por <b>prêmios</b>${prog.transferencia && prog.transferencia.ativo ? ' ou transfira para um amigo do clube' : ''}.</li>
+        <li><b>Leia o QR Code</b> da nota aqui. ${modo() === 'selos' ? 'O selo entra' : `${ganho()[0].toUpperCase()}${ganho().slice(1)} entram`} depois que o restaurante confere a nota.</li>
+        ${modo() === 'selos' ? `<li>Completou o cartão? <b>Troque pelo prêmio</b> aqui mesmo.</li>`
+          : `<li>Troque os pontos por <b>prêmios</b>${prog.transferencia && prog.transferencia.ativo ? ' ou transfira para um amigo do clube' : ''}${modo() === 'ambos' ? ', e o cartão completo pelo prêmio dele' : ''}.</li>`}
       </ol>
       ${validadeTexto() ? `<p class="muted fid-validade">${icon('clock')} ${esc(validadeTexto())}</p>` : ''}
       ${eventosHtml()}
       ${temNiveis() ? `<section class="stack"><h3 class="fid-h3">Níveis do clube</h3>
         <div class="fid-niveis-mini">${prog.niveis.lista.map((l) => `<span class="fid-selo" style="--nv:${esc(l.cor)}">${esc(l.nome)}</span>`).join('<span aria-hidden="true">›</span>')}</div>
         <button type="button" class="link fid-link" data-fid-ir="niveis">Ver as vantagens de cada nível</button></section>` : ''}
-      <section class="stack"><h3 class="fid-h3">Prêmios</h3>${premiosHtml(false)}</section>
+      ${temPontos() ? `<section class="stack"><h3 class="fid-h3">Prêmios</h3>${premiosHtml(false)}</section>` : ''}
       ${prog.regulamento ? '<button type="button" class="link fid-link" data-fid-ir="regulamento">Regulamento do programa</button>' : ''}
     </div>`;
   }
 
   function tCadastro() {
     return `<form class="stack fid" id="fidCadForm" novalidate>
-      <p class="muted">Cadastro no <b>${esc(prog.nome)}</b> de ${esc(nomeRest)}. Leva um minuto.</p>
+      <p class="muted">Cadastro no <b>${esc(nomeProg())}</b> de ${esc(nomeRest)}. Leva um minuto.</p>
       <div class="fid-cpf-fixo"><span>CPF</span><b class="mono">${esc(fmtCpf(S.cpf))}</b><button type="button" class="link" data-fid-ir="inicio">Trocar</button></div>
       <label class="field"><span>Nome completo</span><input class="input" id="fcNome" autocomplete="name" maxlength="80" data-foco required></label>
       <label class="field"><span>E-mail</span><input class="input" id="fcEmail" type="email" autocomplete="email" maxlength="120" required></label>
@@ -272,8 +354,8 @@
       <label class="field"><span>Data do seu aniversário</span>${campoNasc('fcAniv', 'required')}
         ${anivTexto() ? `<small class="help">${esc(anivTexto())}.</small>` : ''}</label>
       <label class="field"><span>Crie um PIN de 4 números</span><input class="input mono pin-input" id="fcPin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="new-password" required>
-        <small class="help">Você usa o PIN para trocar os pontos por prêmios.</small></label>
-      ${prog.indicacao && prog.indicacao.ativo ? `<label class="field"><span>Código de quem indicou (opcional)</span><input class="input mono" id="fcInd" maxlength="12" autocapitalize="characters" autocomplete="off" value="${esc(S.indicacao || '')}"></label>` : ''}
+        <small class="help">Você usa o PIN para trocar ${temPontos() ? 'os pontos por prêmios' : 'o cartão completo pelo prêmio'}.</small></label>
+      ${temPontos() && prog.indicacao && prog.indicacao.ativo ? `<label class="field"><span>Código de quem indicou (opcional)</span><input class="input mono" id="fcInd" maxlength="12" autocapitalize="characters" autocomplete="off" value="${esc(S.indicacao || '')}"></label>` : ''}
       <label class="check"><input type="checkbox" id="fcAceite"> <span>Li e aceito o ${prog.regulamento ? '<button type="button" class="link" data-fid-ir="regulamento">regulamento</button>' : 'regulamento'} e autorizo o uso dos meus dados (nome, CPF, e-mail e celular) no programa de fidelidade de ${esc(nomeRest)}.</span></label>
       <label class="check"><input type="checkbox" id="fcMkt"> <span>Quero receber novidades e promoções.</span></label>
       <p class="form-error" id="fidErro" role="alert">${esc(S.aviso || '')}</p>
@@ -286,12 +368,15 @@
     const agora = boostAgora();
     const pendRes = c ? c.resgates.filter((x) => x.status === 'pendente') : [];
     const notasPend = c ? c.notas.filter((n) => n.status === 'pendente').length : S.pendentes;
+    const k = S.cartao;
+    const pend = notasPend ? `<p>${notasPend} ${notasPend === 1 ? 'nota em conferência' : 'notas em conferência'}</p>` : '';
     return `<div class="stack-lg fid">
-      <div class="plate fid-saldo"><span class="rivet r1"></span><span class="rivet r2"></span>
+      ${temPontos() ? `<div class="plate fid-saldo"><span class="rivet r1"></span><span class="rivet r2"></span>
         <small>Olá, ${esc(S.nome || '')}</small>
         <b class="fid-pontos">${num(S.pontos)}<span>${Math.abs(S.pontos) === 1 ? 'ponto' : 'pontos'}</span></b>
-        ${notasPend ? `<p>${notasPend} ${notasPend === 1 ? 'nota em conferência' : 'notas em conferência'}</p>` : ''}
-      </div>
+        ${pend}
+      </div>` : `<p class="fid-ola">Olá, <b>${esc(S.nome || '')}</b>!${notasPend ? ` <span class="muted">${notasPend} ${notasPend === 1 ? 'nota em conferência' : 'notas em conferência'}.</span>` : ''}</p>`}
+      ${temSelos() ? `${completosHtml(k)}${cartaoHtml(k && k.aberto)}${programasHtml()}` : ''}
       ${c && c.aniversariante && aniv() ? `<p class="note fid-aniv">${icon('gift')}<span><b>Feliz aniversário!</b> ${esc(anivTexto())}.</span></p>` : ''}
       ${c && !c.nascimento && !anivPulado() ? `<form class="fid-aniv-form" id="fidAnivForm" novalidate>
         <label class="field"><span>Quando é o seu aniversário?${aniv() ? ' No mês dele você ganha presente.' : ''}${c.aniversario_mes ? ` Complete com o dia e o ano (${esc(MESES[c.aniversario_mes - 1])}).` : ''}</span>${campoNasc('fidAnivMes')}</label>
@@ -301,14 +386,15 @@
       ${agora ? `<p class="note fid-agora">${icon('sparkle')}<span><b>Agora vale ${agora.mult === 2 ? 'o dobro' : `${String(agora.mult).replace('.', ',')}x`}!</b>${agora.nome ? ` ${esc(agora.nome)}.` : ''}</span></p>` : ''}
       <div class="fid-acoes">
         <button type="button" class="btn btn-cobalt" data-fid-nota>${icon('receipt')} Ler nota fiscal</button>
-        ${prog.indicacao && prog.indicacao.ativo ? `<button type="button" class="btn btn-line" data-fid-ir="indicar">${icon('users')} Indicar amigos</button>` : ''}
-        ${prog.transferencia && prog.transferencia.ativo ? `<button type="button" class="btn btn-line" data-fid-ir="transferir">${icon('share')} Transferir pontos</button>` : ''}
+        ${temPontos() && prog.indicacao && prog.indicacao.ativo ? `<button type="button" class="btn btn-line" data-fid-ir="indicar">${icon('users')} Indicar amigos</button>` : ''}
+        ${temPontos() && prog.transferencia && prog.transferencia.ativo ? `<button type="button" class="btn btn-line" data-fid-ir="transferir">${icon('share')} Transferir pontos</button>` : ''}
       </div>
       ${eventosHtml()}
       <div id="fidRankSlot">${rankingCartao()}${favoritos()}</div>
       ${pendRes.length ? `<section class="stack"><h3 class="fid-h3">Mostre ao garçom</h3>${pendRes.map((x) => `<div class="fid-cod"><span>${esc(x.premio)}</span><b class="mono">${esc(x.codigo)}</b></div>`).join('')}</section>` : ''}
-      <section class="stack"><h3 class="fid-h3">Troque seus pontos</h3>${premiosHtml(true)}</section>
-      ${c ? extrato(c) : `<button type="button" class="btn btn-line btn-block" data-fid-ir="pin">${icon('lock')} Ver extrato (PIN)</button>`}
+      ${temPontos() ? `<section class="stack"><h3 class="fid-h3">Troque seus pontos</h3>${premiosHtml(true)}</section>` : ''}
+      ${modo() === 'selos' ? `<ul class="fid-boosts">${selosRegras().map((t) => `<li>${icon('check')}<span>${esc(t)}</span></li>`).join('')}</ul>` : ''}
+      ${c ? extrato(c) : `<button type="button" class="btn btn-line btn-block" data-fid-ir="pin">${icon('lock')} Ver ${temPontos() ? 'extrato' : 'notas'} (PIN)</button>`}
       <p class="fid-rodape">${prog.regulamento ? '<button type="button" class="link" data-fid-ir="regulamento">Regulamento</button> · ' : ''}<button type="button" class="link" data-fid-sair>Não é você? Sair</button></p>
     </div>`;
   }
@@ -324,7 +410,7 @@
   }
   const favoritos = () => (S.tela === 'conta' && ranking && ranking.eu && ranking.eu.favoritos && ranking.eu.favoritos.length
     ? `<p class="note fid-fav">${icon('star')}<span>Você mais pede: <b>${ranking.eu.favoritos.map(esc).join(', ')}</b></span></p>` : '');
-  const temRanking = () => ranking && ranking.ativo && ranking.top && ranking.top.length;
+  const temRanking = () => temPontos() && ranking && ranking.ativo && ranking.top && ranking.top.length;
   const inicialDe = (n) => esc((String(n || '?').trim()[0] || '?').toUpperCase());
   function podio(top, grande) {
     // Ordem no pódio: 2º, 1º, 3º.
@@ -374,25 +460,26 @@
     return d.replace(/\s*·?\s*R\$\s?[\d.]+,\d{2}/g, '') || m.tipo;
   }
   const STATUS = { pendente: 'Em conferência', creditada: 'Pontos creditados', recusada: 'Não valeu', estornada: 'Estornada' };
+  const stNota = (n) => (n.status === 'creditada' && n.programa === 'selos' ? '+1 selo' : n.status === 'creditada' && n.pontos != null ? `+${num(n.pontos)}` : STATUS[n.status] || n.status);
   function extrato(c) {
     const notas = c.notas.slice(0, 8);
     const mov = c.movimentos.slice(0, 20);
     return `<section class="stack"><h3 class="fid-h3">Notas</h3>
         ${notas.length ? `<ul class="fid-lista">${notas.map((n) => `<li><span>${dataCurta(n.lida_em)} · nota …${esc(n.chave.slice(-6))}
             ${n.motivo && n.status !== 'creditada' ? `<small>${esc(n.motivo)}</small>` : ''}</span>
-            <b class="fid-st fid-st--${n.status}">${n.status === 'creditada' && n.pontos != null ? `+${num(n.pontos)}` : STATUS[n.status] || n.status}</b></li>`).join('')}</ul>`
+            <b class="fid-st fid-st--${n.status}">${stNota(n)}</b></li>`).join('')}</ul>`
           : '<p class="muted">Nenhuma nota ainda. Leia o QR Code da próxima nota com o seu CPF.</p>'}
       </section>
-      <section class="stack"><h3 class="fid-h3">Extrato</h3>
+      ${!temPontos() ? '' : `<section class="stack"><h3 class="fid-h3">Extrato</h3>
         ${mov.length ? `<ul class="fid-lista">${mov.map((m) => `<li><span>${dataCurta(m.criado_em)} · ${esc(rotuloMov(m))}</span>
             <b class="${m.pontos < 0 ? 'fid-neg' : 'fid-pos'}">${m.pontos > 0 ? '+' : ''}${num(m.pontos)}</b></li>`).join('')}</ul>`
           : '<p class="muted">Sem movimentações ainda.</p>'}
-      </section>`;
+      </section>`}`;
   }
 
   function tPin() {
     return `<form class="stack fid" id="fidPinForm" novalidate>
-      <p>Digite o PIN de 4 números que você criou no cadastro${S.premio ? ' para trocar os pontos' : ''}.</p>
+      <p>Digite o PIN de 4 números que você criou no cadastro${S.depoisPin === 'cartao' ? ' para trocar o cartão pelo prêmio' : S.premio ? ' para trocar os pontos' : ''}.</p>
       <label class="field"><span>PIN</span><input class="input mono pin-input" id="fidPin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="current-password" data-foco></label>
       <p class="form-error" id="fidErro" role="alert">${esc(S.aviso || '')}</p>
       <button type="submit" class="btn btn-cobalt btn-block">Continuar</button>
@@ -404,16 +491,23 @@
   function tResultado() {
     const r = S.resultado || {};
     const ok = r.status === 'creditada';
-    const titulo = ok ? `+${pts(r.pontos || 0)}!` : r.status === 'pendente' ? 'Nota recebida!' : r.status === 'repetida' ? 'Essa nota já foi lida' : 'Esta nota não valeu';
-    const texto = ok ? (r.sefaz ? 'Nota conferida na SEFAZ. Os pontos já estão na sua conta.' : 'Compra conferida. Os pontos já estão na sua conta.')
-      : r.status === 'pendente' ? 'Os pontos entram assim que o restaurante conferir a nota. Você acompanha aqui no extrato.'
-      : r.status === 'repetida' ? `Cada nota vale pontos uma vez só, e esta já está na sua conta. Situação: ${STATUS[r.nota] || r.nota}${r.nota === 'creditada' && r.pontos ? ` (${pts(r.pontos)})` : ''}${r.motivo ? ` (${r.motivo})` : ''}.`
+    const selo = r.programa === 'selos';
+    const k = r.cartao;
+    const titulo = ok ? (selo ? (k && k.completo ? 'Cartão completo!' : '+1 selo!') : `+${pts(r.pontos || 0)}!`)
+      : r.status === 'pendente' ? 'Nota recebida!' : r.status === 'repetida' ? 'Essa nota já foi lida' : 'Esta nota não valeu';
+    const onde = r.sefaz ? 'Nota conferida na SEFAZ.' : 'Compra conferida.';
+    const texto = ok ? (selo
+        ? (k && k.completo ? `${onde} Você completou o cartão e ganhou ${k.premio}. Troque na sua conta.`
+          : k ? `${onde} Agora são ${selos(k.selos)} de ${num(k.total)}. Faltam ${selos(k.total - k.selos)} para ${k.premio}.` : `${onde} O selo já está no seu cartão.`)
+        : `${onde} Os pontos já estão na sua conta.`)
+      : r.status === 'pendente' ? `${ganho()[0].toUpperCase()}${ganho().slice(1)} ${modo() === 'selos' ? 'entra' : 'entram'} assim que o restaurante conferir a nota. Você acompanha aqui na sua conta.`
+      : r.status === 'repetida' ? `Cada nota vale uma vez só, e esta já está na sua conta. Situação: ${r.nota === 'creditada' && selo ? 'selo no cartão' : STATUS[r.nota] || r.nota}${r.nota === 'creditada' && !selo && r.pontos ? ` (${pts(r.pontos)})` : ''}${r.motivo ? ` (${r.motivo})` : ''}.`
       : r.motivo || r.mensagem || 'Não foi possível registrar a nota.';
     return `<div class="stack-lg fid fid-res ${ok || r.status === 'pendente' ? 'is-ok' : 'is-erro'}">
       <span class="fid-res-ico">${icon(ok || r.status === 'pendente' ? 'check' : 'alert')}</span>
       <h3>${esc(titulo)}</h3><p>${esc(texto)}</p>
       <button type="button" class="btn btn-cobalt btn-block" data-fid-nota>${icon('receipt')} Ler outra nota</button>
-      <button type="button" class="btn btn-quiet btn-block" data-fid-ir="conta">Ver meus pontos</button>
+      <button type="button" class="btn btn-quiet btn-block" data-fid-ir="conta">${temPontos() ? 'Ver meus pontos' : 'Ver meu cartão'}</button>
     </div>`;
   }
 
@@ -473,7 +567,7 @@
       <p>Mostre este código ao garçom:</p>
       <b class="fid-codigo mono">${esc(x.codigo)}</b>
       <p class="muted">O código também fica na sua conta até a entrega.</p>
-      <button type="button" class="btn btn-quiet btn-block" data-fid-ir="conta">Ver meus pontos</button>
+      <button type="button" class="btn btn-quiet btn-block" data-fid-ir="conta">${temPontos() ? 'Ver meus pontos' : 'Ver meu cartão'}</button>
     </div>`;
   }
 
@@ -537,7 +631,7 @@
     if (S.token) {
       const c = await store.fidConta(S.token).catch(() => null);
       if (c && c.status === 'ok') {
-        Object.assign(S, { conta: c, nome: c.nome.split(' ')[0], pontos: c.pontos, nivel: c.nivel || null, pendentes: c.notas.filter((n) => n.status === 'pendente').length });
+        Object.assign(S, { conta: c, nome: c.nome.split(' ')[0], pontos: c.pontos, nivel: c.nivel || null, cartao: c.cartao || null, pendentes: c.notas.filter((n) => n.status === 'pendente').length });
         gravar();
         atualizarTile();
         return true;
@@ -547,7 +641,7 @@
     if (!S.cpf) return false;
     const r = await store.fidConsultar(S.cpf).catch(() => null);
     if (r && r.status === 'ok') {
-      Object.assign(S, { nome: r.nome, pontos: r.pontos, nivel: r.nivel || null, pendentes: r.pendentes });
+      Object.assign(S, { nome: r.nome, pontos: r.pontos, nivel: r.nivel || null, cartao: r.cartao || null, pendentes: r.pendentes });
       gravar();
       atualizarTile();
       return true;
@@ -563,7 +657,7 @@
     if (r.status === 'inativo') return erro('O programa está pausado no momento.');
     S.cpf = F.soDigitos(cpf);
     if (r.status === 'novo') return ir('cadastro');
-    Object.assign(S, { nome: r.nome, pontos: r.pontos, nivel: r.nivel || null, pendentes: r.pendentes, token: null, conta: null });
+    Object.assign(S, { nome: r.nome, pontos: r.pontos, nivel: r.nivel || null, cartao: r.cartao || null, pendentes: r.pendentes, token: null, conta: null });
     gravar();
     atualizarTile();
     ir('conta');
@@ -768,6 +862,12 @@
       return ir('resgatar');
     }
     if (t.closest('[data-fid-confirmar]')) return resgatar();
+    const kc = t.closest('[data-fid-cartao]');
+    if (kc) {
+      S.cartaoId = kc.dataset.fidCartao;
+      if (!S.token) { S.depoisPin = 'cartao'; return ir('pin'); }
+      return resgatarCartao();
+    }
     const cp = t.closest('[data-fid-copiar]');
     if (cp) return copyText(cp.dataset.fidCopiar).then((ok) => toast(ok ? 'Convite copiado.' : 'Não foi possível copiar.', { tone: ok ? 'ok' : 'error' }));
     if (t.closest('[data-fid-sair]')) {
@@ -798,6 +898,20 @@
     S.ocupado = false;
     if (r.status === 'sem_sessao') { S.token = null; gravar(); S.depoisPin = 'resgatar'; return ir('pin'); }
     if (r.status !== 'ok') { render(); return toast(r.mensagem || 'Não foi possível trocar agora.', { tone: 'error', ms: 4500 }); }
+    S.resgate = r.resgate;
+    await atualizarConta();
+    ir('codigo');
+  }
+
+  async function resgatarCartao() {
+    if (S.ocupado || !S.cartaoId) return;
+    S.ocupado = true;
+    render();
+    const r = await store.fidResgatarCartao(S.token, S.cartaoId).catch(() => ({ status: 'erro', mensagem: 'Sem conexão. Tente de novo.' }));
+    S.ocupado = false;
+    if (r.status === 'sem_sessao') { S.token = null; gravar(); S.depoisPin = 'cartao'; return ir('pin'); }
+    if (r.status !== 'ok') { render(); return toast(r.mensagem || 'Não foi possível trocar agora.', { tone: 'error', ms: 4500 }); }
+    S.cartaoId = null;
     S.resgate = r.resgate;
     await atualizarConta();
     ir('codigo');
@@ -847,6 +961,7 @@
         const depois = S.depoisPin;
         S.depoisPin = null;
         if (depois === 'torcer') return torcer();
+        if (depois === 'cartao') return resgatarCartao();
         ir(depois === 'resgatar' && S.premio ? 'resgatar' : ['indicar', 'transferir'].includes(depois) ? depois : 'conta');
       } else if (f.id === 'fidAnivForm') {
         const data = $('#fidAnivMes').value;
@@ -912,7 +1027,7 @@
     nomeRest = o.nomeRestaurante || '';
     chave = `fid:${o.slug || 'demo'}`;
     const salvo = ler();
-    Object.assign(S, { cpf: salvo.cpf || null, nome: salvo.nome || null, pontos: salvo.pontos ?? null, nivel: salvo.nivel || null, token: salvo.token || null });
+    Object.assign(S, { cpf: salvo.cpf || null, nome: salvo.nome || null, pontos: salvo.pontos ?? null, nivel: salvo.nivel || null, cartao: salvo.cartao || null, token: salvo.token || null });
     try {
       prog = await store.fidPrograma();
     } catch (e) {
@@ -944,5 +1059,5 @@
 
   // Conta do clube lembrada neste aparelho (o delivery usa para os pontos do pedido).
   const conta = () => (S.cpf ? { cpf: S.cpf, nome: S.nome, token: S.token } : null);
-  window.Fidelidade = { iniciar, tile, abrir, conta, get ativo() { return !!(prog && prog.ativo); } };
+  window.Fidelidade = { iniciar, tile, abrir, conta, get ativo() { return !!(prog && prog.ativo); }, get modo() { return modo(); } };
 })();

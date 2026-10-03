@@ -1025,3 +1025,23 @@
 .hh-ler { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
 .hh-qr--telao svg { width: 120px; height: 120px; }
 .hh-vivo #hhCopo { margin-bottom: 4px; }
+
+/* Fidelidade: tipo do programa, cartão de selos e horários */
+.fp-tipos { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; }
+.fp-tipo { position: relative; display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 14px; background: var(--surface-2);
+  border: 2px solid transparent; cursor: pointer; transition: border-color .15s, background-color .15s; }
+.fp-tipo:hover { border-color: var(--line); }
+.fp-tipo:has(input:checked) { border-color: var(--cobalt); background: var(--cobalt-soft); }
+.fp-tipo:has(input:focus-visible) { outline: 3px solid var(--cobalt-hi); outline-offset: 2px; }
+.fp-tipo input { width: 18px; height: 18px; margin: 2px 0 0; flex: none; accent-color: var(--cobalt); }
+.fp-tipo span { display: grid; gap: 2px; }
+.fp-tipo b { font-size: 14.5px; }
+.fp-tipo small { font-size: 12.5px; color: var(--muted); line-height: 1.35; }
+.fp-janela { display: grid; gap: 10px; margin: 0; padding: 14px; border: 0; border-radius: 14px; background: var(--surface-2); }
+.fp-janela legend { float: left; width: 100%; padding: 0; font-size: 14px; font-weight: 700; }
+.fp-cartao { display: grid; gap: 8px; padding: 12px 14px; border-radius: 14px; background: var(--surface-2); }
+.fp-cartao-dots { display: flex; flex-wrap: wrap; gap: 6px; }
+.fp-cartao-dots i { width: 18px; height: 18px; border-radius: 50%; border: 2px dashed var(--line); }
+.fp-cartao-dots i.is-on { border: 0; background: var(--cobalt); }
+.fp-cartao-dots i:last-child { border-style: solid; border-color: var(--brass); }
+.fp-cartao-dots i.is-on:last-child { background: var(--brass); }
