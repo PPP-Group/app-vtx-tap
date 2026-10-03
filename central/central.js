@@ -105,7 +105,7 @@
     openSheet('sh');
   }
   /* ---------- Planos: serviços, mesas e mensalidade (a mesma tabela de public.plano_preco) ---------- */
-  // Tabela em assets/js/precos.js (a mesma do banco): 2 serviços −10%, 3 −15%, os quatro por R$ 349.
+  // Tabela em assets/js/precos.js (a mesma do banco): 2 serviços −10%, os três por R$ 399 (o sino vem incluso na página).
   const SERVICOS = Precos.SERVICOS.map((s) => [s.id, s.nome, s.preco]);
   const reais = (v) => 'R$ ' + Number(v || 0).toLocaleString('pt-BR');
   const brl = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -692,7 +692,7 @@
     const p = planoOuPadrao(r);
     return `<fieldset class="stack modulos" id="rPlano"><legend>Plano contratado</legend>
       ${r.id && !r.plano ? '<p class="note">Plano ainda não definido: hoje tudo está liberado. Confira os serviços e as mesas e salve.</p>' : ''}
-      ${SERVICOS.map(([k, n, v]) => `<label class="check"><input type="checkbox" data-plano-sv="${k}" ${p.servicos[k] ? 'checked' : ''}> ${n} <span class="muted">· R$ ${v}/mês</span></label>`).join('')}
+      ${SERVICOS.map(([k, n, v]) => `<label class="check"><input type="checkbox" data-plano-sv="${k}" ${p.servicos[k] ? 'checked' : ''}> ${n} <span class="muted">· ${v ? `R$ ${v}/mês` : 'incluso na página'}</span></label>`).join('')}
       ${Precos.ADICIONAIS.map((a) => `<label class="check"><input type="checkbox" data-plano-ad="${a.id}" ${(p.adicionais || {})[a.id] ? 'checked' : ''}> ${esc(a.nome)} <span class="muted">· adicional, ${a.preco ? `R$ ${a.preco}/mês` : 'preço a definir'}</span></label>`).join('')}
       <div class="plano-linha">
         <label class="field"><span>Mesas contratadas</span><input class="input mono" id="rMesas" type="number" min="1" max="500" value="${p.mesas}"></label>
@@ -703,7 +703,7 @@
         <label class="field"><span>Contrato</span><select class="input" id="rContrato">
           <option value="6" ${+p.contrato !== 12 ? 'selected' : ''}>6 meses</option><option value="12" ${+p.contrato === 12 ? 'selected' : ''}>12 meses</option></select></label>
       </div>
-      <p class="plano-preco">Mensalidade: <b id="rPreco">${reais(planoPreco(p))}</b> <span class="muted">(2 serviços −10%, 3 −15%, os quatro: R$ ${Precos.TODOS})</span></p>
+      <p class="plano-preco">Mensalidade: <b id="rPreco">${reais(planoPreco(p))}</b> <span class="muted">(2 serviços −10%, os três: R$ ${Precos.TODOS})</span></p>
     </fieldset>`;
   }
   const planoDoForm = () => ({

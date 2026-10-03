@@ -126,8 +126,8 @@ create table if not exists private.equipe_senha (
 -- ---------------------------------------------------------------------------
 -- Plano contratado: serviços (página + cardápio, chamar o garçom, fidelidade),
 -- mesas, domínio e contrato. Sem plano definido = tudo liberado, como antes.
--- A mensalidade segue a tabela de preços (assets/js/precos.js): 49 + 19 + 199 + 149,
--- 2 serviços −10%, 3 −15% (arredondado para terminar em 9), os quatro por R$ 349.
+-- A mensalidade segue a tabela de preços (assets/js/precos.js): página com sino 79 (o sino vem incluso) + 229 + 169,
+-- 2 serviços −10% (arredondado para terminar em 9), os três por R$ 399.
 -- ---------------------------------------------------------------------------
 alter table public.restaurantes add column if not exists plano jsonb;
 
@@ -168,7 +168,7 @@ $$;
 
 -- Preço mensal de cada adicional (o mesmo de Precos.ADICIONAIS), fora do desconto de combo.
 create or replace function public.adicional_preco(p_adicional text) returns numeric language sql immutable as $$
-  select (case p_adicional when 'prorrogacao' then 69 else 0 end)::numeric;
+  select (case p_adicional when 'prorrogacao' then 89 else 0 end)::numeric;
 $$;
 
 -- Mensalidade do plano, em reais.
@@ -178,13 +178,12 @@ declare
   sv jsonb := coalesce(p -> 'servicos', '{}'::jsonb);
   soma numeric := 0; n int := 0; total numeric;
 begin
-  if coalesce(sv ->> 'pagina', '') = 'true' then soma := soma + 49; n := n + 1; end if;
-  if coalesce(sv ->> 'garcom', '') = 'true' then soma := soma + 19; n := n + 1; end if;
-  if coalesce(sv ->> 'fidelidade', '') = 'true' then soma := soma + 199; n := n + 1; end if;
-  if coalesce(sv ->> 'delivery', '') = 'true' then soma := soma + 149; n := n + 1; end if;
+  -- O sino (garcom) vem incluso na página: quem tem só o sino paga a página.
+  if coalesce(sv ->> 'pagina', '') = 'true' or coalesce(sv ->> 'garcom', '') = 'true' then soma := soma + 79; n := n + 1; end if;
+  if coalesce(sv ->> 'fidelidade', '') = 'true' then soma := soma + 229; n := n + 1; end if;
+  if coalesce(sv ->> 'delivery', '') = 'true' then soma := soma + 169; n := n + 1; end if;
   total := case
-    when n = 4 then 349
-    when n = 3 then least(soma, floor(soma * 0.85 / 10) * 10 + 9)
+    when n = 3 then 399
     when n = 2 then least(soma, floor(soma * 0.90 / 10) * 10 + 9)
     else soma end;
   return total + (case when p ->> 'dominio' in ('proprio', 'registro') then 19 else 0 end)
@@ -227,7 +226,7 @@ create policy "operador ve mudancas" on public.plano_mudancas
 -- Aplica um plano: guarda, sincroniza a fidelidade, corta mesas acima do contratado e registra a mudança.
 -- Implantação por faixa de mesas (a mesma tabela de Precos.IMPLANTACAO): até 20, 21 a 50, 51 ou mais.
 create or replace function public.implantacao_faixa(p_mesas int) returns numeric language sql immutable as $$
-  select (case when coalesce(p_mesas, 0) <= 20 then 590 when p_mesas <= 50 then 890 else 1190 end)::numeric;
+  select (case when coalesce(p_mesas, 0) <= 20 then 690 when p_mesas <= 50 then 990 else 1390 end)::numeric;
 $$;
 
 -- Maior faixa de implantação que o restaurante já pagou: o plano atual e todas as mudanças anteriores.
