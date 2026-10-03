@@ -30,13 +30,17 @@
   function fidTexto(p) {
     const f = p.fid || {};
     const pts = (n) => `${n} ponto${n === 1 ? '' : 's'}`;
-    if (f.situacao === 'creditado') return `+${pts(f.pontos)} entraram na sua conta do clube.`;
-    if (f.situacao === 'nota') return `Os pontos desta compra já entraram pela nota fiscal (+${pts(f.pontos)}).`;
-    if (f.situacao === 'sem_cadastro') return 'Você ainda não é do clube: cadastre-se com o CPF deste pedido e os pontos dele entram na hora.';
-    if (f.situacao === 'fora') return 'Este pedido ficou fora do período do programa de pontos.';
-    if (f.cpf) return 'Os pontos entram sozinhos quando o pedido for entregue. Não precisa ler a nota.';
-    return p.status === 'entregue' ? 'Leia o QR Code da nota fiscal que veio com o pedido. Os pontos entram na sua conta do clube.'
-      : 'Quando o pedido chegar, leia o QR Code da nota fiscal que vem junto. No próximo pedido, informe o CPF e os pontos entram sozinhos.';
+    const m = Fidelidade.modo || 'pontos';
+    const ganho = m === 'selos' ? 'o selo' : m === 'ambos' ? 'os pontos ou o selo' : 'os pontos';
+    const Ganho = ganho[0].toUpperCase() + ganho.slice(1);
+    const entra = m === 'selos' ? 'entra' : 'entram';
+    if (f.situacao === 'creditado') return f.selo ? '+1 selo no seu cartão fidelidade.' : `+${pts(f.pontos)} entraram na sua conta do clube.`;
+    if (f.situacao === 'nota') return f.selo ? 'Esta compra já ganhou o selo pela nota fiscal.' : `Os pontos desta compra já entraram pela nota fiscal (+${pts(f.pontos)}).`;
+    if (f.situacao === 'sem_cadastro') return `Você ainda não é do clube: cadastre-se com o CPF deste pedido e ${ganho} dele ${entra} na hora.`;
+    if (f.situacao === 'fora') return 'Este pedido ficou fora dos horários ou das regras do programa de fidelidade.';
+    if (f.cpf) return `${Ganho} ${entra} sozinho${m === 'selos' ? '' : 's'} quando o pedido for entregue. Não precisa ler a nota.`;
+    return p.status === 'entregue' ? `Leia o QR Code da nota fiscal que veio com o pedido. ${Ganho} ${entra} na sua conta do clube.`
+      : `Quando o pedido chegar, leia o QR Code da nota fiscal que vem junto. No próximo pedido, informe o CPF e ${ganho} ${entra} sozinho${m === 'selos' ? '' : 's'}.`;
   }
   const itens = () => (live ? live.cardapio.map((c) => ({ ...c, itens: c.itens.filter((i) => i.delivery) })).filter((c) => c.itens.length) : []);
   const itemDe = (id) => live.cardapio.flatMap((c) => c.itens).find((i) => i.id === id && i.delivery);
@@ -503,7 +507,9 @@
         <p class="muted">${esc([p.endereco.rua, p.endereco.numero].filter(Boolean).join(', '))}${p.endereco.complemento ? ` · ${esc(p.endereco.complemento)}` : ''} · ${esc(p.endereco.bairro || '')}<br>
           Pagamento: ${esc({ pix: 'Pix', cartao: 'Cartão na entrega', dinheiro: 'Dinheiro' }[p.pagamento.forma] || '')}${p.pagamento.troco ? ` (troco para ${brl(p.pagamento.troco)})` : ''}</p>
       </section>
-      ${temFid() && !cancelado ? `<section class="stack dl-fid"><h3 class="dl-h3">${icon('gift')} ${f.situacao === 'creditado' || f.situacao === 'nota' ? 'Pontos deste pedido' : 'Ganhe pontos com este pedido'}</h3>
+      ${temFid() && !cancelado ? `<section class="stack dl-fid"><h3 class="dl-h3">${icon('gift')} ${Fidelidade.modo === 'selos' ? (f.situacao === 'creditado' || f.situacao === 'nota' ? 'Selo deste pedido' : 'Ganhe um selo com este pedido')
+          : Fidelidade.modo === 'ambos' ? (f.situacao === 'creditado' || f.situacao === 'nota' ? 'Fidelidade deste pedido' : 'Ganhe com este pedido')
+          : f.situacao === 'creditado' || f.situacao === 'nota' ? 'Pontos deste pedido' : 'Ganhe pontos com este pedido'}</h3>
         <p class="muted">${fidTexto(p)}</p>
         ${Fidelidade.tile()}</section>` : ''}
       ${wa ? `<a class="btn btn-line btn-block" href="https://wa.me/55${wa.replace(/^55/, '')}?text=${encodeURIComponent(`Olá! Sobre o pedido #${p.numero}`)}" target="_blank" rel="noopener">${icon('phone')} Falar com o restaurante</a>` : ''}
