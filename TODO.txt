@@ -7,13 +7,11 @@ PRORROGAÇÃO (HAPPY HOUR QUE CRESCE A CADA CHOPP)
     - Android: testar o "Modo garçom (NFC)" encostando na comanda
 
 DOMÍNIO PRÓPRIO DOS RESTAURANTES
-[ ] Subir o roteador de domínios (app "vtx-dominios") no EasyPanel — passo a passo completo em deploy/dominios/PASSO-A-PASSO.md
-    - Criar o app a partir da pasta deploy/dominios (Dockerfile)
-    - Variáveis: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, APP_URL (endereço interno do app, ex.: http://vtx_tap:80)
-    - Bind mount: /etc/easypanel/traefik/config -> /traefik
-    - Conferir no Traefik do servidor os nomes do resolvedor de certificado e dos entrypoints
-      (padrão: letsencrypt, http e https; se forem outros, ajustar CERT_RESOLVER, ENTRY_HTTP e ENTRY_HTTPS)
-    - No log do app deve aparecer "Roteador de domínios: app ..., arquivo ..."
+[ ] Religar o roteador de domínios (app "vtx-dominios", hoje com 0 réplicas) com a versão corrigida — deploy/dominios/PASSO-A-PASSO.md
+    - Antes: gerar chave secreta nova do Supabase e token novo da Hostinger (apareceram em conversa)
+    - Deploy pelo EasyPanel (build do GitHub), depois 1 réplica, e conferir o log do Traefik sem "Error while building configuration"
+    - App no projeto "sites": build path deploy/dominios (Dockerfile), bind mount /etc/easypanel/traefik/config -> /traefik,
+      sem domínio e sem porta; SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (a nova) e APP_URL=http://app-vtx-tap:80; resolvedor letsencrypt
 [ ] Testar com um domínio de verdade (depende do item acima)
     - Painel > Ajustes > Endereço: cadastrar um domínio de teste (ex.: cardapio.seu-dominio.com.br)
     - Criar o CNAME para tap.vortexsystems.tech (no Cloudflare, nuvem cinza)
