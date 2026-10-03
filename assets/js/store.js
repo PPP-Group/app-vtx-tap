@@ -609,6 +609,9 @@
       const k = sl && f.cartoes.find((c) => c.id === sl.cartao_id);
       return { programa: n.programa || 'pontos', cartao: k ? { selos: k.selos, total: k.total, premio: k.premio, completo: ['completo', 'resgatado'].includes(k.status) } : null };
     }
+    // Com os dois programas, cada um só deixa trocar e transferir no próprio horário (public.fid_fora_do_horario).
+    const foraDoHorario = (db, prog) => (fidModo(regras(db)) === 'ambos' && fidProgramaEm(regras(db), new Date()) !== prog
+      ? (prog === 'selos' ? 'O cartão só pode ser trocado no horário dele. Agora ele fica só para ver.' : 'Os pontos só podem ser usados no horário deles. Agora eles ficam só para ver.') : null);
     const horaTxt = (d) => `${String(d.getHours()).padStart(2, '0')}h${String(d.getMinutes()).padStart(2, '0')}`;
     function creditar(db, n, valor, emitida, por) {
       if (!n || n.status !== 'pendente') return null;
@@ -1475,6 +1478,7 @@
         const cpf = sessaoDe(db, token);
         if (!cpf) return { status: 'sem_sessao' };
         if (!noAr(db)) return { status: 'inativo' };
+        if (foraDoHorario(db, 'pontos')) return { status: 'erro', mensagem: foraDoHorario(db, 'pontos') };
         const f = F(db);
         const p = f.premios.find((x) => x.id === premioId && x.ativo);
         if (!p) return { status: 'erro', mensagem: 'Este prêmio não está mais disponível.' };
@@ -1512,6 +1516,7 @@
         const cpf = sessaoDe(db, token);
         if (!cpf) return { status: 'sem_sessao' };
         if (!noAr(db)) return { status: 'inativo' };
+        if (foraDoHorario(db, 'selos')) return { status: 'erro', mensagem: foraDoHorario(db, 'selos') };
         const f = cartoes(db);
         const k = f.cartoes.find((c) => c.id === cartaoId && c.cpf === cpf);
         if (!k || k.status !== 'completo') return { status: 'erro', mensagem: 'Este cartão não está completo ou já foi trocado.' };
@@ -1556,6 +1561,7 @@
         const cpf = sessaoDe(db, token);
         if (!cpf) return { status: 'sem_sessao' };
         if (!noAr(db)) return { status: 'inativo' };
+        if (foraDoHorario(db, 'pontos')) return { status: 'erro', mensagem: foraDoHorario(db, 'pontos') };
         const t = regras(db).transferencia || {};
         if (!t.ativo) return { status: 'erro', mensagem: 'A transferência de pontos está desligada neste restaurante.' };
         const min = Math.max(+t.minimo || 1, 1);

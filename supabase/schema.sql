@@ -1957,6 +1957,9 @@ begin
    where s.token_hash = public.hash_token(p_token) and s.criado_em > now() - interval '180 days';
   if v_r is null then return jsonb_build_object('status', 'sem_sessao'); end if;
   if not public.fid_no_ar(v_r) then return jsonb_build_object('status', 'inativo'); end if;
+  if public.fid_fora_do_horario(v_r, 'pontos') is not null then
+    return jsonb_build_object('status', 'erro', 'mensagem', public.fid_fora_do_horario(v_r, 'pontos'));
+  end if;
   select * into p from public.fid_premios where id = p_premio and restaurante_id = v_r and ativo;
   if not found then return jsonb_build_object('status', 'erro', 'mensagem', 'Este prêmio não está mais disponível.'); end if;
   perform public.fid_vencer(v_r, v_cpf);
@@ -3575,6 +3578,9 @@ begin
    where s.token_hash = public.hash_token(p_token) and s.criado_em > now() - interval '180 days';
   if v_r is null then return jsonb_build_object('status', 'sem_sessao'); end if;
   if not public.fid_no_ar(v_r) then return jsonb_build_object('status', 'inativo'); end if;
+  if public.fid_fora_do_horario(v_r, 'pontos') is not null then
+    return jsonb_build_object('status', 'erro', 'mensagem', public.fid_fora_do_horario(v_r, 'pontos'));
+  end if;
   c := public.fid_cfg(v_r);
   if coalesce(c -> 'transferencia' ->> 'ativo', '') <> 'true' then
     return jsonb_build_object('status', 'erro', 'mensagem', 'A transferência de pontos está desligada neste restaurante.');
@@ -4339,6 +4345,15 @@ begin
   return null;
 end $$;
 
+-- Com os dois programas, cada um só deixa trocar e transferir no próprio horário (fora dele, o cliente só vê).
+-- Devolve o motivo, ou null se pode.
+create or replace function public.fid_fora_do_horario(p_restaurante uuid, p_prog text) returns text
+language sql stable security definer set search_path = public as $$
+  select case when public.fid_modo(p_restaurante) = 'ambos' and public.fid_programa_em(p_restaurante, now()) is distinct from p_prog
+    then case when p_prog = 'selos' then 'O cartão só pode ser trocado no horário dele. Agora ele fica só para ver.'
+              else 'Os pontos só podem ser usados no horário deles. Agora eles ficam só para ver.' end end;
+$$;
+
 -- Dá um selo pela compra: valor mínimo, 1 por dia (se ligado) e cartão vencido começa outro.
 -- Devolve { ok, motivo } ou { ok, cartao, selos, total, completo, premio }.
 create or replace function public.fid_carimbar(p_restaurante uuid, p_cpf text, p_valor numeric, p_quando timestamptz,
@@ -4440,6 +4455,9 @@ begin
    where s.token_hash = public.hash_token(p_token) and s.criado_em > now() - interval '180 days';
   if v_r is null then return jsonb_build_object('status', 'sem_sessao'); end if;
   if not public.fid_no_ar(v_r) then return jsonb_build_object('status', 'inativo'); end if;
+  if public.fid_fora_do_horario(v_r, 'selos') is not null then
+    return jsonb_build_object('status', 'erro', 'mensagem', public.fid_fora_do_horario(v_r, 'selos'));
+  end if;
   select * into k from public.fid_cartoes where id = p_cartao and restaurante_id = v_r and cpf = v_cpf for update;
   if not found or k.status <> 'completo' then
     return jsonb_build_object('status', 'erro', 'mensagem', 'Este cartão não está completo ou já foi trocado.');
@@ -4475,7 +4493,7 @@ begin
     'public.fid_modo(uuid)', 'public.fid_selos_cfg(uuid)', 'public.fid_janela_limpa(jsonb)',
     'public.fid_na_janela(jsonb, timestamp)', 'public.fid_programa_em(uuid, timestamptz)',
     'public.fid_carimbar(uuid, text, numeric, timestamptz, text, uuid, text, text)', 'public.fid_descarimbar(text)',
-    'public.fid_cartao_resumo(uuid, text)', 'public.fid_nota_extra(text)'] loop
+    'public.fid_cartao_resumo(uuid, text)', 'public.fid_nota_extra(text)', 'public.fid_fora_do_horario(uuid, text)'] loop
     execute format('revoke execute on function %s from public, anon, authenticated', f);
   end loop;
   execute 'revoke execute on function public.fid_resgatar_cartao(uuid, uuid) from public';
