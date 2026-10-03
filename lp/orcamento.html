@@ -318,7 +318,7 @@
             <label class="placa-op"><input type="radio" name="placa" id="plBasica" value="basica">
               <span class="placa-lados"><img class="placa-frente" src="/assets/img/placas/placa-personalizada-basica.webp?v=4" width="1200" height="757" alt="Frente da plaquinha personalizada, deitada: o nome do restaurante, o QR Code com o espaço da logo dele no meio e a faixa na cor do restaurante"><img class="placa-verso" src="/assets/img/placas/placa-personalizada-basica-verso.webp?v=4" width="1200" height="757" alt="Verso da plaquinha personalizada, em pé: o nome do restaurante, o QR Code e a faixa na cor dele"></span>
               <span class="op-top"><b>Personalizada simples</b><span class="preco" id="precoBasica"></span></span>
-              <small>Você envia a logo: ela vai no meio do QR, o nome do restaurante vai escrito e a faixa sai na cor dele, frente e verso. R$ 10 a mais por plaquinha.</small></label>
+              <small>Você envia a logo: ela vai no meio do QR, o nome do restaurante vai escrito e a faixa sai na cor dele, frente e verso. R$ 39,90 a partir de 1 plaquinha, com desconto por quantidade.</small></label>
             <label class="placa-op placa-op--larga"><input type="radio" name="placa" id="plDemanda" value="demanda">
               <span class="placa-lados"><img class="placa-frente" src="/assets/img/placas/placa-sob-demanda.webp?v=3" width="1200" height="757" alt="Exemplo de plaquinha sob demanda, frente deitada: arte própria de um restaurante em verde e dourado, com o QR Code numa placa creme"><img class="placa-verso" src="/assets/img/placas/placa-sob-demanda-verso.webp?v=3" width="1200" height="757" alt="Exemplo de plaquinha sob demanda, verso em pé, com a mesma arte"></span>
               <span class="op-top"><b>Personalizada sob demanda</b><span class="preco">Sob consulta</span></span>
@@ -484,14 +484,13 @@
     $('economiaTodos').textContent = `Economia de ${brl(todos.economia)}/mês`;
     // Plaquinha padrão: preço por unidade conforme a quantidade.
     const FAIXAS = [
-      { de: 1, ate: 19, valor: 19.9 },
-      { de: 20, ate: 49, valor: 17.9 },
-      { de: 50, ate: 99, valor: 15.9 },
-      { de: 100, ate: Infinity, valor: 14.9 },
+      { de: 1, ate: 19, valor: 19.9, basica: 39.9 },
+      { de: 20, ate: 49, valor: 17.9, basica: 35.9 },
+      { de: 50, ate: 99, valor: 15.9, basica: 31.9 },
+      { de: 100, ate: Infinity, valor: 14.9, basica: 29.9 },
     ];
-    const precoPlaca = (q) => FAIXAS.find((f) => q >= f.de && q <= f.ate).valor;
-    // Personalizada simples: o preço da padrão + R$ 10 por plaquinha (R$ 29,90 a R$ 24,90). Sob demanda: orçamento.
-    const PLACA_BASICA = 10;
+    const faixaPlaca = (q) => FAIXAS.find((f) => q >= f.de && q <= f.ate);
+    // Personalizada simples: R$ 39,90 a R$ 29,90, com a mesma queda percentual da padrão. Sob demanda: orçamento.
     function implantacao(m) {
       if (m <= 20) return { valor: 590, porte: 'até 20 mesas' };
       if (m <= 50) return { valor: 890, porte: '21 a 50 mesas' };
@@ -500,7 +499,7 @@
     const linha = (dt, dd, cls = '') => `<div class="linha ${cls}"><dt>${dt}</dt><dd>${dd}</dd></div>`;
     const faixaTxt = (f) => (f.ate === Infinity ? `${f.de} ou mais` : `${f.de} a ${f.ate}`);
 
-    $('tabPlacas').innerHTML = FAIXAS.map((f) => `<tr><td>${faixaTxt(f)} plaquinhas</td><td class="v">${brl(f.valor)}</td><td class="v">${brl(f.valor + PLACA_BASICA)}</td></tr>`).join('')
+    $('tabPlacas').innerHTML = FAIXAS.map((f) => `<tr><td>${faixaTxt(f)} plaquinhas</td><td class="v">${brl(f.valor)}</td><td class="v">${brl(f.basica)}</td></tr>`).join('')
       + '<tr><td>Personalizada sob demanda<small>Arte do restaurante, avaliada pelo nosso time.</small></td><td class="v" colspan="2">Sob consulta</td></tr>';
 
     let placasManual = false;
@@ -513,11 +512,12 @@
       const meses = +document.querySelector('input[name="contrato"]:checked').value;
       const placa = document.querySelector('input[name="placa"]:checked').value;
       const imp = implantacao(m);
-      const pu = precoPlaca(q);
+      const fx = faixaPlaca(q);
+      const pu = fx.valor;
       $('porte').textContent = `Implantação: ${imp.porte}`;
       $('precoPadrao').textContent = `${brl(pu)} cada`;
-      $('precoBasica').textContent = `${brl(pu + PLACA_BASICA)} cada`;
-      const puPlaca = placa === 'basica' ? pu + PLACA_BASICA : pu;
+      $('precoBasica').textContent = `${brl(fx.basica)} cada`;
+      const puPlaca = placa === 'basica' ? fx.basica : pu;
 
       // Pagamento único
       const u = [];
