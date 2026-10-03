@@ -33,6 +33,35 @@
   const cfgSelos = () => (prog && prog.selos) || {};
   const nomeProg = () => (modo() === 'selos' ? cfgSelos().nome || 'Cartão fidelidade' : prog.nome);
   const selos = (n) => `${num(n)} ${n === 1 ? 'selo' : 'selos'}`;
+  /* Os dois programas: a conta abre no que vale agora; o outro fica só para ver (sem trocar nem transferir). */
+  const regrasHorario = () => ({ modo: 'ambos', horarios: prog.horarios || {} });
+  // Programa que vale agora: 'pontos', 'selos' ou null (fora dos horários).
+  const agoraProg = () => (modo() !== 'ambos' ? modo() : F.programaEm(regrasHorario(), new Date()));
+  // Fora de todos os horários: o próximo que vai abrir (procura na semana, de 5 em 5 minutos).
+  function proximoProg() {
+    const t0 = Date.now();
+    for (let m = 5; m <= 7 * 24 * 60; m += 5) {
+      const p = F.programaEm(regrasHorario(), new Date(t0 + m * 60000));
+      if (p) return p;
+    }
+    return 'pontos';
+  }
+  const vista = () => (modo() !== 'ambos' ? modo() : S.vista || agoraProg() || proximoProg());
+  const vendoPontos = () => vista() === 'pontos';
+  const vendoSelos = () => vista() === 'selos';
+  // Pode trocar, transferir e indicar só no programa do horário atual.
+  const podePontos = () => agoraProg() === 'pontos' || modo() === 'pontos';
+  const podeSelos = () => agoraProg() === 'selos' || modo() === 'selos';
+  function vistaHtml() {
+    if (modo() !== 'ambos') return '';
+    const agora = agoraProg();
+    const v = vista();
+    const nome = { selos: cfgSelos().nome || 'Cartão fidelidade', pontos: prog.nome };
+    const aba = (k) => `<button type="button" role="tab" aria-selected="${v === k}" data-fid-vista="${k}"><span class="fid-vista-nome">${esc(nome[k])}</span>${agora === k ? '<span class="fid-agora-tag">agora</span>' : ''}</button>`;
+    const soVer = v !== agora;
+    return `<div class="seg fid-vista" role="tablist" aria-label="Programa">${aba('selos')}${aba('pontos')}</div>
+      ${soVer ? `<p class="note fid-so-ver">${icon('lock')}<span><b>Só para ver agora.</b> ${esc(nome[v])} vale ${esc(horarioTexto(prog.horarios && prog.horarios[v]))}.${agora ? ` Agora vale o ${esc(nome[agora])}.` : ' Agora nenhum programa está valendo.'}</span></p>` : ''}`;
+  }
   // O que entra quando a nota é conferida: "os pontos", "o selo" ou "os pontos ou o selo".
   const ganho = () => (modo() === 'ambos' ? 'os pontos ou o selo' : temSelos() ? 'o selo' : 'os pontos');
 
@@ -131,7 +160,8 @@
   // Cartões completos esperando a troca.
   const completosHtml = (k) => ((k && k.completos) || []).map((x) => `<div class="fid-completo">
       ${cartaoHtml(x, { completo: true })}
-      <button type="button" class="btn btn-cobalt btn-block" data-fid-cartao="${esc(x.id)}" ${S.ocupado ? 'disabled' : ''}>${icon('gift')} Trocar por ${esc(x.premio)}</button>
+      ${podeSelos() ? `<button type="button" class="btn btn-cobalt btn-block" data-fid-cartao="${esc(x.id)}" ${S.ocupado ? 'disabled' : ''}>${icon('gift')} Trocar por ${esc(x.premio)}</button>`
+        : `<small class="muted fid-so-ver-txt">${icon('lock')} Dá para trocar no horário do cartão.</small>`}
     </div>`).join('');
 
   /* ---------- Atalho na página ---------- */
@@ -139,12 +169,12 @@
     if (!prog || !prog.ativo) return '';
     const agora = boostAgora();
     const conhecido = S.cpf && S.pontos != null;
-    if (!temPontos()) {
+    if (!temPontos() || (modo() === 'ambos' && agoraProg() === 'selos')) {
       const c = cfgSelos();
       const k = S.cartao && S.cartao.aberto;
       const prontos = S.cartao && S.cartao.completos ? S.cartao.completos.length : 0;
       return `<button type="button" class="tile tile--fid" data-fid-abrir>
-      <span class="tile-fid-top">${icon('gift')} ${esc(nomeProg())}</span>
+      <span class="tile-fid-top">${icon('gift')} ${esc(c.nome || nomeProg())}${modo() === 'ambos' ? ' <span class="fid-agora-tag">agora</span>' : ''}</span>
       <div><h3>${conhecido ? (prontos ? 'Cartão completo!' : `${num(k ? k.selos : 0)} de ${num(k ? k.total : c.total)} selos`) : 'Ganhe selos'}</h3>
         <p>${conhecido ? (prontos ? `Olá, ${esc(S.nome || '')}! Troque por ${esc(c.premio)}.` : `Olá, ${esc(S.nome || '')}! Leia a nota e ganhe mais um selo.`)
           : `A cada visita, 1 selo. Com ${num(c.total)}, ${esc(c.premio)}.`}</p></div>
@@ -371,29 +401,30 @@
     const k = S.cartao;
     const pend = notasPend ? `<p>${notasPend} ${notasPend === 1 ? 'nota em conferência' : 'notas em conferência'}</p>` : '';
     return `<div class="stack-lg fid">
-      ${temPontos() ? `<div class="plate fid-saldo"><span class="rivet r1"></span><span class="rivet r2"></span>
+      ${vistaHtml()}
+      ${vendoPontos() ? `<div class="plate fid-saldo"><span class="rivet r1"></span><span class="rivet r2"></span>
         <small>Olá, ${esc(S.nome || '')}</small>
         <b class="fid-pontos">${num(S.pontos)}<span>${Math.abs(S.pontos) === 1 ? 'ponto' : 'pontos'}</span></b>
         ${pend}
       </div>` : `<p class="fid-ola">Olá, <b>${esc(S.nome || '')}</b>!${notasPend ? ` <span class="muted">${notasPend} ${notasPend === 1 ? 'nota em conferência' : 'notas em conferência'}.</span>` : ''}</p>`}
-      ${temSelos() ? `${completosHtml(k)}${cartaoHtml(k && k.aberto)}${programasHtml()}` : ''}
-      ${c && c.aniversariante && aniv() ? `<p class="note fid-aniv">${icon('gift')}<span><b>Feliz aniversário!</b> ${esc(anivTexto())}.</span></p>` : ''}
-      ${c && !c.nascimento && !anivPulado() ? `<form class="fid-aniv-form" id="fidAnivForm" novalidate>
+      ${vendoSelos() ? `${completosHtml(k)}${cartaoHtml(k && k.aberto)}` : ''}
+      ${vendoPontos() && c && c.aniversariante && aniv() ? `<p class="note fid-aniv">${icon('gift')}<span><b>Feliz aniversário!</b> ${esc(anivTexto())}.</span></p>` : ''}
+      ${vendoPontos() && c && !c.nascimento && !anivPulado() ? `<form class="fid-aniv-form" id="fidAnivForm" novalidate>
         <label class="field"><span>Quando é o seu aniversário?${aniv() ? ' No mês dele você ganha presente.' : ''}${c.aniversario_mes ? ` Complete com o dia e o ano (${esc(MESES[c.aniversario_mes - 1])}).` : ''}</span>${campoNasc('fidAnivMes')}</label>
         <div class="fid-aniv-acoes"><button type="submit" class="btn btn-line btn-sm">Salvar</button><button type="button" class="link" data-fid-aniv-pular>Agora não</button></div></form>` : ''}
-      ${c && c.a_vencer ? `<p class="note fid-vence">${icon('clock')}<span><b>${pts(c.a_vencer.pontos)}</b> ${c.a_vencer.pontos === 1 ? 'vence' : 'vencem'} em ${dataCurta(c.a_vencer.em)}. Troque antes!</span></p>` : ''}
-      ${meuNivel()}
-      ${agora ? `<p class="note fid-agora">${icon('sparkle')}<span><b>Agora vale ${agora.mult === 2 ? 'o dobro' : `${String(agora.mult).replace('.', ',')}x`}!</b>${agora.nome ? ` ${esc(agora.nome)}.` : ''}</span></p>` : ''}
+      ${vendoPontos() && c && c.a_vencer ? `<p class="note fid-vence">${icon('clock')}<span><b>${pts(c.a_vencer.pontos)}</b> ${c.a_vencer.pontos === 1 ? 'vence' : 'vencem'} em ${dataCurta(c.a_vencer.em)}. Troque antes!</span></p>` : ''}
+      ${vendoPontos() ? meuNivel() : ''}
+      ${agora && vendoPontos() ? `<p class="note fid-agora">${icon('sparkle')}<span><b>Agora vale ${agora.mult === 2 ? 'o dobro' : `${String(agora.mult).replace('.', ',')}x`}!</b>${agora.nome ? ` ${esc(agora.nome)}.` : ''}</span></p>` : ''}
       <div class="fid-acoes">
         <button type="button" class="btn btn-cobalt" data-fid-nota>${icon('receipt')} Ler nota fiscal</button>
-        ${temPontos() && prog.indicacao && prog.indicacao.ativo ? `<button type="button" class="btn btn-line" data-fid-ir="indicar">${icon('users')} Indicar amigos</button>` : ''}
-        ${temPontos() && prog.transferencia && prog.transferencia.ativo ? `<button type="button" class="btn btn-line" data-fid-ir="transferir">${icon('share')} Transferir pontos</button>` : ''}
+        ${vendoPontos() && podePontos() && prog.indicacao && prog.indicacao.ativo ? `<button type="button" class="btn btn-line" data-fid-ir="indicar">${icon('users')} Indicar amigos</button>` : ''}
+        ${vendoPontos() && podePontos() && prog.transferencia && prog.transferencia.ativo ? `<button type="button" class="btn btn-line" data-fid-ir="transferir">${icon('share')} Transferir pontos</button>` : ''}
       </div>
-      ${eventosHtml()}
-      <div id="fidRankSlot">${rankingCartao()}${favoritos()}</div>
+      ${vendoPontos() ? eventosHtml() : ''}
+      <div id="fidRankSlot">${vendoPontos() ? `${rankingCartao()}${favoritos()}` : ''}</div>
       ${pendRes.length ? `<section class="stack"><h3 class="fid-h3">Mostre ao garçom</h3>${pendRes.map((x) => `<div class="fid-cod"><span>${esc(x.premio)}</span><b class="mono">${esc(x.codigo)}</b></div>`).join('')}</section>` : ''}
-      ${temPontos() ? `<section class="stack"><h3 class="fid-h3">Troque seus pontos</h3>${premiosHtml(true)}</section>` : ''}
-      ${modo() === 'selos' ? `<ul class="fid-boosts">${selosRegras().map((t) => `<li>${icon('check')}<span>${esc(t)}</span></li>`).join('')}</ul>` : ''}
+      ${vendoPontos() ? `<section class="stack"><h3 class="fid-h3">${podePontos() ? 'Troque seus pontos' : 'Prêmios'}</h3>${premiosHtml(podePontos())}</section>` : ''}
+      ${vendoSelos() ? `<ul class="fid-boosts">${selosRegras().map((t) => `<li>${icon('check')}<span>${esc(t)}</span></li>`).join('')}</ul>` : ''}
       ${c ? extrato(c) : `<button type="button" class="btn btn-line btn-block" data-fid-ir="pin">${icon('lock')} Ver ${temPontos() ? 'extrato' : 'notas'} (PIN)</button>`}
       <p class="fid-rodape">${prog.regulamento ? '<button type="button" class="link" data-fid-ir="regulamento">Regulamento</button> · ' : ''}<button type="button" class="link" data-fid-sair>Não é você? Sair</button></p>
     </div>`;
@@ -470,7 +501,7 @@
             <b class="fid-st fid-st--${n.status}">${stNota(n)}</b></li>`).join('')}</ul>`
           : '<p class="muted">Nenhuma nota ainda. Leia o QR Code da próxima nota com o seu CPF.</p>'}
       </section>
-      ${!temPontos() ? '' : `<section class="stack"><h3 class="fid-h3">Extrato</h3>
+      ${!vendoPontos() ? '' : `<section class="stack"><h3 class="fid-h3">Extrato</h3>
         ${mov.length ? `<ul class="fid-lista">${mov.map((m) => `<li><span>${dataCurta(m.criado_em)} · ${esc(rotuloMov(m))}</span>
             <b class="${m.pontos < 0 ? 'fid-neg' : 'fid-pos'}">${m.pontos > 0 ? '+' : ''}${num(m.pontos)}</b></li>`).join('')}</ul>`
           : '<p class="muted">Sem movimentações ainda.</p>'}
@@ -862,6 +893,8 @@
       return ir('resgatar');
     }
     if (t.closest('[data-fid-confirmar]')) return resgatar();
+    const vb = t.closest('[data-fid-vista]');
+    if (vb) { S.vista = vb.dataset.fidVista; return render(); }
     const kc = t.closest('[data-fid-cartao]');
     if (kc) {
       S.cartaoId = kc.dataset.fidCartao;
@@ -1011,6 +1044,7 @@
 
   async function abrir() {
     if (!prog || !prog.ativo) return;
+    S.vista = null;
     S.tela = S.cpf ? 'conta' : 'inicio';
     render();
     openSheet('sh-fid');
