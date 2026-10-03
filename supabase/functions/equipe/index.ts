@@ -116,13 +116,23 @@ Deno.serve(async (req) => {
       if (!PIN_OK.test(pin)) return erro('O PIN tem de 4 a 8 números.');
       const livre = (await podeTentar(sb, `entrar:${ip}`, 10, 15)) && (await podeTentar(sb, `entrar:${rest}`, 60, 15));
       if (!livre) return erro('Muitas tentativas. Aguarde 15 minutos e tente de novo.', 429);
+      // Aparelho confiável: de um aparelho novo, o PIN só vale junto com o código da equipe.
+      const confiavel = await rpc<boolean>(sb, 'equipe_aparelho_ok', { p_restaurante: rest, p_token: String(body.aparelho || '') });
+      if (!confiavel) {
+        const senha = String(body.senhaEquipe || '');
+        if (!senha) return json({ erro: 'Primeira vez neste aparelho: digite também o código da equipe.', aparelhoNovo: true }, 403);
+        if ((await rpc<string>(sb, 'equipe_conferir_senha', { p_restaurante: rest, p_senha: senha })) !== 'ok') {
+          return json({ erro: 'Código da equipe incorreto. Peça ao administrador.', aparelhoNovo: true }, 403);
+        }
+      }
       const hmac = await rpc<string>(sb, 'equipe_pin_hmac', { p_restaurante: rest, p_pin: pin });
       const { data: m } = await sb.from('equipe_membros').select('nome, user_id, admin').eq('restaurante_id', rest).eq('pin_hmac', hmac).maybeSingle();
       if (!m) return erro('PIN não encontrado. Confira o número ou peça ao administrador.', 401);
       const { data: u, error } = await sb.auth.admin.getUserById(m.user_id);
       if (error || !u.user?.email) throw error || new Error('Usuário sem e-mail');
       await rpc(sb, 'equipe_limpar_tentativas', { p_chave: `entrar:${ip}` });
-      return json({ nome: m.nome, admin: !!m.admin, sessao: await abrirSessao(sb, u.user.email) });
+      const aparelho = confiavel ? null : await rpc<string>(sb, 'equipe_aparelho_novo', { p_restaurante: rest });
+      return json({ nome: m.nome, admin: !!m.admin, aparelho, sessao: await abrirSessao(sb, u.user.email) });
     }
 
     // Cadastro com o código da equipe (nome + código + PIN próprio). A primeira conta do restaurante vira
@@ -144,7 +154,8 @@ Deno.serve(async (req) => {
       const primeira = (count || 0) === 0;
       const r = await criarMembro(sb, rest, nome, pin, primeira);
       if (r.erro) return erro(r.erro, 409);
-      return json({ nome, admin: primeira, primeiraConta: primeira, sessao: await abrirSessao(sb, r.email!) });
+      return json({ nome, admin: primeira, primeiraConta: primeira, aparelho: await rpc<string>(sb, 'equipe_aparelho_novo', { p_restaurante: rest }),
+        sessao: await abrirSessao(sb, r.email!) });
     }
 
     // Esqueci o PIN: código no e-mail de recuperação. A resposta é a mesma com ou sem e-mail cadastrado.
@@ -184,7 +195,9 @@ Deno.serve(async (req) => {
       const { error } = await sb.from('equipe_membros').update({ pin_hmac: hmac }).eq('id', m.id);
       if (error) throw error;
       const { data: u } = await sb.auth.admin.getUserById(m.user_id);
-      return json({ nome: m.nome, admin: !!m.admin, sessao: await abrirSessao(sb, u.user!.email!) });
+      // O código do e-mail prova quem é: este aparelho passa a ser confiável.
+      return json({ nome: m.nome, admin: !!m.admin, aparelho: await rpc<string>(sb, 'equipe_aparelho_novo', { p_restaurante: rest }),
+        sessao: await abrirSessao(sb, u.user!.email!) });
     }
 
     // Central da Vortex (só operadores): ver a equipe, trocar o PIN e dar acesso de administrador.
@@ -290,6 +303,12 @@ Deno.serve(async (req) => {
       if (!quer && m.admin && (await qtdAdmins(sb, rest)) <= 1) return erro('O restaurante precisa de pelo menos um administrador.');
       const { error } = await sb.from('equipe_membros').update({ admin: quer }).eq('id', m.id);
       if (error) throw error;
+      return json({ ok: true });
+    }
+
+    // Desconectar todos os aparelhos (ex.: celular perdido): cada um volta a pedir o código da equipe.
+    if (acao === 'esquecer_aparelhos') {
+      await rpc(sb, 'equipe_aparelhos_esquecer', { p_restaurante: rest });
       return json({ ok: true });
     }
 

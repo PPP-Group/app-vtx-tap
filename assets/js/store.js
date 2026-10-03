@@ -3,7 +3,7 @@
  *
  *   init()                       → prepara conexão
  *   subscribe(fn)                → fn() a cada mudança em chamados/comentários
- *   watchCall(id, fn)            → fn(chamado) quando um chamado específico muda
+ *   watchCall(id, fn, token)     → fn(chamado) quando um chamado específico muda (token da sessão da mesa)
  *   listCalls({ desde })         → chamados criados depois de `desde` (Date)
  *   getCall(id) / updateCall(id, patch)          (equipe)
  *
@@ -2133,6 +2133,7 @@
       async estado() {
         return { temSenha: !!equipe().senhaHash, temEquipe: equipe().membros.length > 0 };
       },
+      async esquecerAparelhos() { soAdmin(); },
       async entrar(pin) {
         if (!/^\d{4,8}$/.test(pin)) falha('O PIN tem de 4 a 8 números.');
         const h = await hash('pin:' + pin);
@@ -2248,11 +2249,13 @@
     let sb;
     let rid = null;
 
-    const loadScript = (src) =>
+    const loadScript = (src, integrity) =>
       new Promise((ok, fail) => {
         if (window.supabase) return ok();
         const s = document.createElement('script');
         s.src = src;
+        // Versão fixa com conferência de integridade: o arquivo do CDN não pode ser trocado no caminho.
+        if (integrity) { s.integrity = integrity; s.crossOrigin = 'anonymous'; }
         s.onload = ok;
         s.onerror = () => fail(new Error('Falha ao carregar o Supabase'));
         document.head.appendChild(s);
@@ -2265,7 +2268,7 @@
     return {
       mode: 'supabase',
       async init({ realtimeAll = false } = {}) {
-        await loadScript('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js');
+        await loadScript('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js', 'sha384-WgXwGL6fUsYJWNaKJgVbrJKGRQwc1vieh2oy4kw9nXqpNDz3tdSsqEYUgeHD/NuF');
         sb = window.supabase.createClient(supabaseUrl, supabaseAnonKey);
         let r = null;
         // Domínio próprio (ex.: cardapio.seurestaurante.com.br): o restaurante sai do endereço cadastrado.
@@ -2295,13 +2298,24 @@
         novosClientes.add(fn);
         return () => novosClientes.delete(fn);
       },
-      watchCall(id, fn) {
-        this.getCall(id).then(fn).catch(() => fn(null));
-        const ch = sb
-          .channel('chamado-' + id)
-          .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chamados', filter: 'id=eq.' + id }, (p) => fn(p.new))
-          .subscribe();
-        return () => sb.removeChannel(ch);
+      // Cliente acompanha o próprio chamado pelo token da sessão (public.chamado_status): sem login, ninguém lê
+      // os chamados dos outros. Consulta a cada 4 s com a página aberta; para quando o chamado termina.
+      watchCall(id, fn, token) {
+        let timer = 0;
+        let parado = false;
+        const ver = async () => {
+          if (parado) return;
+          let c = null;
+          try { c = token ? must(await sb.rpc('chamado_status', { p_token: token, p_id: id })) : null; } catch { c = undefined; }
+          if (parado) return;
+          if (c !== undefined) fn(c);
+          if (c && ['resolvido', 'cancelado'].includes(c.status)) return;
+          timer = setTimeout(ver, document.hidden ? 15000 : 4000);
+        };
+        const aoVoltar = () => { if (!document.hidden) { clearTimeout(timer); ver(); } };
+        document.addEventListener('visibilitychange', aoVoltar);
+        ver();
+        return () => { parado = true; clearTimeout(timer); document.removeEventListener('visibilitychange', aoVoltar); };
       },
       async listCalls({ desde } = {}) {
         let q = sb.from('chamados').select('*').eq('restaurante_id', rid).order('criado_em', { ascending: true });
@@ -2726,15 +2740,29 @@
         async estado() {
           return this.chamar('estado');
         },
-        async entrar(pin) {
-          const r = await this.chamar('entrar', { pin });
+        // Aparelho confiável: guardado neste navegador, por restaurante. Sem ele, o PIN vai junto com o código da equipe.
+        aparelho() { try { return localStorage.getItem('vtx-aparelho:' + rid) || ''; } catch { return ''; } },
+        guardarAparelho(t) { if (t) try { localStorage.setItem('vtx-aparelho:' + rid, t); } catch {} },
+        async entrar(pin, senhaEquipe) {
+          let r;
+          try {
+            r = await this.chamar('entrar', { pin, aparelho: this.aparelho(), senhaEquipe: senhaEquipe || undefined });
+          } catch (e) {
+            if (/código da equipe/i.test(e.message)) e.aparelhoNovo = true;
+            throw e;
+          }
+          this.guardarAparelho(r.aparelho);
           must(await sb.auth.setSession(r.sessao));
           return { nome: r.nome, admin: !!r.admin };
         },
         async cadastrar({ nome, pin, senhaEquipe }) {
           const r = await this.chamar('cadastrar', { nome, pin, senhaEquipe });
+          this.guardarAparelho(r.aparelho);
           must(await sb.auth.setSession(r.sessao));
           return { nome: r.nome, admin: !!r.admin, primeiraConta: r.primeiraConta };
+        },
+        async esquecerAparelhos() {
+          await this.chamar('esquecer_aparelhos', {}, true);
         },
         async sessao() {
           const { data } = await sb.auth.getSession();
@@ -2781,6 +2809,7 @@
         },
         async redefinir({ email, codigo, pin }) {
           const r = await this.chamar('redefinir', { email, codigo, pin });
+          this.guardarAparelho(r.aparelho);
           must(await sb.auth.setSession(r.sessao));
           return { nome: r.nome, admin: !!r.admin };
         },

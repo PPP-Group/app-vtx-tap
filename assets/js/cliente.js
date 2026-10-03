@@ -466,7 +466,7 @@
     unwatch = store.watchCall(id, (c) => {
       if (!c) return showStatus(initial || null);
       showStatus(c);
-    });
+    }, (sess && sess.token) || safeGet(sessKey()));
   }
 
   function showStatus(c) {

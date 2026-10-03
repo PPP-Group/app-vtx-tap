@@ -238,16 +238,9 @@
         if (db.restaurantes.some((x) => x.slug === r.slug && x.id !== r.id)) throw new Error('Esse subdomínio já está em uso. Escolha outro.');
         let salvo;
         if (r.id) db.restaurantes = db.restaurantes.map((x) => (x.id === r.id ? (salvo = { ...x, ...r }) : x));
-        else db.restaurantes.push((salvo = { ...r, id: id(), codigo_ativacao: novoCodigo() + novoCodigo()[0], criado_em: new Date().toISOString() }));
+        else db.restaurantes.push((salvo = { ...r, id: id(), criado_em: new Date().toISOString() }));
         write(db);
         return salvo;
-      },
-      async trocarCodigo(rid) {
-        const db = read();
-        const c = novoCodigo() + novoCodigo()[0];
-        db.restaurantes.forEach((x) => x.id === rid && (x.codigo_ativacao = c));
-        write(db);
-        return c;
       },
       async listEtiquetas() { return read().etiquetas; },
       // Mesmas regras de public.limpar_etiquetas() do schema.sql.
@@ -397,9 +390,6 @@
         if (error) throw error.code === '23505' ? new Error('Esse subdomínio já está em uso. Escolha outro.') : error;
         if (senha) must(await sb.rpc('central_senha_equipe', { p_restaurante: id, p_senha: senha }));
         return data;
-      },
-      async trocarCodigo(rid) {
-        return must(await sb.rpc('trocar_codigo_ativacao', { p_restaurante: rid }));
       },
       async listEtiquetas() {
         const todas = [];

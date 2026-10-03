@@ -140,6 +140,8 @@
            <p class="form-error" id="lgErr" role="alert">${esc(msg)}</p>
            <button class="btn btn-cobalt btn-block" type="submit">Criar conta e entrar</button>`
         : `<label class="field"><span>Seu PIN</span><input class="input pin-input" id="lgPin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="current-password" required></label>
+           ${S.aparelhoNovo ? `<label class="field"><span>Código da equipe</span><input class="input" id="lgSenhaEq" type="password" autocomplete="off" minlength="6" required>
+             <small class="help">Só na primeira vez neste aparelho. Depois, o painel pede só o PIN.</small></label>` : ''}
            <p class="form-error" id="lgErr" role="alert">${esc(msg)}</p>
            <button class="btn btn-cobalt btn-block" type="submit">Entrar no painel</button>
            <button class="btn btn-quiet btn-block" type="button" data-login="esqueci">Esqueci meu PIN</button>
@@ -209,14 +211,24 @@
     } else {
       const pin = $('#lgPin').value.trim();
       if (!/^\d{4,8}$/.test(pin)) return falhar('Digite seu PIN (4 a 8 números).', $('#lgPin'));
+      const senhaEq = $('#lgSenhaEq') ? $('#lgSenhaEq').value : '';
+      if (S.aparelhoNovo && senhaEq.length < 6) return falhar('Digite o código da equipe (só na primeira vez neste aparelho).', $('#lgSenhaEq'));
       btn.disabled = true;
       try {
-        r = await store.auth.entrar(pin);
+        r = await store.auth.entrar(pin, senhaEq);
       } catch (ex) {
         btn.disabled = false;
+        if (ex.aparelhoNovo && !S.aparelhoNovo) {
+          // Aparelho novo: mostra o campo do código da equipe e mantém o PIN digitado.
+          S.aparelhoNovo = true;
+          showLogin(ex.message);
+          $('#lgPin').value = pin;
+          return $('#lgSenhaEq').focus();
+        }
         $('#lgPin').value = '';
-        return falhar(ex.message, $('#lgPin'));
+        return falhar(ex.message, ex.aparelhoNovo ? $('#lgSenhaEq') : $('#lgPin'));
       }
+      S.aparelhoNovo = false;
     }
     S.user = { nome: r.nome, admin: !!r.admin };
     unlockAudio();
@@ -1434,7 +1446,12 @@
               <label class="field"><span>Repita o código</span><input class="input mono" name="codigo2" type="password" minlength="6" maxlength="40" autocomplete="new-password" required></label>
             </div>
             <button type="submit" class="btn btn-line btn-sm">${icon('lock')} Trocar o código</button>
-          </form>`
+          </form>
+          <div class="team-add stack">
+            <h3>Aparelhos</h3>
+            <p class="help">Cada aparelho entra uma vez com o código da equipe e depois só com o PIN. Perdeu um celular ou alguém saiu da equipe? Desconecte todos: cada aparelho volta a pedir o código na próxima entrada.</p>
+            <button type="button" class="btn btn-line btn-sm" data-esquecer-aparelhos>${icon('logout')} Desconectar todos os aparelhos</button>
+          </div>`
           : '<small class="help">Quem cadastra e remove pessoas é o administrador do restaurante. Você pode trocar o seu PIN.</small>'}
         </section>
       </div>
@@ -1540,6 +1557,19 @@
       toast(ex.message, { tone: 'error', ms: 4500 });
     }
     carregarEquipe();
+  });
+  document.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-esquecer-aparelhos]');
+    if (!b) return;
+    if (!confirm('Desconectar todos os aparelhos? Na próxima entrada, cada um pede o código da equipe junto com o PIN. Quem está usando agora continua até sair.')) return;
+    b.disabled = true;
+    try {
+      await store.auth.esquecerAparelhos();
+      toast('Aparelhos desconectados. Na próxima entrada, cada um pede o código da equipe.', { tone: 'ok', ms: 5000 });
+    } catch (ex) {
+      toast(ex.message, { tone: 'error', ms: 4500 });
+    }
+    b.disabled = false;
   });
   document.addEventListener('submit', async (e) => {
     if (!['meuEmailForm', 'avisosForm'].includes(e.target.id)) return;

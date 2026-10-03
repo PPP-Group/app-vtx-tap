@@ -9,6 +9,7 @@ ENV CENTRAL_HOST=tap.localhost \
 
 COPY deploy/templates /etc/nginx/templates
 COPY deploy/comum.conf /etc/nginx/snippets/comum.conf
+COPY deploy/seguranca.conf /etc/nginx/snippets/seguranca.conf
 COPY deploy/40-env-js.sh /docker-entrypoint.d/40-env-js.sh
 RUN chmod +x /docker-entrypoint.d/40-env-js.sh && rm -f /etc/nginx/conf.d/default.conf
 

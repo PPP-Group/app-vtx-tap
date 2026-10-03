@@ -1,5 +1,5 @@
--- 03/10: PIN redefinido vale 24 h, contas que se resolvem sozinhas e avisos por e-mail.
--- Rodar no SQL Editor do Supabase (projeto cmockootzrjkcuxkxlvy), uma vez. Pode rodar de novo sem problema.
+-- 03/10 (1 de 3): PIN redefinido vale 24 h, contas que se resolvem sozinhas e avisos por e-mail.
+-- Rodar no SQL Editor do Supabase. Pode rodar de novo sem problema.
 
 alter table private.fid_pins add column if not exists redefinir_ate timestamptz;
 
@@ -571,7 +571,7 @@ begin
     private.email_html('O ' || r.nome || ' já está na VTX Tap',
       '<p>O painel da equipe é <b>' || url || '/admin</b>. Para criar a sua conta de administrador, toque em "Criar conta", use o <b>código da equipe</b> que combinamos com você e escolha um PIN só seu.</p>'
       || '<p>Depois, em Ajustes › Restaurante › Equipe, cadastre o seu e-mail para recuperar o PIN sozinho se esquecer, e convide a equipe.</p>'
-      || '<p>Código de ativação das plaquinhas: <b>' || coalesce(r.codigo_ativacao, '—') || '</b>.</p>'
+      || '<p>Para ligar uma plaquinha: encoste o celular nela, digite o endereço <b>' || private.esc_html(r.slug) || '</b> (só na primeira vez), entre com o PIN e escolha a mesa.</p>'
       || '<p>Os avisos do restaurante (novo cliente no clube, pedidos) chegam neste e-mail. Dá para mudar em Ajustes.</p>',
       'Abrir o painel', url || '/admin/'), r.id);
   perform private.aviso_vortex('vtx_restaurante', 'Restaurante novo: ' || r.nome,
@@ -651,3 +651,4 @@ begin
     $c$);
   end if;
 end $$;
+

@@ -92,7 +92,6 @@ create table if not exists public.restaurantes (
                     and slug not in ('tap', 'www', 'admin', 'api', 'app', 'central', 'mail', 'ftp', 'painel')),
   nome            text not null check (char_length(nome) between 1 and 80),
   ativo           boolean not null default true,
-  codigo_ativacao text not null unique default public.novo_codigo(8),
   observacao      text check (char_length(observacao) <= 300),
   -- Configuração editada pelo painel do restaurante. Vazio = valores iniciais.
   restaurante     jsonb,
@@ -495,14 +494,6 @@ drop policy if exists "operador ve leituras" on public.leituras_dia;
 create policy "operador ve leituras" on public.leituras_dia
   for select to authenticated using (public.eh_operador());
 
-create table if not exists public.tentativas_ativacao (
-  codigo text not null,
-  em     timestamptz not null default now()
-);
-create index if not exists tentativas_ativacao_idx on public.tentativas_ativacao (codigo, em);
-alter table public.tentativas_ativacao enable row level security;
-revoke all on public.tentativas_ativacao from anon, authenticated;
-
 -- A cada toque/leitura de QR (sem login). Devolve só o subdomínio do dono.
 create or replace function public.resolver_etiqueta(p_codigo text) returns jsonb
 language plpgsql security definer set search_path = public as $$
@@ -518,37 +509,6 @@ begin
   select * into r from public.restaurantes where id = e.restaurante_id;
   if not found or not r.ativo then return jsonb_build_object('status', 'inativo'); end if;
   return jsonb_build_object('status', 'ok', 'slug', r.slug);
-end $$;
-
--- Plaquinha nova + código de ativação = plaquinha do restaurante.
--- Status: ok | codigo_incorreto | bloqueado | inexistente | inativo.
--- Devolve status em vez de lançar erro: um erro desfaria o registro da tentativa.
-create or replace function public.ativar_etiqueta(p_codigo text, p_ativacao text) returns jsonb
-language plpgsql security definer set search_path = public as $$
-declare
-  v_cod text := upper(regexp_replace(coalesce(p_codigo, ''), '[^A-Za-z0-9]', '', 'g'));
-  v_atv text := upper(regexp_replace(coalesce(p_ativacao, ''), '[^A-Za-z0-9]', '', 'g'));
-  e public.etiquetas; r public.restaurantes;
-begin
-  select * into e from public.etiquetas where codigo = v_cod;
-  if not found then return jsonb_build_object('status', 'inexistente'); end if;
-  if e.restaurante_id is not null then
-    select * into r from public.restaurantes where id = e.restaurante_id;
-    if not found or not r.ativo then return jsonb_build_object('status', 'inativo'); end if;
-    return jsonb_build_object('status', 'ok', 'slug', r.slug, 'restaurante', r.nome, 'ja_ativada', true);
-  end if;
-  delete from public.tentativas_ativacao where em < now() - interval '1 day';
-  if (select count(*) from public.tentativas_ativacao where codigo = v_cod and em > now() - interval '10 minutes') >= 8 then
-    return jsonb_build_object('status', 'bloqueado');
-  end if;
-  select * into r from public.restaurantes where codigo_ativacao = v_atv and ativo;
-  if not found then
-    insert into public.tentativas_ativacao (codigo) values (v_cod);
-    return jsonb_build_object('status', 'codigo_incorreto');
-  end if;
-  update public.etiquetas set restaurante_id = r.id, ativada_em = now(), mesa = null
-   where codigo = v_cod and restaurante_id is null;
-  return jsonb_build_object('status', 'ok', 'slug', r.slug, 'restaurante', r.nome, 'ja_ativada', false);
 end $$;
 
 -- Página da mesa: qual mesa é esta plaquinha, neste restaurante.
@@ -829,11 +789,6 @@ grant insert (restaurante_id, estrelas, tags, texto, mesa) on public.comentarios
 revoke all on public.sessoes from anon;
 revoke all on public.mesas_abertas from anon;
 
--- Necessário para o cliente acompanhar o status do chamado em tempo real.
-drop policy if exists "cliente acompanha chamados recentes" on public.chamados;
-create policy "cliente acompanha chamados recentes" on public.chamados
-  for select to anon using (criado_em > now() - interval '3 hours');
-
 drop policy if exists "equipe gerencia chamados" on public.chamados;
 create policy "equipe gerencia chamados" on public.chamados
   for all to authenticated using (restaurante_id = public.meu_restaurante())
@@ -887,21 +842,6 @@ begin
   perform public.equipe_trocar_senha(p_restaurante, p_senha);
 end $$;
 
-create or replace function public.trocar_codigo_ativacao(p_restaurante uuid) returns text
-language plpgsql security definer set search_path = public as $$
-declare c text;
-begin
-  if not public.eh_operador() then raise exception 'Acesso negado.'; end if;
-  loop
-    c := public.novo_codigo(8);
-    begin
-      update public.restaurantes set codigo_ativacao = c where id = p_restaurante;
-      return c;
-    exception when unique_violation then
-      -- raríssimo: sorteia de novo
-    end;
-  end loop;
-end $$;
 
 -- Códigos de 7 caracteres; a chave primária garante que nunca repetem.
 create or replace function public.gerar_etiquetas(p_qtd int, p_lote text) returns setof text
@@ -2417,7 +2357,7 @@ begin
   -- na regra de acesso dos comentários, que roda como o cliente.
   foreach f in array array[
     'public.restaurante_ativo(uuid)',
-    'public.restaurante_publico(text)', 'public.resolver_etiqueta(text)', 'public.ativar_etiqueta(text, text)',
+    'public.restaurante_publico(text)', 'public.resolver_etiqueta(text)',
     'public.mesa_da_etiqueta(uuid, text)', 'public.sessao_status(uuid)', 'public.sessao_abrir(uuid, int, text, text)',
     'public.sessao_sair(uuid)', 'public.chamar(uuid, text, text, text, jsonb)', 'public.chamado_cancelar(uuid, uuid)',
     'public.fid_programa(uuid)', 'public.fid_consultar(uuid, text)', 'public.fid_indicador(uuid, text)',
@@ -2434,7 +2374,7 @@ begin
     'public.limpar_etiquetas(text[], text)',
     'public.sessao_decidir(uuid, boolean)', 'public.mesa_fechar(int)',
     'public.criar_restaurante(text, text, text)', 'public.central_senha_equipe(uuid, text)',
-    'public.trocar_codigo_ativacao(uuid)', 'public.gerar_etiquetas(int, text)',
+    'public.gerar_etiquetas(int, text)',
     'public.atribuir_etiquetas(text[], uuid)', 'public.marcar_gravadas(text[], boolean)', 'public.metricas(int)',
     'public.fid_resumo()', 'public.fid_aprovar_nota(text, numeric, timestamptz)', 'public.fid_recusar_nota(text, text)',
     'public.fid_importar_xml(jsonb)', 'public.fid_resgate_decidir(uuid, boolean)', 'public.fid_lancar(text, numeric, text)',
@@ -4955,7 +4895,7 @@ begin
     private.email_html('O ' || r.nome || ' já está na VTX Tap',
       '<p>O painel da equipe é <b>' || url || '/admin</b>. Para criar a sua conta de administrador, toque em "Criar conta", use o <b>código da equipe</b> que combinamos com você e escolha um PIN só seu.</p>'
       || '<p>Depois, em Ajustes › Restaurante › Equipe, cadastre o seu e-mail para recuperar o PIN sozinho se esquecer, e convide a equipe.</p>'
-      || '<p>Código de ativação das plaquinhas: <b>' || coalesce(r.codigo_ativacao, '—') || '</b>.</p>'
+      || '<p>Para ligar uma plaquinha: encoste o celular nela, digite o endereço <b>' || private.esc_html(r.slug) || '</b> (só na primeira vez), entre com o PIN e escolha a mesa.</p>'
       || '<p>Os avisos do restaurante (novo cliente no clube, pedidos) chegam neste e-mail. Dá para mudar em Ajustes.</p>',
       'Abrir o painel', url || '/admin/'), r.id);
   perform private.aviso_vortex('vtx_restaurante', 'Restaurante novo: ' || r.nome,
@@ -5035,3 +4975,118 @@ begin
     $c$);
   end if;
 end $$;
+
+-- ===========================================================================
+-- Limpeza (03/10)
+--   * Sai a ativação de plaquinha por código (substituída por "digitar o endereço do restaurante"):
+--     ativar_etiqueta, trocar_codigo_ativacao, a tabela tentativas_ativacao e a coluna codigo_ativacao.
+--   * Faxina diária: o que já venceu e não serve para nada (sessões vencidas, códigos vencidos,
+--     e-mails enviados há mais de 30 dias, chamados com mais de 1 ano).
+-- ===========================================================================
+drop function if exists public.ativar_etiqueta(text, text);
+drop function if exists public.trocar_codigo_ativacao(uuid);
+drop table if exists public.tentativas_ativacao;
+alter table public.restaurantes drop column if exists codigo_ativacao;
+
+create or replace function private.faxina() returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  delete from private.fid_sessoes where criado_em < now() - interval '180 days';
+  delete from public.sessoes where criado_em < now() - interval '30 days';
+  delete from private.codigos where expira_em < now() - interval '1 day';
+  delete from private.tentativas where em < now() - interval '1 day';
+  delete from private.avisos_fila where (enviado_em is not null and enviado_em < now() - interval '30 days')
+     or criado_em < now() - interval '30 days';
+  delete from public.chamados where criado_em < now() - interval '1 year';
+end $$;
+revoke execute on function private.faxina() from public, anon, authenticated;
+
+do $$
+begin
+  if exists (select 1 from pg_extension where extname = 'pg_cron') then
+    perform cron.unschedule(jobid) from cron.job where jobname = 'faxina-diaria';
+    perform cron.schedule('faxina-diaria', '41 6 * * *', 'select private.faxina()');
+  end if;
+end $$;
+
+-- ===========================================================================
+-- Segurança (03/10)
+-- ===========================================================================
+-- O cliente acompanha só o próprio chamado (pelo token da sessão da mesa). Antes, qualquer pessoa sem
+-- login lia os chamados das últimas 3 horas de todos os restaurantes (mesa, observação, quem atendeu).
+create or replace function public.chamado_status(p_token uuid, p_id uuid) returns jsonb
+language sql stable security definer set search_path = public as $$
+  select to_jsonb(c) - 'sessao_id' - 'restaurante_id'
+    from public.chamados c join public.sessoes s on s.id = c.sessao_id
+   where c.id = p_id and s.token_hash = public.hash_token(p_token);
+$$;
+revoke execute on function public.chamado_status(uuid, uuid) from public;
+grant execute on function public.chamado_status(uuid, uuid) to anon, authenticated;
+drop policy if exists "cliente acompanha chamados recentes" on public.chamados;
+revoke select on public.chamados from anon;
+
+-- Comentário anônimo: até 6 por hora do mesmo aparelho/rede e 200 por hora por restaurante (contra spam).
+create or replace function private.limita_comentarios() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if auth.role() = 'anon' and (not public.equipe_pode_tentar('comentario:' || public.ip_do_pedido(), 6, 60)
+     or not public.equipe_pode_tentar('comentario-rest:' || new.restaurante_id, 200, 60)) then
+    raise exception 'Recebemos vários comentários seguidos. Tente de novo mais tarde.';
+  end if;
+  new.texto := left(new.texto, 500);
+  return new;
+end $$;
+revoke execute on function private.limita_comentarios() from public, anon, authenticated;
+drop trigger if exists comentarios_limite on public.comentarios;
+create trigger comentarios_limite before insert on public.comentarios
+  for each row execute function private.limita_comentarios();
+
+-- Equipe: aparelho confiável. O PIN (4 a 8 números) só vale em aparelho que já entrou uma vez com o
+-- código da equipe (ou pelo código do e-mail). De um aparelho novo, pede o código da equipe junto.
+-- Assim, descobrir um PIN de fora do restaurante não basta para entrar no painel.
+create table if not exists private.equipe_aparelhos (
+  token_hash     text primary key,
+  restaurante_id uuid not null references public.restaurantes (id) on delete cascade,
+  criado_em      timestamptz not null default now(),
+  usado_em       timestamptz not null default now()
+);
+create index if not exists equipe_aparelhos_rest_idx on private.equipe_aparelhos (restaurante_id);
+
+create or replace function public.equipe_aparelho_ok(p_restaurante uuid, p_token text) returns boolean
+language plpgsql security definer set search_path = public as $$
+begin
+  if coalesce(p_token, '') !~ '^[0-9a-f]{64}$' then return false; end if;
+  update private.equipe_aparelhos set usado_em = now()
+   where token_hash = encode(extensions.digest(p_token, 'sha256'), 'hex') and restaurante_id = p_restaurante
+     and usado_em > now() - interval '180 days';
+  return found;
+end $$;
+create or replace function public.equipe_aparelho_novo(p_restaurante uuid) returns text
+language plpgsql security definer set search_path = public as $$
+declare t text := encode(extensions.gen_random_bytes(32), 'hex');
+begin
+  insert into private.equipe_aparelhos (token_hash, restaurante_id) values (encode(extensions.digest(t, 'sha256'), 'hex'), p_restaurante);
+  return t;
+end $$;
+-- Trocar o código da equipe desconecta os aparelhos: cada um pede o código novo na próxima entrada.
+create or replace function public.equipe_aparelhos_esquecer(p_restaurante uuid) returns void
+language sql security definer set search_path = public as $$
+  delete from private.equipe_aparelhos where restaurante_id = p_restaurante;
+$$;
+do $$
+declare f text;
+begin
+  foreach f in array array['public.equipe_aparelho_ok(uuid, text)', 'public.equipe_aparelho_novo(uuid)', 'public.equipe_aparelhos_esquecer(uuid)'] loop
+    execute format('revoke execute on function %s from public, anon, authenticated', f);
+    execute format('grant execute on function %s to service_role', f);
+  end loop;
+end $$;
+
+-- Funções sem search_path fixo (aviso do Supabase): fixa no public.
+alter function private.sefaz_custo(integer) set search_path = public;
+alter function public.sefaz_preco_nota() set search_path = public;
+alter function public.implantacao_faixa(integer) set search_path = public;
+alter function public.adicional_preco(text) set search_path = public;
+alter function private.email_mascarado(text) set search_path = public;
+alter function private.esc_html(text) set search_path = public;
+alter function private.email_html(text, text, text, text) set search_path = public;
