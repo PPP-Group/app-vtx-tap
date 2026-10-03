@@ -49,14 +49,51 @@ Falta **subir a versão corrigida do roteador** e **testar com um domínio de ve
 
 ---
 
-## Parte 1: antes de religar (segurança)
+## Parte 1: chaves novas (segurança)
 
-A `SUPABASE_SERVICE_ROLE_KEY` e o token da API da Hostinger apareceram em texto durante a investigação. Gere chaves novas antes de religar:
+**Por que trocar.**
+- A `service_role` dá **acesso total ao banco** e ignora todas as regras (RLS). Com ela dá para ler, mudar e apagar os CPFs, telefones, e-mails e pontos de todos os clientes de todos os restaurantes, criar usuários e apagar tudo.
+- A chave atual vale **até 2036** e já apareceu em texto em conversas. Qualquer um que veja essas conversas ou logs consegue usá-la.
+- O token da Hostinger mexe no DNS e na VPS: dá para desviar domínios e emitir certificados.
 
-1. **Supabase**: em Project Settings › API Keys, gere uma chave secreta nova (*secret* / *service_role*). Use a nova no `vtx-dominios` e revogue a antiga.
-   - Se o projeto ainda usa as chaves JWT antigas (`service_role`), o caminho é *JWT Keys › Rotate*.
-   - Esse rotate troca também a chave pública (anon) do app principal, então atualize a `SUPABASE_ANON_KEY` do `app-vtx-tap` no mesmo momento.
-2. **Hostinger**: gere um token novo da API e apague o antigo. Atualize o `HOSTINGER_API_TOKEN` no Traefik, se o resolvedor `hostinger` (o do domínio coringa) continuar em uso.
+**Por que não é só "gerar outra".** Este projeto usa as chaves antigas (JWT). A `service_role` antiga não se troca sozinha: para ela parar de funcionar, é preciso passar tudo para as chaves novas (`sb_publishable_…` e `sb_secret_…`) e depois **desligar as chaves antigas**. O app principal já usa a chave pública nova. Faltam o roteador e as Edge Functions; o código dos dois já aceita as chaves novas.
+
+**Passo A: chave nova do roteador (antes de religar).**
+1. Supabase › Project Settings › **API Keys** › *Secret keys* › **New secret key**. Nome: `vtx-dominios`. Copie o `sb_secret_…`.
+2. EasyPanel › `vtx-dominios` › Environment: troque o valor de `SUPABASE_SERVICE_ROLE_KEY` pelo `sb_secret_…`. O nome da variável continua o mesmo; `SUPABASE_URL` e `APP_URL` ficam como estão.
+3. Siga a Parte 2: Deploy, 1 réplica e a conferência do log.
+
+**Passo B: Edge Functions (no mesmo dia).**
+1. Crie outra chave secreta, com o nome `edge-functions`.
+2. Em Supabase › Edge Functions › **Secrets**, adicione:
+   - `VTX_SECRET_KEY` = o `sb_secret_…` da `edge-functions`;
+   - `VTX_PUBLISHABLE_KEY` = a chave pública `sb_publishable_…` (a mesma do app).
+3. Publique de novo as funções `equipe`, `nfce`, `push` e `dominio`, com o código deste repositório.
+4. Teste:
+   - entrar no painel com o PIN;
+   - a central;
+   - ler uma nota no clube;
+   - um aviso de pedido do delivery;
+   - "Verificar agora" do domínio.
+
+**Passo C: desligar as chaves antigas (o que mata a chave vazada).**
+1. Antes, confira se nada mais usa a `service_role` ou a `anon` antigas, por exemplo fluxos do n8n ou scripts. Se usar, troque por uma chave nova.
+2. Supabase › Project Settings › API Keys › *Legacy API keys* › **Disable JWT-based API keys**. A chave vazada para de funcionar na hora.
+3. Teste de novo:
+   - a página da mesa;
+   - o painel;
+   - a central;
+   - o roteador: o log não pode ter "HTTP 401".
+
+   Se algo quebrar, dá para religar as chaves antigas no mesmo lugar enquanto corrige.
+
+**Hostinger** (só se o resolvedor `hostinger`, o do certificado coringa `*.vortexsystems.tech`, continuar em uso):
+1. hPanel › Perfil › **API**: crie um token novo e apague o antigo.
+2. EasyPanel › Settings › Traefik › Environment: troque o `HOSTINGER_API_TOKEN`.
+   - Salvar reinicia o Traefik, e todos os sites ficam fora por alguns segundos. Faça num horário calmo.
+3. Aproveite e tire o `TRAEFIK_LOG_LEVEL=DEBUG`.
+
+Nunca cole chave ou token em conversa, print ou ticket. Se colar, gere outra.
 
 ## Parte 2: subir a versão corrigida (10 min)
 
@@ -70,7 +107,7 @@ O app `vtx-dominios` já existe no projeto `sites` (hoje com 0 réplicas). Confi
 
    ```
    SUPABASE_URL=https://cmockootzrjkcuxkxlvy.supabase.co
-   SUPABASE_SERVICE_ROLE_KEY=A-CHAVE-NOVA
+   SUPABASE_SERVICE_ROLE_KEY=sb_secret_...   (a chave nova do Passo A da Parte 1)
    APP_URL=http://app-vtx-tap:80
    ```
 

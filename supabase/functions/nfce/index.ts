@@ -15,7 +15,8 @@
 import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2';
 
 const URL_ = Deno.env.get('SUPABASE_URL')!;
-const SERVICE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+// Chave secreta nova (sb_secret_..., no secret VTX_SECRET_KEY) ou, até a troca, a service_role antiga.
+const SERVICE = Deno.env.get('VTX_SECRET_KEY') || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const TOKEN = Deno.env.get('INFOSIMPLES_TOKEN') || '';
 const SERVICO = Deno.env.get('INFOSIMPLES_SERVICO') || 'sefaz/mg/nfce-resumida';
 const LIMITE = Number(Deno.env.get('NFCE_LIMITE_MES') || 0);
