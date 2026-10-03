@@ -1294,6 +1294,8 @@ create table if not exists private.fid_pins (
   primary key (restaurante_id, cpf),
   foreign key (restaurante_id, cpf) references public.fid_clientes (restaurante_id, cpf) on delete cascade
 );
+-- PIN redefinido pela equipe: pin_hash vazio até o cliente criar o novo, e só até redefinir_ate (24 h).
+alter table private.fid_pins add column if not exists redefinir_ate timestamptz;
 
 -- Aparelho do cliente que já confirmou o PIN (lembrado por 180 dias).
 create table if not exists private.fid_sessoes (
@@ -1689,7 +1691,7 @@ begin
     'nivel', public.fid_nivel(p_restaurante, v_cpf),
     'pendentes', (select count(*) from public.fid_notas where restaurante_id = p_restaurante and cpf = v_cpf and status = 'pendente'),
     'cartao', case when public.fid_modo(p_restaurante) <> 'pontos' then public.fid_cartao_resumo(p_restaurante, v_cpf) end,
-    'tem_pin', exists (select 1 from private.fid_pins where restaurante_id = p_restaurante and cpf = v_cpf));
+    'tem_pin', exists (select 1 from private.fid_pins where restaurante_id = p_restaurante and cpf = v_cpf and pin_hash <> ''));
 end $$;
 
 -- Primeiro nome de quem indicou (para mostrar no cadastro).
@@ -1800,7 +1802,7 @@ end $$;
 
 create or replace function public.fid_entrar(p_restaurante uuid, p_cpf text, p_pin text) returns jsonb
 language plpgsql security definer set search_path = public as $$
-declare v_cpf text := regexp_replace(coalesce(p_cpf, ''), '[^0-9]', '', 'g'); h text;
+declare v_cpf text := regexp_replace(coalesce(p_cpf, ''), '[^0-9]', '', 'g'); h text; v_ate timestamptz;
 begin
   if not public.fid_no_ar(p_restaurante) then return jsonb_build_object('status', 'inativo'); end if;
   if not public.cpf_valido(v_cpf) then return jsonb_build_object('status', 'erro', 'mensagem', 'CPF inválido. Confira os números.'); end if;
@@ -1813,17 +1815,22 @@ begin
   if not exists (select 1 from public.fid_clientes where restaurante_id = p_restaurante and cpf = v_cpf) then
     return jsonb_build_object('status', 'novo');
   end if;
-  select pin_hash into h from private.fid_pins where restaurante_id = p_restaurante and cpf = v_cpf;
+  select pin_hash, redefinir_ate into h, v_ate from private.fid_pins where restaurante_id = p_restaurante and cpf = v_cpf;
   if h is null then
-    -- PIN redefinido pela equipe: o próximo PIN digitado passa a valer.
-    insert into private.fid_pins (restaurante_id, cpf, pin_hash)
-    values (p_restaurante, v_cpf, extensions.crypt(p_pin, extensions.gen_salt('bf')));
+    return jsonb_build_object('status', 'erro', 'mensagem', 'Peça para a equipe do restaurante redefinir o seu PIN.');
+  elsif h = '' then
+    -- PIN redefinido pela equipe: o próximo PIN digitado passa a valer, por 24 horas.
+    if v_ate is null or v_ate < now() then
+      return jsonb_build_object('status', 'erro', 'mensagem', 'O prazo para criar o PIN novo acabou. Peça para a equipe redefinir de novo.');
+    end if;
+    update private.fid_pins set pin_hash = extensions.crypt(p_pin, extensions.gen_salt('bf')), redefinir_ate = null
+     where restaurante_id = p_restaurante and cpf = v_cpf;
   elsif extensions.crypt(p_pin, h) <> h then
     return jsonb_build_object('status', 'erro', 'mensagem', 'PIN incorreto.');
   end if;
   perform public.equipe_limpar_tentativas('fid-pin:' || p_restaurante || ':' || v_cpf);
   perform public.equipe_limpar_tentativas('fid-pin-dia:' || p_restaurante || ':' || v_cpf);
-  return jsonb_build_object('status', 'ok', 'token', public.fid_nova_sessao(p_restaurante, v_cpf), 'pin_novo', h is null);
+  return jsonb_build_object('status', 'ok', 'token', public.fid_nova_sessao(p_restaurante, v_cpf), 'pin_novo', h = '');
 end $$;
 
 -- Conta completa (aparelho com PIN confirmado).
@@ -2256,7 +2263,10 @@ language plpgsql security definer set search_path = public as $$
 declare r uuid := public.meu_restaurante();
 begin
   if r is null then raise exception 'Acesso negado.'; end if;
-  delete from private.fid_pins where restaurante_id = r and cpf = p_cpf;
+  if not exists (select 1 from public.fid_clientes where restaurante_id = r and cpf = p_cpf) then raise exception 'Cliente não encontrado.'; end if;
+  -- O cliente cria o PIN novo no celular nas próximas 24 horas; depois disso, só redefinindo de novo.
+  insert into private.fid_pins (restaurante_id, cpf, pin_hash, redefinir_ate) values (r, p_cpf, '', now() + interval '24 hours')
+  on conflict (restaurante_id, cpf) do update set pin_hash = '', redefinir_ate = excluded.redefinir_ate;
   delete from private.fid_sessoes where restaurante_id = r and cpf = p_cpf;
 end $$;
 
@@ -3598,7 +3608,7 @@ begin
     return jsonb_build_object('status', 'erro', 'mensagem', 'Muitas tentativas. Aguarde 15 minutos.');
   end if;
   select pin_hash into h from private.fid_pins where restaurante_id = v_r and cpf = v_cpf;
-  if h is null or extensions.crypt(p_pin, h) <> h then return jsonb_build_object('status', 'erro', 'mensagem', 'PIN incorreto.'); end if;
+  if coalesce(h, '') = '' or extensions.crypt(p_pin, h) <> h then return jsonb_build_object('status', 'erro', 'mensagem', 'PIN incorreto.'); end if;
   perform public.equipe_limpar_tentativas('fid-pin:' || v_r || ':' || v_cpf);
   perform public.equipe_limpar_tentativas('fid-pin-dia:' || v_r || ':' || v_cpf);
   d := public.fid_destino(v_r, p_destino);

@@ -553,10 +553,16 @@
     $('#sideNav').innerHTML = lista.map(
       (v) => `<a class="nav-item" href="#${v.id}" ${S.view === v.id ? 'aria-current="page"' : ''}>${icon(v.icon)}<span>${v.label}</span>${badgeFor(v.id, n)}</a>`
     ).join('');
-    $('#tabbar').style.gridTemplateColumns = `repeat(${lista.length}, 1fr)`;
-    $('#tabbar').innerHTML = lista.map(
-      (v) => `<a class="tab" href="#${v.id}" ${S.view === v.id ? 'aria-current="page"' : ''}>${icon(v.icon)}<span>${v.curto || v.label}</span>${badgeFor(v.id, n)}</a>`
-    ).join('');
+    // Celular: até 5 abas cabem na barra; com mais, ficam as 4 mais usadas e o resto vai para "Mais".
+    const PRIORIDADE = ['salao', 'chamados', 'fidelidade', 'delivery', 'prorrogacao', 'plaquinhas', 'comentarios', 'ajustes'];
+    const fixas = lista.length > 5 ? [...lista].sort((x, y) => PRIORIDADE.indexOf(x.id) - PRIORIDADE.indexOf(y.id)).slice(0, 4) : lista;
+    const resto = lista.filter((v) => !fixas.includes(v));
+    const tab = (v) => `<a class="tab" href="#${v.id}" ${S.view === v.id ? 'aria-current="page"' : ''}>${icon(v.icon)}<span>${v.curto || v.label}</span>${badgeFor(v.id, n)}</a>`;
+    const noResto = resto.find((v) => v.id === S.view);
+    $('#tabbar').style.gridTemplateColumns = `repeat(${fixas.length + (resto.length ? 1 : 0)}, 1fr)`;
+    $('#tabbar').innerHTML = lista.filter((v) => fixas.includes(v)).map(tab).join('')
+      + (resto.length ? `<button type="button" class="tab" data-mais ${noResto ? 'aria-current="page"' : ''} aria-haspopup="dialog">${icon(noResto ? noResto.icon : 'more')}<span>${noResto ? noResto.curto || noResto.label : 'Mais'}</span>${resto.some((v) => badgeFor(v.id, n)) ? '<span class="badge badge-dot" aria-label="tem novidade"></span>' : ''}</button>` : '');
+    $('#maisBody').innerHTML = `<nav class="mais-lista" aria-label="Outras abas">${resto.map((v) => `<a class="mais-item" href="#${v.id}" data-mais-ir="${v.id}" ${S.view === v.id ? 'aria-current="page"' : ''}>${icon(v.icon)}<span>${v.label}</span>${badgeFor(v.id, n)}</a>`).join('')}</nav>`;
     $('#sideFoot').innerHTML = `
       <span class="live ${S.online ? '' : 'is-off'}">${S.online ? (isDemo ? 'Ao vivo · modo demonstração' : 'Ao vivo') : 'Sem conexão'}</span>
       <div class="side-user"><span class="avatar">${esc(firstName(S.user.nome)[0] || '?').toUpperCase()}</span>
@@ -599,6 +605,16 @@
     else if (t.dataset.tool === 'sair') logout();
   });
 
+  // "Mais" no celular: abre a lista; escolher uma aba fecha a folha e depois navega (o fechar mexe no histórico).
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('[data-mais]')) { openSheet('sh-mais'); return; }
+    const ir = e.target.closest('[data-mais-ir]');
+    if (!ir) return;
+    e.preventDefault();
+    const el = $('#sh-mais');
+    el.addEventListener('sheet:close', () => go(ir.dataset.maisIr), { once: true });
+    closeSheet();
+  });
   function go(view) {
     location.hash = view;
   }
@@ -641,6 +657,8 @@
   const chavePulo = () => `nfc-config-pulada:${cfg.backend.slug || 'demo'}`;
   function avisoConfig() {
     if (S.settings.restaurante.configConcluida) return '';
+    // Só na primeira aba e em Ajustes: no celular o aviso ocupava o topo de todas as telas.
+    if (![views()[0].id, 'ajustes'].includes(S.view)) return '';
     const pulado = +get(chavePulo()) || 0;
     if (Date.now() - pulado < 7 * 864e5) return '';
     const passos = passosConfig();
@@ -649,10 +667,10 @@
     return `<section class="cfg-aviso" aria-label="Configuração do restaurante">
       <div class="cfg-aviso-h">
         <div><h2>Conclua a configuração do restaurante</h2>
-          <p>O que não estiver preenchido não aparece para o cliente. ${feitos} de ${passos.length} feitos.</p></div>
+          <p>O que não estiver preenchido não aparece para o cliente. ${feitos} de ${passos.length} feitos; falta:</p></div>
         <span class="cfg-barra" aria-hidden="true"><i style="width:${Math.round((feitos / passos.length) * 100)}%"></i></span>
       </div>
-      <ul class="cfg-passos">${passos.map((p) => `<li class="${p.ok ? 'is-ok' : ''}">${p.ok ? icon('check') : ''}<button type="button" class="link" data-cfg-ir="${p.aba}">${p.txt}</button></li>`).join('')}</ul>
+      <ul class="cfg-passos">${passos.filter((p) => !p.ok).map((p) => `<li class="${p.ok ? 'is-ok' : ''}">${p.ok ? icon('check') : ''}<button type="button" class="link" data-cfg-ir="${p.aba}">${p.txt}</button></li>`).join('')}</ul>
       <div class="vhead-actions">
         <button type="button" class="btn btn-cobalt btn-sm" data-cfg-ir="${(passos.find((p) => !p.ok) || passos[0]).aba}">Continuar configuração</button>
         <button type="button" class="btn btn-quiet btn-sm" data-cfg="pular">Pular por agora</button>

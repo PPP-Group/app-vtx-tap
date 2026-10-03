@@ -5,12 +5,19 @@ PEDIDOS DE 03/10 — O CLAUDE FAZ, NESTA ORDEM
 [x] Painel: Salão primeiro no menu; com o sino desligado, a aba Chamados some
 [x] Prorrogação entra no combo como o 4º item: 2 itens −10%, 3 −17% (página + fidelidade + delivery
     continuam R$ 399), os quatro por R$ 449 (banco já atualizado)
-[ ] Página inicial e orçamento: quatro cards (Página com sino, Fidelidade, Delivery, Prorrogação) + o card do combo
-[ ] Página inicial: mais destaque para a fidelidade, o cartão fidelidade (selos) e os dois programas por horário
-[ ] Página inicial: seção da Prorrogação com prints (telão, celular, garçom)
-[ ] Página inicial: caminho mais curto para o orçamento (menu, hero e botão fixo)
-[ ] Orçamento: explicar o que vem em cada serviço, para o cliente saber o que escolher
-[ ] Atualizar o artefato interno com os preços e o produto atuais
+[x] Página inicial e orçamento: quatro cards (Página com sino, Fidelidade, Delivery, Prorrogação) + o card do combo
+[x] Página inicial: mais destaque para a fidelidade, o cartão fidelidade (selos) e os dois programas por horário
+[x] Página inicial: seção da Prorrogação com prints (telão e celular da mesa)
+[x] Página inicial: caminho mais curto para o orçamento (menu, hero, faixas no meio da página e botão fixo)
+[x] Orçamento: o que vem em cada serviço, "para quem é" e sugestões prontas por tipo de casa
+[x] Simulador interno (artefato) com os preços atuais e a visão de custo e lucro
+[x] Painel: aviso "Conclua a configuração" só na primeira aba e em Ajustes (no celular ocupava todas as telas)
+[ ] Celular: barra de abas do painel com 4 principais + "Mais" (hoje as abas ficam uma por cima da outra)
+[ ] Contas: revisar abertura, alteração, permissões e recuperação em todos os perfis
+    - Central (master): operadores, convite, criar e desativar restaurante, código de ativação
+    - Painel (admin): primeiro acesso, admin x equipe, PIN e senha da equipe, remover pessoa, esqueci o PIN
+    - Cliente do clube: esqueceu o PIN não pode perder os pontos (recuperar pelo celular/e-mail ou pela equipe),
+      trocar telefone, apagar a conta (LGPD)
 [ ] Auditoria completa: testar de verdade cada função e cada jornada (mesa, sino, cardápio, clube de pontos,
     cartão de selos, delivery, Prorrogação, painel, central, plaquinhas, domínio, orçamento) e corrigir o que quebrar
 [ ] Supabase: revisar e limpar funções, gatilhos, tabelas e dados sem uso (a lista do que apagar passa por você antes)
