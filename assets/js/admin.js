@@ -17,7 +17,7 @@
     itemEdit: null,
     ajTab: 'restaurante',
     loginModo: 'entrar',
-    view: 'chamados',
+    view: 'salao',
     filtro: 'abertos',
     fbFiltro: 'todos',
     calls: [],
@@ -42,22 +42,23 @@
   };
 
   const VIEWS = [
-    { id: 'chamados', label: 'Chamados', icon: 'bell' },
     { id: 'salao', label: 'Salão', icon: 'grid' },
+    { id: 'chamados', label: 'Chamados', icon: 'bell' },
     { id: 'comentarios', label: 'Comentários', icon: 'msg' },
     { id: 'plaquinhas', label: 'Mesas', icon: 'nfc' },
     { id: 'ajustes', label: 'Ajustes', icon: 'sliders' },
   ];
   // Fidelidade aparece quando a central libera o módulo para o restaurante.
   const temFid = () => !!(S.settings.modulos && S.settings.modulos.fidelidade && window.FidPainel);
-  // Sem o serviço de chamar o garçom no plano, somem Chamados e Salão.
+  // Sem o serviço de chamar o garçom no plano, somem Chamados e Salão; com o sino desligado na página, some Chamados.
   const temServico = (k) => !S.settings.plano || !!S.settings.plano.servicos[k];
   // Delivery aparece com o serviço no plano.
   const temDel = () => temServico('delivery') && !!window.DelPainel;
   // Prorrogação (adicional) aparece com o adicional no plano.
   const temHH = () => !!(S.settings.plano && S.settings.plano.adicionais && S.settings.plano.adicionais.prorrogacao && window.HHPainel);
   const views = () => {
-    let base = VIEWS.filter((v) => temServico('garcom') || !['chamados', 'salao'].includes(v.id));
+    const sino = S.settings.mesas.sino !== false;
+    let base = VIEWS.filter((v) => (temServico('garcom') || !['chamados', 'salao'].includes(v.id)) && (sino || v.id !== 'chamados'));
     if (temDel()) {
       const i = base.findIndex((v) => v.id === 'comentarios');
       base = [...base.slice(0, i), { id: 'delivery', label: 'Delivery', curto: 'Delivery', icon: 'receipt' }, ...base.slice(i)];
@@ -1980,7 +1981,7 @@
           </label>`).join('')}</div>
         <h3 class="plano-sub">Adicionais</h3>
         <div class="plano-ops">${ADICIONAIS.map((a) => `<label class="plano-op ${ed.adicionais[a.id] ? 'is-on' : ''}">
-            <span><b>${esc(a.nome)}</b><small>${esc(a.desc)}</small></span>
+            <span><b>${esc(a.nome)}</b><small>${esc(a.desc)}${a.combo ? ' Entra no desconto de combo.' : ''}</small></span>
             <span class="plano-op-preco">${precoAd(a)}</span>
             <span class="switch"><input type="checkbox" data-plano-ad="${a.id}" ${ed.adicionais[a.id] ? 'checked' : ''} aria-label="${esc(a.nome)}"><span></span></span>
           </label>`).join('')}</div>
@@ -1991,7 +1992,7 @@
           <small class="help">Faixas de implantação: ${Precos.IMPLANTACAO.map((f) => `${f.nome} ${reais(f.valor)}`).join(' · ')}. Passar para uma faixa maior cobra uma vez a diferença.</small></label>
         <div class="plano-resumo ${dif > 0 ? 'is-up' : dif < 0 ? 'is-down' : ''}">
           <span>Nova mensalidade</span><b>${reais(novoPreco)}<small> por mês</small></b>
-          ${mudou ? `<small>${dif > 0 ? `+${reais(dif)} por mês` : dif < 0 ? `−${reais(-dif)} por mês` : 'mesmo valor'} (hoje ${reais(S.plano.mensal)})${Precos.combo(ed.servicos).economia ? ` · desconto de combo: −${reais(Precos.combo(ed.servicos).economia)}` : ''}</small>` : '<small>Mude os serviços ou as mesas acima.</small>'}
+          ${mudou ? `<small>${dif > 0 ? `+${reais(dif)} por mês` : dif < 0 ? `−${reais(-dif)} por mês` : 'mesmo valor'} (hoje ${reais(S.plano.mensal)})${Precos.combo(Precos.itens(ed)).economia ? ` · desconto de combo: −${reais(Precos.combo(Precos.itens(ed)).economia)}` : ''}</small>` : '<small>Mude os serviços ou as mesas acima.</small>'}
         </div>
         ${taxa ? `<div class="plano-resumo is-up"><span>Taxa única pelas mesas a mais</span><b>${reais(taxa)}<small> uma vez</small></b>
           <small>Diferença da implantação para ${esc(Precos.faixa(ed.mesas).nome)}${+atual.contrato === 12 ? ' (com os 50% do contrato de 12 meses)' : ''}. Entra na próxima cobrança, junto com a mensalidade.</small></div>` : ''}
@@ -2108,7 +2109,12 @@
   document.addEventListener('change', (e) => {
     if (!e.target.matches('[data-sino]')) return;
     const on = e.target.checked;
-    saveSettings({ mesas: { ...S.settings.mesas, sino: on } }).then((ok) => ok && toast(on ? 'Sino ligado na página da mesa.' : 'Sino desligado: a página da mesa fica sem o botão de chamar.', { tone: 'ok' }));
+    saveSettings({ mesas: { ...S.settings.mesas, sino: on } }).then((ok) => {
+      if (!ok) return;
+      // A aba Chamados aparece e some junto com o sino.
+      renderChrome();
+      toast(on ? 'Sino ligado na página da mesa. A aba Chamados voltou ao menu.' : 'Sino desligado: a página da mesa fica sem o botão de chamar e a aba Chamados sai do menu.', { tone: 'ok' });
+    });
   });
 
   /* Eventos dos ajustes */

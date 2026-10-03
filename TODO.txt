@@ -1,18 +1,39 @@
 VTX Tap — pendências
 ====================
 
+PEDIDOS DE 03/10 — O CLAUDE FAZ, NESTA ORDEM
+[x] Painel: Salão primeiro no menu; com o sino desligado, a aba Chamados some
+[x] Prorrogação entra no combo como o 4º item: 2 itens −10%, 3 −17% (página + fidelidade + delivery
+    continuam R$ 399), os quatro por R$ 449 (banco já atualizado)
+[ ] Página inicial e orçamento: quatro cards (Página com sino, Fidelidade, Delivery, Prorrogação) + o card do combo
+[ ] Página inicial: mais destaque para a fidelidade, o cartão fidelidade (selos) e os dois programas por horário
+[ ] Página inicial: seção da Prorrogação com prints (telão, celular, garçom)
+[ ] Página inicial: caminho mais curto para o orçamento (menu, hero e botão fixo)
+[ ] Orçamento: explicar o que vem em cada serviço, para o cliente saber o que escolher
+[ ] Atualizar o artefato interno com os preços e o produto atuais
+[ ] Auditoria completa: testar de verdade cada função e cada jornada (mesa, sino, cardápio, clube de pontos,
+    cartão de selos, delivery, Prorrogação, painel, central, plaquinhas, domínio, orçamento) e corrigir o que quebrar
+[ ] Supabase: revisar e limpar funções, gatilhos, tabelas e dados sem uso (a lista do que apagar passa por você antes)
+[ ] Segurança: revisão completa com as boas práticas do mercado (RLS, funções do banco, PIN e tentativas,
+    limites de uso, cabeçalhos do site, segredos, LGPD, Edge Functions)
+[ ] Arquitetura para muitos clientes: o sistema não pode cair por causa do código (consultas, índices,
+    atualização das telas, limites, erros)
+[ ] Pagamentos: pesquisar o mais barato (menores taxas e recebimento mais rápido) para cartão de crédito de
+    qualquer bandeira e Pix, com cobrança recorrente e cartão guardado com segurança; depois integrar
+
+PEDIDOS DE 03/10 — VOCÊ FAZ
+[ ] Aprovar o preço dos quatro juntos (R$ 449) e do desconto de 3 itens (17%), ou me passar outro valor
+[ ] Aprovar a lista de limpeza do Supabase antes de eu apagar
+[ ] Pagamentos: abrir a conta no gateway escolhido e me passar a chave pelos secrets (nunca pela conversa)
+
 PRORROGAÇÃO (HAPPY HOUR QUE CRESCE A CADA CHOPP)
 [ ] Testar num restaurante de verdade: ligar o adicional na central, abrir na TV pelo botão "Abrir na TV" e ligar umas plaquinhas como comanda
     - Garçom: entrar no painel no celular dele (mesmo endereço do restaurante) e ler a comanda a cada chopp
     - Android: testar o "Modo garçom (NFC)" encostando na comanda
 
 DOMÍNIO PRÓPRIO DOS RESTAURANTES
-[ ] Religar o roteador de domínios (app "vtx-dominios", hoje com 0 réplicas) com a versão corrigida — deploy/dominios/PASSO-A-PASSO.md
-    - Antes: gerar chave secreta nova do Supabase e token novo da Hostinger (apareceram em conversa)
-    - Deploy pelo EasyPanel (build do GitHub), depois 1 réplica, e conferir o log do Traefik sem "Error while building configuration"
-    - App no projeto "sites": build path deploy/dominios (Dockerfile), bind mount /etc/easypanel/traefik/config -> /traefik,
-      sem domínio e sem porta; SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (a nova) e APP_URL=http://app-vtx-tap:80; resolvedor letsencrypt
-[ ] Testar com um domínio de verdade (depende do item acima)
+[x] Roteador de domínios no ar com a versão corrigida (Traefik sem erro; sem domínio, sem arquivo)
+[ ] Testar com um domínio de verdade
     - Painel > Ajustes > Endereço: cadastrar um domínio de teste (ex.: cardapio.seu-dominio.com.br)
     - Criar o CNAME para tap.vortexsystems.tech (no Cloudflare, nuvem cinza)
     - Ver o andamento chegar em "No ar"
@@ -22,8 +43,7 @@ DOMÍNIO PRÓPRIO DOS RESTAURANTES
     - Conferir na central a cobrança: R$ 190 uma vez + R$ 19/mês
 
 SEGURANÇA DO SERVIDOR
-[ ] Gerar um token novo da API da Hostinger e revogar o antigo (o antigo apareceu em conversa: tratar como exposto)
-[ ] Tirar TRAEFIK_LOG_LEVEL=DEBUG do servidor
+[x] TRAEFIK_LOG_LEVEL=DEBUG retirado
 [ ] Confirmar que o INFOSIMPLES_TOKEN está nos secrets das Edge Functions do Supabase (conferência das notas na SEFAZ)
 
 CIÊNCIA (CLIENTE)

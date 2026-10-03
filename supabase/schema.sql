@@ -126,8 +126,8 @@ create table if not exists private.equipe_senha (
 -- ---------------------------------------------------------------------------
 -- Plano contratado: serviços (página + cardápio, chamar o garçom, fidelidade),
 -- mesas, domínio e contrato. Sem plano definido = tudo liberado, como antes.
--- A mensalidade segue a tabela de preços (assets/js/precos.js): página com sino 79 (o sino vem incluso) + 229 + 169,
--- 2 serviços −10% (arredondado para terminar em 9), os três por R$ 399.
+-- A mensalidade segue a tabela de preços (assets/js/precos.js): página com sino 79 (o sino vem incluso) + 229 + 169
+-- + Prorrogação 89 (adicional que entra no combo); 2 itens −10%, 3 −17% (arredondado para terminar em 9), os quatro por R$ 449.
 -- ---------------------------------------------------------------------------
 alter table public.restaurantes add column if not exists plano jsonb;
 
@@ -166,7 +166,7 @@ language sql stable security definer set search_path = public as $$
   from public.restaurantes where id = p_restaurante;
 $$;
 
--- Preço mensal de cada adicional (o mesmo de Precos.ADICIONAIS), fora do desconto de combo.
+-- Preço mensal de cada adicional (o mesmo de Precos.ADICIONAIS). A Prorrogação entra no desconto de combo.
 create or replace function public.adicional_preco(p_adicional text) returns numeric language sql immutable as $$
   select (case p_adicional when 'prorrogacao' then 89 else 0 end)::numeric;
 $$;
@@ -182,12 +182,14 @@ begin
   if coalesce(sv ->> 'pagina', '') = 'true' or coalesce(sv ->> 'garcom', '') = 'true' then soma := soma + 79; n := n + 1; end if;
   if coalesce(sv ->> 'fidelidade', '') = 'true' then soma := soma + 229; n := n + 1; end if;
   if coalesce(sv ->> 'delivery', '') = 'true' then soma := soma + 169; n := n + 1; end if;
+  -- A Prorrogação fica em plano.adicionais, mas entra no combo como os serviços.
+  if coalesce(p -> 'adicionais' ->> 'prorrogacao', '') = 'true' then soma := soma + public.adicional_preco('prorrogacao'); n := n + 1; end if;
   total := case
-    when n = 3 then 399
+    when n = 4 then 449
+    when n = 3 then least(soma, floor(soma * 0.83 / 10) * 10 + 9)
     when n = 2 then least(soma, floor(soma * 0.90 / 10) * 10 + 9)
     else soma end;
-  return total + (case when p ->> 'dominio' in ('proprio', 'registro') then 19 else 0 end)
-    + (case when coalesce(p -> 'adicionais' ->> 'prorrogacao', '') = 'true' then public.adicional_preco('prorrogacao') else 0 end);
+  return total + (case when p ->> 'dominio' in ('proprio', 'registro') then 19 else 0 end);
 end $$;
 
 create or replace function public.plano_tem(p_restaurante uuid, p_servico text) returns boolean
