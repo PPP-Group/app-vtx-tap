@@ -1905,14 +1905,17 @@
       /* ---------- Prorrogação (mesmas regras de public.hh_*) ---------- */
       async hhStatus() {
         const db = read();
+        const antes = JSON.stringify(db);
         const st = hhStatusDe(db);
-        write(db);
+        // Só grava se o relógio fechou ou abriu alguma sessão: gravar avisa a tela, que lê de novo (sem fim).
+        if (JSON.stringify(db) !== antes) write(db);
         return st;
       },
       async hhPainel() {
         const db = read();
+        const antes = JSON.stringify(db);
         const st = hhStatusDe(db);
-        write(db);
+        if (JSON.stringify(db) !== antes) write(db);
         const h = HH(db);
         const atual = st.sessao ? st.sessao.id : (h.sessoes[h.sessoes.length - 1] || {}).id;
         return { ...st, config: mergeSettings(db.configuracao, true).prorrogacao,
