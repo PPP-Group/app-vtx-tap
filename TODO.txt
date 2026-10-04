@@ -33,15 +33,19 @@ PEDIDOS DE 03/10 — O CLAUDE FAZ, NESTA ORDEM
 [x] Plaquinha na mesa pela câmera (realidade aumentada), no tamanho real: botão "Ver na minha mesa" na página inicial
 [x] Textos: a plaquinha chega pronta; o restaurante liga cada uma em menos de 10 segundos (aproxima e escolhe a mesa)
 [x] Simulador interno com o custo da plaquinha em R$ 5
-[ ] Supabase: aplicar as migrações (pasta supabase/migracoes, nesta ordem): contas-e-avisos, limpeza,
-    seguranca, pagamentos. Depois publicar as funções equipe, avisos e pagamentos
+[x] Supabase: migrações de 03/10 aplicadas (contas e avisos, segurança, pagamentos); funções equipe, avisos
+    e pagamentos publicadas; PR #43 no master e no ar
+[x] Avisos internos vão para o e-mail de cada operador cadastrado no master (hoje os dois Pedros)
+[x] Preço dos quatro juntos (R$ 449) e desconto de 3 itens (17%) aprovados
 
 PEDIDOS DE 03/10 — VOCÊ FAZ
-[ ] Aprovar o preço dos quatro juntos (R$ 449) e do desconto de 3 itens (17%), ou me passar outro valor
-[ ] Aprovar a limpeza do Supabase (supabase/migracoes/2026-10-03-limpeza.sql: tira o código de ativação antigo
-    e cria a faxina diária de sessões, códigos e tentativas vencidas) e as outras migrações, para eu aplicar
+[ ] Rodar no SQL Editor do Supabase o arquivo supabase/migracoes/2026-10-04-rodar-no-sql-editor.sql
+    (a parte que apaga algo: a ferramenta do Claude trava pedindo confirmação nesses comandos). Ele traz:
+    esqueci o PIN com código (cliente e equipe), trocar PIN, apagar conta, "Desconectar aparelhos",
+    limpeza do código de ativação antigo, faxina diária e o fim da leitura direta dos chamados
 [ ] E-mails: criar a conta no Resend (resend.com), verificar o domínio vortexsystems.tech e colocar nos secrets
-    das Edge Functions: RESEND_API_KEY e AVISOS_DE (ex.: VTX Tap <avisos@vortexsystems.tech>)
+    das Edge Functions: RESEND_API_KEY e AVISOS_DE (ex.: VTX Tap <avisos@vortexsystems.tech>).
+    Até lá os e-mails ficam guardados na fila e saem sozinhos (até 2 dias) quando a chave entrar
 [ ] Supabase › Authentication: ligar "Allow new users to sign up" (primeiro acesso da central), SMTP próprio
     pelo Resend (e-mail de "esqueci a senha") e "Leaked password protection"
 [ ] Pagamentos: criar a conta no Asaas (comece pelo sandbox) e colocar nos secrets das Edge Functions:
@@ -49,7 +53,8 @@ PEDIDOS DE 03/10 — VOCÊ FAZ
     e ASAAS_WEBHOOK_TOKEN (uma senha longa que você inventa)
 [ ] Asaas › Integrações › Webhooks: URL https://cmockootzrjkcuxkxlvy.supabase.co/functions/v1/pagamentos?webhook,
     o mesmo token do ASAAS_WEBHOOK_TOKEN e os eventos de cobrança (PAYMENT_*)
-[ ] Me dizer os e-mails da Vortex que recebem os avisos internos
+[ ] Testar a plaquinha pela câmera num Android (Chrome) e num iPhone (Safari): página inicial › As plaquinhas ›
+    "Ver na minha mesa"
 
 PRORROGAÇÃO (HAPPY HOUR QUE CRESCE A CADA CHOPP)
 [ ] Testar num restaurante de verdade: ligar o adicional na central, abrir na TV pelo botão "Abrir na TV" e ligar umas plaquinhas como comanda
