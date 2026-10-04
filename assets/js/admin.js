@@ -2067,7 +2067,7 @@
     + ` · ${p.mesas} mesas` : '—');
   async function carregarPlano() {
     try {
-      S.plano = await store.meuPlano();
+      [S.plano, S.cobranca] = await Promise.all([store.meuPlano(), store.minhaCobranca().catch(() => ({ indisponivel: true }))]);
       S.planoEd = { servicos: { ...S.plano.plano.servicos }, adicionais: { ...(S.plano.plano.adicionais || {}) }, mesas: S.plano.plano.mesas };
     } catch (e) {
       console.error(e);
@@ -2089,6 +2089,98 @@
       ${ant ? `<p class="help">Em ${nomeMes(ant.mes)}: ${ant.notas} ${ant.notas === 1 ? 'nota' : 'notas'} · ${brl(ant.valor)}.</p>` : ''}
     </section>`;
   }
+  // Mensalidade: cartão recorrente ou Pix/boleto pelo Asaas. O cartão é digitado na página segura do Asaas.
+  const FATURA = { PENDING: ['Em aberto', ''], OVERDUE: ['Vencida', 'is-late'], RECEIVED: ['Paga', 'is-paid'], CONFIRMED: ['Paga', 'is-paid'],
+    RECEIVED_IN_CASH: ['Paga', 'is-paid'], REFUNDED: ['Estornada', ''], DELETED: ['Cancelada', ''] };
+  const dataBr = (iso) => (iso ? new Date(`${String(iso).slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR') : '');
+  function pagPanel() {
+    const c = S.cobranca;
+    if (!c || c.indisponivel) return '';
+    const a = c.assinatura;
+    const abertas = (c.faturas || []).filter((f) => f.status === 'PENDING' || f.status === 'OVERDUE').sort((x, y) => x.vencimento.localeCompare(y.vencimento));
+    const prox = abertas[0];
+    const vencida = abertas.some((f) => f.status === 'OVERDUE');
+    if (!a || a.status !== 'ativa') {
+      return `<section class="panel stack pag-panel">
+        <h2>Pagamento da mensalidade</h2>
+        ${!S.user.admin ? `<p class="note">${icon('lock')}<span>A cobrança ainda não foi ativada. Só o administrador do restaurante ativa.</span></p>` : `
+        <p class="muted">Escolha como pagar os ${reais(S.plano.mensal)} por mês. No cartão, você digita os dados uma vez na página segura do Asaas e a mensalidade é cobrada sozinha todo mês. O VTX Tap não vê nem guarda o número do cartão.</p>
+        <form id="pagAtivarForm" class="stack" novalidate>
+          <div class="pag-formas" role="radiogroup" aria-label="Forma de pagamento">
+            <label class="plano-op is-on"><span><b>Cartão de crédito automático</b><small>Qualquer bandeira. Cobra todo mês sem você precisar fazer nada.</small></span>
+              <input type="radio" name="pagForma" value="cartao" checked></label>
+            <label class="plano-op"><span><b>Pix ou boleto todo mês</b><small>Chega o link por e-mail alguns dias antes do vencimento.</small></span>
+              <input type="radio" name="pagForma" value="pix"></label>
+          </div>
+          <div class="pag-campos">
+            <label class="field"><span>Nome ou razão social</span><input class="input" name="nome" required maxlength="120" autocomplete="organization" value="${esc(S.settings.restaurante && S.settings.restaurante.nome || '')}"></label>
+            <label class="field"><span>CPF ou CNPJ</span><input class="input mono" name="documento" required inputmode="numeric" maxlength="18"></label>
+            <label class="field"><span>E-mail para as cobranças</span><input class="input" name="email" type="email" required maxlength="120" autocomplete="email"></label>
+            <label class="field"><span>Celular (opcional)</span><input class="input" name="telefone" type="tel" inputmode="tel" maxlength="16" autocomplete="tel"></label>
+          </div>
+          <button class="btn btn-cobalt" type="submit">${icon('lock')} Ativar e ir para o pagamento</button>
+          <small class="help">Abre a página de pagamento do Asaas em outra aba. A primeira mensalidade vence amanhã.</small>
+        </form>`}
+      </section>`;
+    }
+    return `<section class="panel stack pag-panel">
+      <h2>Pagamento da mensalidade</h2>
+      ${vencida ? `<p class="note is-warn">${icon('alert')}<span>Há mensalidade vencida. Pague pelo botão abaixo para não interromper o serviço.</span></p>` : ''}
+      <div class="pag-resumo">
+        <div class="plano-resumo"><span>Forma</span><b class="pag-forma">${a.forma === 'cartao' ? 'Cartão automático' : 'Pix ou boleto'}</b>
+          <small>${a.forma === 'cartao' ? (a.cartao ? esc(a.cartao) : 'Cartão ainda não cadastrado: cadastre no primeiro pagamento.') : 'O link chega no e-mail ' + esc(a.email) + '.'}</small></div>
+        <div class="plano-resumo"><span>${prox ? (prox.status === 'OVERDUE' ? 'Vencida' : 'Próxima cobrança') : 'Mensalidade'}</span>
+          <b>${reais(prox ? prox.valor : a.valor)}</b><small>${prox ? `Vence em ${dataBr(prox.vencimento)}` : 'Nenhuma cobrança em aberto.'}</small></div>
+      </div>
+      ${S.user.admin ? `<div class="dom-acoes">
+        ${prox ? `<button type="button" class="btn btn-cobalt" data-pag="pagar">${icon('external')} ${a.forma === 'cartao' && !a.cartao ? 'Cadastrar o cartão e pagar' : 'Pagar agora'}</button>` : ''}
+        <button type="button" class="btn btn-line" data-pag="forma" data-forma="${a.forma === 'cartao' ? 'pix' : 'cartao'}">${a.forma === 'cartao' ? 'Mudar para Pix ou boleto' : 'Mudar para cartão automático'}</button>
+      </div>
+      <small class="help">Para trocar o cartão, mude para Pix ou boleto e volte para o cartão: a próxima cobrança pede o cartão novo. Dados de cobrança: ${esc(a.nome)} · ${esc(a.documento)}.</small>` : ''}
+      ${(c.faturas || []).length ? `<h3 class="plano-sub">Cobranças</h3><ul class="plano-hist pag-faturas">${c.faturas.map((f) => {
+        const [st, cls] = FATURA[f.status] || [f.status, ''];
+        return `<li><span><b>${reais(f.valor)}</b> · ${esc(f.descricao || 'Mensalidade')} <span class="tag pag-st ${cls}">${st}</span></span>
+          <small class="muted">Vencimento ${dataBr(f.vencimento)}${f.pago_em ? ` · pago em ${dataBr(f.pago_em)}` : ''}${f.url ? ` · <a href="${esc(f.url)}" target="_blank" rel="noopener">${f.status === 'PENDING' || f.status === 'OVERDUE' ? 'pagar' : 'recibo'}</a>` : ''}</small></li>`;
+      }).join('')}</ul>` : ''}
+    </section>`;
+  }
+  async function pagAcao(acao, dados, botao) {
+    // Abre a aba antes da resposta (o navegador bloqueia janela aberta depois de esperar).
+    const aba = window.open('', '_blank');
+    if (botao) botao.disabled = true;
+    try {
+      const r = await store.pagamento(acao, dados);
+      if (r.url && aba) aba.location.href = r.url;
+      else if (aba) aba.close();
+      S.cobranca = await store.minhaCobranca();
+      toast(r.url ? 'Página de pagamento aberta em outra aba.' : r.demo ? 'Demonstração: pagamento registrado.' : 'Pronto.', { tone: 'ok', ms: 4500 });
+      renderView();
+    } catch (ex) {
+      if (aba) aba.close();
+      toast(ex.message || 'Não foi possível agora. Tente de novo.', { tone: 'error', ms: 5000 });
+      if (botao) botao.disabled = false;
+    }
+  }
+  document.addEventListener('submit', (e) => {
+    if (e.target.id !== 'pagAtivarForm') return;
+    e.preventDefault();
+    const f = new FormData(e.target);
+    const doc = String(f.get('documento') || '').replace(/\D/g, '');
+    if (!/^(\d{11}|\d{14})$/.test(doc)) return toast('CPF ou CNPJ inválido.', { tone: 'error' });
+    pagAcao('ativar', { forma: f.get('pagForma'), nome: f.get('nome'), documento: doc, email: f.get('email'), telefone: f.get('telefone') },
+      e.target.querySelector('[type=submit]'));
+  });
+  document.addEventListener('change', (e) => {
+    if (e.target.name !== 'pagForma') return;
+    e.target.closest('.pag-formas').querySelectorAll('.plano-op').forEach((l) => l.classList.toggle('is-on', l.contains(e.target)));
+  });
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-pag]');
+    if (!b) return;
+    if (b.dataset.pag === 'forma' && !confirm(b.dataset.forma === 'pix' ? 'Mudar para Pix ou boleto? O cartão deixa de ser cobrado e o link chega por e-mail todo mês.'
+      : 'Mudar para cartão automático? A próxima cobrança pede o cartão na página segura do Asaas.')) return;
+    pagAcao(b.dataset.pag, { forma: b.dataset.forma }, b);
+  });
   function ajPlano() {
     if (!S.plano) {
       carregarPlano();
@@ -2110,6 +2202,7 @@
       ed.mesas < S.settings.mesas.total && `Hoje vocês usam ${S.settings.mesas.total} mesas. As mesas acima da ${ed.mesas} deixam de funcionar.`,
     ].filter(Boolean);
     return `<div class="aj-grid plano-grid">
+      ${pagPanel()}
       <section class="panel stack">
         <h2>Seu plano hoje</h2>
         ${atual.definido === false ? '<p class="note">A VTX ainda não definiu o plano deste restaurante: hoje tudo está liberado.</p>' : ''}

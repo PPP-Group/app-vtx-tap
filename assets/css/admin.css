@@ -835,6 +835,20 @@ button.tab { appearance: none; border: 0; background: none; color: inherit; font
 .plano-hist { list-style: none; margin: 0; padding: 0; display: grid; }
 .plano-hist li { display: grid; gap: 2px; padding: 10px 0; font-size: 14px; }
 .plano-hist li + li { border-top: 1px solid var(--line); }
+.pag-panel { grid-column: 1 / -1; }
+.pag-formas { display: grid; gap: 10px; }
+@media (min-width: 720px) { .pag-formas { grid-template-columns: 1fr 1fr; } }
+.pag-formas .plano-op { grid-template-columns: minmax(0, 1fr) auto; }
+.pag-formas input[type=radio] { width: 20px; height: 20px; accent-color: var(--cobalt); }
+.pag-campos { display: grid; gap: 12px; }
+@media (min-width: 720px) { .pag-campos { grid-template-columns: 1fr 1fr; } }
+.pag-resumo { display: grid; gap: 10px; }
+@media (min-width: 720px) { .pag-resumo { grid-template-columns: 1fr 1fr; } }
+.plano-resumo b.pag-forma { font-size: 26px; }
+.pag-st { margin-left: 6px; }
+.pag-st.is-paid { background: var(--leaf-soft); color: var(--leaf); }
+.pag-st.is-late { background: var(--pepper-soft); color: var(--pepper); }
+.note.is-warn { background: var(--amber-soft); }
 
 /* Valor da nota lido pela câmera */
 .fid-ocr { position: relative; aspect-ratio: 4 / 3; border-radius: 18px; overflow: hidden; background: #000; }

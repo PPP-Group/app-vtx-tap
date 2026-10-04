@@ -208,6 +208,7 @@
       async equipe(rid, acao) { if (acao === 'central_membros') return { membros: [{ id: 'm1', nome: 'Ana (demonstração)', admin: true, email: 'an•••@exemplo.com', criado_em: new Date().toISOString() }] }; return { ok: true }; },
       async listRestaurantes() { return read().restaurantes; },
       async sefazUso() { return { uso: [], meses: [] }; },
+      async cobrancas() { return {}; },
       async alterarPlano(rid, plano) {
         const db = read();
         const r = db.restaurantes.find((x) => x.id === rid);
@@ -375,6 +376,10 @@
       async sefazUso() {
         return must(await sb.rpc('central_sefaz_uso', { p_meses: 3 }));
       },
+      // Mensalidade no Asaas: forma, situação e próxima cobrança por restaurante.
+      async cobrancas() {
+        return must(await sb.rpc('central_cobrancas'));
+      },
       async alterarPlano(rid, plano) {
         return must(await sb.rpc('plano_alterar_central', { p_restaurante: rid, p_plano: plano }));
       },
@@ -425,7 +430,8 @@
 
   async function carregar() {
     try {
-      const [rests, tags, met, mud, sefaz] = await Promise.all([api.listRestaurantes(), api.listEtiquetas(), api.metricas(S.dias), api.listMudancas().catch(() => []), api.sefazUso().catch(() => null)]);
+      const [rests, tags, met, mud, sefaz, cob] = await Promise.all([api.listRestaurantes(), api.listEtiquetas(), api.metricas(S.dias), api.listMudancas().catch(() => []), api.sefazUso().catch(() => null), api.cobrancas().catch(() => ({}))]);
+      S.cob = cob || {};
       S.rests = rests || [];
       S.sefaz = sefaz || { uso: [], meses: [] };
       S.mudancas = mud || [];
@@ -814,6 +820,14 @@
         }).join('')}</tbody></table></div></section>`;
   }
 
+  // Situação da mensalidade (Asaas). Sem assinatura: a cobrança ainda não foi ativada no painel do restaurante.
+  const dataCurta = (iso) => (iso ? new Date(`${iso}T12:00:00`).toLocaleDateString('pt-BR') : '');
+  function cobranca(rid) {
+    const c = (S.cob || {})[rid];
+    if (!c) return '<p class="rcard-plano is-sem">Cobrança não ativada (o administrador ativa em Ajustes › Plano)</p>';
+    if (c.status !== 'ativa') return '<p class="rcard-plano is-sem">Assinatura cancelada</p>';
+    return `<p class="rcard-plano ${c.atrasadas ? 'is-sem' : ''}">${c.forma === 'cartao' ? 'Cartão automático' : 'Pix ou boleto'} · ${reais(c.valor)}/mês${c.atrasadas ? ` · <b>${c.atrasadas} vencida${c.atrasadas > 1 ? 's' : ''}</b>` : ''}${c.proxima ? ` · próxima ${dataCurta(c.proxima)}` : ''}${c.ultimo_pago ? ` · pago em ${dataCurta(c.ultimo_pago)}` : ''}</p>`;
+  }
   function vRestaurantes() {
     const cont = (id) => S.tags.filter((t) => t.restaurante_id === id).length;
     return `<div class="vhead"><div><h1>Restaurantes</h1><p>Cada restaurante tem um endereço próprio e a senha da equipe. Na primeira leitura de uma plaquinha nova, alguém da equipe digita o endereço do restaurante e entra com o PIN: a plaquinha passa a ser dele. Em <b>Acesso</b> você copia os dados para mandar ao restaurante.</p></div>
@@ -825,6 +839,7 @@
             ${r.dominios && r.dominios.dominio && r.dominios.status !== 'ativo' ? `<p class="rcard-plano">Domínio próprio <b class="mono">${esc(r.dominios.dominio)}</b>: ${esc(DOM_STATUS[r.dominios.status] || r.dominios.status)}</p>` : ''}
             ${r.observacao ? `<p>${esc(r.observacao)}</p>` : ''}
             <p class="rcard-plano ${r.plano ? '' : 'is-sem'}">${esc(planoResumo(r.plano))}</p>
+            ${cobranca(r.id)}
             ${sefazLigada(r) || sefazDoMes(r.id).notas ? `<p class="rcard-plano">SEFAZ ${sefazLigada(r) ? 'ligada' : 'desligada'} · ${sefazDoMes(r.id).notas} notas este mês · ${brl(sefazDoMes(r.id).valor)}</p>` : ''}</div>
           <div class="rcard-foot"><span>${cont(r.id)} ${cont(r.id) === 1 ? 'plaquinha' : 'plaquinhas'}${r.ativo === false ? ' · <b>desativado</b>' : ''}</span>
             <span class="rcard-acts"><button type="button" class="btn btn-quiet btn-sm" data-ver-rest="${r.id}">Ver plaquinhas</button>

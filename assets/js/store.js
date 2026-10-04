@@ -1148,6 +1148,38 @@
         write(db);
         return { ...novo, taxa_unica: db.planoHistorico[0].taxa_unica };
       },
+      // Mensalidade na demonstração: sem Asaas; a cobrança fica neste navegador e "paga" na hora.
+      async minhaCobranca() {
+        const db = read();
+        const c = db.cobranca || { assinatura: null, faturas: [] };
+        if (c.assinatura) c.assinatura.valor = precoPlano((await this.meuPlano()).plano);
+        return c;
+      },
+      async pagamento(acao, dados = {}) {
+        const db = read();
+        const c = db.cobranca || { assinatura: null, faturas: [] };
+        const mensal = precoPlano((await this.meuPlano()).plano);
+        const venc = (dias) => diaIso(new Date(Date.now() + dias * 864e5));
+        if (acao === 'ativar') {
+          const doc = soDigitos(dados.documento);
+          if (String(dados.nome || '').trim().length < 3) throw new Error('Informe o nome ou a razão social.');
+          if (!/^(\d{11}|\d{14})$/.test(doc)) throw new Error('CPF ou CNPJ inválido.');
+          if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(dados.email || '')) throw new Error('E-mail inválido.');
+          const forma = dados.forma === 'pix' ? 'pix' : 'cartao';
+          c.assinatura = { forma, valor: mensal, status: 'ativa', cartao: forma === 'cartao' ? 'VISA final 4242' : null, nome: dados.nome, email: dados.email,
+            documento: doc.length === 11 ? `•••.${doc.slice(3, 6)}.•••-${doc.slice(-2)}` : `${doc.slice(0, 2)}.•••.•••/${doc.slice(8, 12)}-${doc.slice(-2)}` };
+          c.faturas = [{ id: 'demo-' + Date.now(), descricao: 'VTX Tap · mensalidade', valor: mensal, vencimento: venc(30), status: 'PENDING', forma: forma === 'cartao' ? 'CREDIT_CARD' : 'UNDEFINED', url: null },
+            { id: 'demo-0', descricao: 'VTX Tap · mensalidade', valor: mensal, vencimento: venc(0), status: 'CONFIRMED', forma: forma === 'cartao' ? 'CREDIT_CARD' : 'PIX', url: null, pago_em: venc(0) }];
+        } else if (!c.assinatura) {
+          throw new Error('A cobrança ainda não foi ativada.');
+        } else if (acao === 'forma') {
+          c.assinatura.forma = dados.forma === 'pix' ? 'pix' : 'cartao';
+          c.assinatura.cartao = c.assinatura.forma === 'cartao' ? 'VISA final 4242' : null;
+        }
+        db.cobranca = c;
+        write(db);
+        return { status: 'ok', url: null, demo: true };
+      },
 
       /* ---------- Fidelidade: cliente ---------- */
       async fidPrograma() {
@@ -2415,6 +2447,21 @@
       },
       async alterarPlano(plano) {
         return must(await sb.rpc('meu_plano_alterar', { p_plano: plano }));
+      },
+      // Mensalidade (Asaas): leitura pelo banco; ativar, pagar e trocar a forma pela função "pagamentos".
+      async minhaCobranca() {
+        return must(await sb.rpc('minha_cobranca'));
+      },
+      async pagamento(acao, dados = {}) {
+        const token = (await sb.auth.getSession()).data.session?.access_token;
+        const r = await fetch(`${supabaseUrl}/functions/v1/pagamentos`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', apikey: supabaseAnonKey, Authorization: `Bearer ${token || supabaseAnonKey}` },
+          body: JSON.stringify({ ...dados, acao, restaurante: rid }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.erro || 'Não foi possível falar com o sistema de pagamento. Tente de novo em instantes.');
+        return j;
       },
       async uploadImage(blob, nome) {
         const ext = (blob.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
