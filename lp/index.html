@@ -278,6 +278,10 @@
   .c3-btn { color: #fff; }
   .c3-btn[aria-pressed="true"] { background: #fff; color: var(--noite); border-color: #fff; }
   .c3-dica { font: 500 12.5px var(--mono); letter-spacing: .04em; color: var(--lilas) !important; }
+  .c3-ar { display: grid; gap: 8px; justify-items: start; margin-top: 4px; }
+  .c3-ar .btn { white-space: normal; }
+  .c3-ar-txt { font-size: 14px; }
+  .c3-ar model-viewer { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
   .c3-sub { font: 900 26px/1 var(--display); text-transform: uppercase; margin: 8px 0 0; }
   @media (prefers-reduced-motion: reduce) { .c3-cartao.anima { transition: none; } }
   .placa p { color: var(--muted); font-size: 14.5px; }
@@ -694,7 +698,7 @@
     <div class="sec-h">
       <p class="kicker">As plaquinhas</p>
       <h2 id="placasTitulo">Pequenas, bonitas, com NFC e QR</h2>
-      <p>Do tamanho de um cartão de crédito, impressas dos dois lados e instaladas pela nossa equipe. Gire a plaquinha para ver a frente e o verso.</p>
+      <p>Do tamanho de um cartão de crédito, impressas dos dois lados. Chegam prontas: para ligar cada uma, alguém da equipe aproxima o celular e escolhe a mesa, em menos de 10 segundos. Gire a plaquinha para ver a frente e o verso, ou veja na sua mesa pela câmera.</p>
     </div>
     <div class="c3">
       <div class="c3-palco" id="c3Palco" tabindex="0" role="img" aria-roledescription="plaquinha em 3D" aria-label="Plaquinha padrão da VTX Tap. Frente deitada: QR Code com a logo da VTX Tap e a faixa roxa com Aproxime o celular. Verso em pé: o QR Code em cima e a faixa embaixo. Arraste ou use as setas para girar.">
@@ -712,6 +716,10 @@
           <button type="button" class="btn btn-linha c3-btn" data-lado="verso" aria-pressed="false">Verso</button>
         </div>
         <p class="c3-dica">Arraste a plaquinha para girar.</p>
+        <div class="c3-ar">
+          <button type="button" class="btn btn-ouro" id="c3Ar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="m12 7 5 3v4l-5 3-5-3v-4Z"/><path d="M7 10l5 3 5-3M12 13v4"/></svg> Ver na minha mesa</button>
+          <p class="c3-ar-txt" id="c3ArTxt" role="status">Pelo celular: a câmera abre e a plaquinha aparece em cima da sua mesa, no tamanho real (8,6 × 5,4 cm).</p>
+        </div>
       </div>
     </div>
     <h3 class="c3-sub">Exemplos de artes personalizáveis</h3>
@@ -734,7 +742,7 @@
         <li><svg><use href="#i-check"/></svg>Cadastro do restaurante</li>
         <li><svg><use href="#i-check"/></svg>Cardápio montado</li>
         <li><svg><use href="#i-check"/></svg>Mesas e áreas</li>
-        <li><svg><use href="#i-check"/></svg>Plaquinhas instaladas</li>
+        <li><svg><use href="#i-check"/></svg>Plaquinhas prontas para ligar (menos de 10 s cada)</li>
         <li><svg><use href="#i-check"/></svg>1 hora de treinamento da equipe</li>
       </ul>
     </div>
@@ -759,7 +767,7 @@
       <details><summary>Posso contratar só o delivery ou só a fidelidade?</summary><div><p>Pode. Cada serviço tem a sua mensalidade e você liga só o que quiser. Dá para começar com um e somar outro depois, com desconto.</p></div></details>
       <details><summary>O delivery cobra alguma porcentagem das vendas?</summary><div><p>Não. É uma mensalidade fixa, com pedidos ilimitados. As taxas da sua maquininha e do seu banco continuam as mesmas de hoje.</p></div></details>
       <details><summary>Os dados dos clientes são meus?</summary><div><p>Sim. A lista do clube de pontos (com o consentimento de cada cliente, conforme a LGPD) fica no seu painel e pode ser exportada em planilha.</p></div></details>
-      <details><summary>Quanto tempo leva para começar e qual é o contrato?</summary><div><p>A nossa equipe monta o cardápio, cadastra as mesas, instala as plaquinhas e treina a equipe. O contrato mínimo é de 6 meses; no de 12 meses, a implantação sai pela metade.</p></div></details>
+      <details><summary>Quanto tempo leva para começar e qual é o contrato?</summary><div><p>A nossa equipe monta o cardápio, cadastra as mesas e treina a equipe. As plaquinhas chegam prontas: vocês aproximam o celular de cada uma e escolhem a mesa, menos de 10 segundos por plaquinha. O contrato mínimo é de 6 meses; no de 12 meses, a implantação sai pela metade.</p></div></details>
       <details><summary>Preciso de um tablet ou computador novo?</summary><div><p>Não. O painel da equipe funciona em qualquer celular, tablet ou computador com internet. Cada pessoa da equipe entra com o próprio PIN.</p></div></details>
     </div>
   </section>
@@ -853,6 +861,60 @@
       aplicar();
       // Só anima enquanto aparece na tela.
       new IntersectionObserver(([en]) => { if (en.isIntersecting) ligar(); else { cancelAnimationFrame(raf); raf = 0; } }).observe(palco);
+    })();
+    // Realidade aumentada: a câmera do celular mostra a plaquinha na mesa, no tamanho real (ar-scale fixed).
+    // Android abre o Scene Viewer do Google; iPhone, o Quick Look (o model-viewer converte o modelo na hora).
+    // O model-viewer (1 MB) só carrega no toque do botão.
+    (function () {
+      const btn = $('c3Ar'), txt = $('c3ArTxt');
+      if (!btn) return;
+      const MV = 'https://cdn.jsdelivr.net/npm/@google/model-viewer@4.3.1/dist/model-viewer.min.js';
+      const SRI = 'sha384-cprcVQt7wbUl0xngF3PGP6yBB7n4/t+4AoAMG9biiMCGFiWOdzUH10Ie2COTqFNW';
+      let mv = null, carregando = null;
+      const carregar = () => carregando || (carregando = new Promise((ok, falha) => {
+        if (customElements.get('model-viewer')) return ok();
+        const s = document.createElement('script');
+        s.type = 'module'; s.src = MV; s.integrity = SRI; s.crossOrigin = 'anonymous';
+        s.onload = () => customElements.whenDefined('model-viewer').then(ok);
+        s.onerror = () => { carregando = null; falha(new Error('script')); };
+        document.head.appendChild(s);
+      }));
+      const celular = matchMedia('(pointer: coarse)').matches;
+      if (!celular) txt.textContent = 'Abra esta página no celular e toque aqui: a câmera mostra a plaquinha em cima da sua mesa, no tamanho real (8,6 × 5,4 cm).';
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        txt.textContent = 'Abrindo a câmera…';
+        try {
+          await carregar();
+          if (!mv) {
+            mv = document.createElement('model-viewer');
+            mv.setAttribute('src', new URL('/assets/3d/plaquinha-vtx.glb', location.href).href);
+            mv.setAttribute('alt', 'Plaquinha da VTX Tap em tamanho real');
+            mv.setAttribute('ar', '');
+            mv.setAttribute('ar-modes', 'webxr scene-viewer quick-look');
+            mv.setAttribute('ar-scale', 'fixed');
+            mv.setAttribute('ar-placement', 'floor');
+            mv.setAttribute('loading', 'eager');
+            mv.setAttribute('reveal', 'manual');
+            mv.addEventListener('ar-status', (e) => {
+              if (e.detail.status === 'failed') txt.textContent = 'Não deu para abrir a câmera neste celular. Atualize o navegador ou tente pelo Chrome (Android) ou Safari (iPhone).';
+              if (e.detail.status === 'session-started') txt.textContent = 'Aponte a câmera para a mesa e espere a plaquinha aparecer.';
+            });
+            btn.parentElement.appendChild(mv);
+            await new Promise((ok) => { mv.addEventListener('load', ok, { once: true }); setTimeout(ok, 8000); });
+          }
+          if (mv.canActivateAR) {
+            txt.textContent = 'Aponte a câmera para a mesa. A plaquinha aparece no tamanho real.';
+            await mv.activateAR();
+          } else {
+            txt.textContent = celular ? 'Este celular não abre realidade aumentada pelo navegador. Tente pelo Chrome (Android) ou Safari (iPhone).'
+              : 'Abra esta página no celular e toque em "Ver na minha mesa": a câmera mostra a plaquinha em cima da sua mesa.';
+          }
+        } catch (e) {
+          txt.textContent = 'Não foi possível carregar a plaquinha em 3D agora. Confira a conexão e tente de novo.';
+        }
+        btn.disabled = false;
+      });
     })();
     // Local (/lp/) o simulador é orcamento.html; publicado, é /orcamento.
     if (location.pathname.startsWith('/lp/')) document.querySelectorAll('[data-precos]').forEach((a) => (a.href = '/lp/orcamento.html'));
