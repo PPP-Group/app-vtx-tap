@@ -4465,7 +4465,7 @@ create table if not exists private.avisos_config (
   id      int primary key default 1 check (id = 1),
   url     text,                     -- https://<projeto>.supabase.co/functions/v1/avisos
   segredo text not null default encode(extensions.gen_random_bytes(24), 'hex'),
-  vortex  text                      -- e-mail(s) da Vortex que recebem os avisos internos, separados por vírgula
+  vortex  text                      -- e-mails extras para os avisos internos (os operadores da central já recebem)
 );
 insert into private.avisos_config (id) values (1) on conflict (id) do nothing;
 
@@ -4555,13 +4555,20 @@ begin
   end if;
 end $$;
 
--- Aviso interno para a Vortex (um e-mail para cada endereço configurado).
+-- Aviso interno para a Vortex: vai para o e-mail de cada operador cadastrado na central (master)
+-- e para os endereços extras de avisos_config.vortex, se houver (separados por vírgula).
 create or replace function private.aviso_vortex(p_tipo text, p_assunto text, p_html text) returns void
 language plpgsql security definer set search_path = public as $$
 declare e text;
 begin
-  foreach e in array string_to_array(coalesce((select vortex from private.avisos_config where id = 1), ''), ',') loop
-    perform private.aviso(p_tipo, btrim(e), p_assunto, p_html);
+  for e in
+    select distinct lower(btrim(x)) from (
+      select u.email as x from public.operadores o join auth.users u on u.id = o.user_id
+      union all
+      select unnest(string_to_array(coalesce((select vortex from private.avisos_config where id = 1), ''), ','))
+    ) t where btrim(coalesce(x, '')) <> ''
+  loop
+    perform private.aviso(p_tipo, e, p_assunto, p_html);
   end loop;
 end $$;
 
