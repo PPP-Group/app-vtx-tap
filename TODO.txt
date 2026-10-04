@@ -1,18 +1,64 @@
 VTX Tap — pendências
 ====================
 
+PEDIDOS DE 03/10 — O CLAUDE FAZ, NESTA ORDEM
+[x] Painel: Salão primeiro no menu; com o sino desligado, a aba Chamados some
+[x] Prorrogação entra no combo como o 4º item: 2 itens −10%, 3 −17% (página + fidelidade + delivery
+    continuam R$ 399), os quatro por R$ 449 (banco já atualizado)
+[x] Página inicial e orçamento: quatro cards (Página com sino, Fidelidade, Delivery, Prorrogação) + o card do combo
+[x] Página inicial: mais destaque para a fidelidade, o cartão fidelidade (selos) e os dois programas por horário
+[x] Página inicial: seção da Prorrogação com prints (telão e celular da mesa)
+[x] Página inicial: caminho mais curto para o orçamento (menu, hero, faixas no meio da página e botão fixo)
+[x] Orçamento: o que vem em cada serviço, "para quem é" e sugestões prontas por tipo de casa
+[x] Simulador interno (artefato) com os preços atuais e a visão de custo e lucro
+[x] Painel: aviso "Conclua a configuração" só na primeira aba e em Ajustes (no celular ocupava todas as telas)
+[x] Celular: barra de abas do painel com 4 principais + "Mais"
+[x] Contas: tudo por conta própria em todos os perfis
+    - Central: esqueci a senha, primeiro acesso, convidar operador, trocar o PIN e dar admin a alguém da equipe
+    - Painel: esqueci o PIN por e-mail (código de 6 números), e-mail de recuperação, aparelho confiável,
+      "Desconectar todos os aparelhos"
+    - Cliente do clube: esqueci o PIN (código no e-mail), trocar PIN, mudar e-mail e telefone, apagar a conta
+[x] Avisos por e-mail no manual de marca: boas-vindas ao clube, novo cliente no clube e novo pedido
+    (restaurante), pedido de contratação, restaurante novo e mudança de plano (Vortex)
+[x] Onboarding: e-mail de boas-vindas ao dono com o passo a passo; pedido de contratação pela página de orçamento
+[x] Auditoria completa: as 80 chamadas ao banco existem; todas as abas e jornadas testadas no computador e no celular
+[x] Segurança: chamados só para quem abriu, limite de comentários, aparelho confiável no PIN da equipe,
+    PIN redefinido vale 24 h, cabeçalhos de segurança (CSP, HSTS), biblioteca do Supabase fixada com SRI
+[x] Muitos clientes: gzip, índices nas chaves, relógio da mesa consulta conforme o momento
+[x] Pagamentos: Asaas (cartão 2,99% + R$ 0,49, Pix R$ 1,99, sem mensalidade, recebe em até 2 dias úteis)
+    - Painel › Ajustes › Plano: ativar a cobrança (cartão automático ou Pix/boleto), pagar, trocar a forma, histórico
+    - O cartão é digitado na página segura do Asaas; o VTX Tap nunca vê o número
+    - Mudou o plano: o valor da assinatura muda sozinho e a taxa única das mesas vira uma cobrança
+    - Webhook: pago avisa a Vortex; vencida avisa o restaurante e a Vortex; a central mostra a situação
+[x] Plaquinha na mesa pela câmera (realidade aumentada), no tamanho real: botão "Ver na minha mesa" na página inicial
+[x] Textos: a plaquinha chega pronta; o restaurante liga cada uma em menos de 10 segundos (aproxima e escolhe a mesa)
+[x] Simulador interno com o custo da plaquinha em R$ 5
+[ ] Supabase: aplicar as migrações (pasta supabase/migracoes, nesta ordem): contas-e-avisos, limpeza,
+    seguranca, pagamentos. Depois publicar as funções equipe, avisos e pagamentos
+
+PEDIDOS DE 03/10 — VOCÊ FAZ
+[ ] Aprovar o preço dos quatro juntos (R$ 449) e do desconto de 3 itens (17%), ou me passar outro valor
+[ ] Aprovar a limpeza do Supabase (supabase/migracoes/2026-10-03-limpeza.sql: tira o código de ativação antigo
+    e cria a faxina diária de sessões, códigos e tentativas vencidas) e as outras migrações, para eu aplicar
+[ ] E-mails: criar a conta no Resend (resend.com), verificar o domínio vortexsystems.tech e colocar nos secrets
+    das Edge Functions: RESEND_API_KEY e AVISOS_DE (ex.: VTX Tap <avisos@vortexsystems.tech>)
+[ ] Supabase › Authentication: ligar "Allow new users to sign up" (primeiro acesso da central), SMTP próprio
+    pelo Resend (e-mail de "esqueci a senha") e "Leaked password protection"
+[ ] Pagamentos: criar a conta no Asaas (comece pelo sandbox) e colocar nos secrets das Edge Functions:
+    ASAAS_API_KEY, ASAAS_URL (https://api-sandbox.asaas.com/v3 nos testes; https://api.asaas.com/v3 em produção)
+    e ASAAS_WEBHOOK_TOKEN (uma senha longa que você inventa)
+[ ] Asaas › Integrações › Webhooks: URL https://cmockootzrjkcuxkxlvy.supabase.co/functions/v1/pagamentos?webhook,
+    o mesmo token do ASAAS_WEBHOOK_TOKEN e os eventos de cobrança (PAYMENT_*)
+[ ] Me dizer os e-mails da Vortex que recebem os avisos internos
+
 PRORROGAÇÃO (HAPPY HOUR QUE CRESCE A CADA CHOPP)
 [ ] Testar num restaurante de verdade: ligar o adicional na central, abrir na TV pelo botão "Abrir na TV" e ligar umas plaquinhas como comanda
     - Garçom: entrar no painel no celular dele (mesmo endereço do restaurante) e ler a comanda a cada chopp
     - Android: testar o "Modo garçom (NFC)" encostando na comanda
 
 DOMÍNIO PRÓPRIO DOS RESTAURANTES
-[ ] Religar o roteador de domínios (app "vtx-dominios", hoje com 0 réplicas) com a versão corrigida — deploy/dominios/PASSO-A-PASSO.md
-    - Antes: gerar chave secreta nova do Supabase e token novo da Hostinger (apareceram em conversa)
-    - Deploy pelo EasyPanel (build do GitHub), depois 1 réplica, e conferir o log do Traefik sem "Error while building configuration"
-    - App no projeto "sites": build path deploy/dominios (Dockerfile), bind mount /etc/easypanel/traefik/config -> /traefik,
-      sem domínio e sem porta; SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (a nova) e APP_URL=http://app-vtx-tap:80; resolvedor letsencrypt
-[ ] Testar com um domínio de verdade (depende do item acima)
+[x] Roteador de domínios no ar com a versão corrigida (Traefik sem erro; sem domínio, sem arquivo)
+[ ] Testar com um domínio de verdade
     - Painel > Ajustes > Endereço: cadastrar um domínio de teste (ex.: cardapio.seu-dominio.com.br)
     - Criar o CNAME para tap.vortexsystems.tech (no Cloudflare, nuvem cinza)
     - Ver o andamento chegar em "No ar"
@@ -22,8 +68,7 @@ DOMÍNIO PRÓPRIO DOS RESTAURANTES
     - Conferir na central a cobrança: R$ 190 uma vez + R$ 19/mês
 
 SEGURANÇA DO SERVIDOR
-[ ] Gerar um token novo da API da Hostinger e revogar o antigo (o antigo apareceu em conversa: tratar como exposto)
-[ ] Tirar TRAEFIK_LOG_LEVEL=DEBUG do servidor
+[x] TRAEFIK_LOG_LEVEL=DEBUG retirado
 [ ] Confirmar que o INFOSIMPLES_TOKEN está nos secrets das Edge Functions do Supabase (conferência das notas na SEFAZ)
 
 CIÊNCIA (CLIENTE)

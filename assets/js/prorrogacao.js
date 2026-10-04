@@ -2,7 +2,7 @@
  * Prorrogação (adicional): o relógio do happy hour que ganha minutos a cada chopp.
  * Funções comuns ao painel, ao telão e à página da mesa.
  *
- *   Prorrogacao.acompanhar(store, fn, ms) → chama fn(status) agora e a cada ms; devolve parar()
+ *   Prorrogacao.acompanhar(store, fn, ms) → chama fn(status) agora e a cada ms (número ou função do status); devolve parar()
  *   Prorrogacao.restante(status)         → milissegundos que faltam (com o relógio do servidor)
  *   Prorrogacao.relogio(ms)              → "1:02:03" ou "12:34"
  *   Prorrogacao.copo(el, { tamanho })    → o relógio animado (copo de chopp que esvazia com o tempo e enche a cada chopp):
@@ -33,16 +33,20 @@
     m = Math.round((+m || 0) * 100) / 100;
     return `${String(m).replace('.', ',')} ${m === 1 ? 'minuto' : 'minutos'}`;
   };
+  // ms pode ser um número ou uma função do status (ex.: mais devagar com o relógio parado).
   function acompanhar(store, fn, ms = 5000) {
     let vivo = true;
     let t;
+    let ultimo = null;
     const rodar = async () => {
       try {
-        fn(sincronizar(await store.hhStatus()));
+        ultimo = sincronizar(await store.hhStatus());
+        fn(ultimo);
       } catch (e) {
         console.error(e);
       }
-      if (vivo) t = setTimeout(rodar, document.hidden ? ms * 3 : ms);
+      const espera = typeof ms === 'function' ? ms(ultimo) : ms;
+      if (vivo) t = setTimeout(rodar, document.hidden ? espera * 3 : espera);
     };
     rodar();
     const parar = () => { vivo = false; clearTimeout(t); };

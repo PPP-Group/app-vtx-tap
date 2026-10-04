@@ -101,11 +101,72 @@
         <button type="button" class="btn btn-cobalt" data-copiar-acesso>${icon('copy')} Copiar tudo</button>
         <a class="btn btn-line" href="https://wa.me/?text=${encodeURIComponent(S.acessoTexto)}" target="_blank" rel="noopener">${icon('share')} Enviar no WhatsApp</a>
       </div>
+      <form class="stack" id="fBoasVindas" data-rid="${esc(r.id)}" novalidate>
+        <h3>Boas-vindas por e-mail</h3>
+        <p class="muted">Manda o endereço do painel, como criar a conta e o código de ativação. O e-mail passa a receber os avisos do restaurante.</p>
+        <div class="acesso-linha"><input class="input" id="bvEmail" type="email" maxlength="120" placeholder="dono@restaurante.com.br" value="${esc((r.avisos && r.avisos.email) || '')}">
+          <button class="btn btn-line btn-sm" type="submit">Mandar</button></div>
+      </form>
+      <section class="stack">
+        <h3>Equipe do restaurante</h3>
+        <p class="muted">Para quem esqueceu o PIN e não tem e-mail de recuperação, ou ficou sem administrador.</p>
+        <ul class="equipe-central" id="eqCentral" data-rid="${esc(r.id)}"><li class="muted">Carregando…</li></ul>
+      </section>
     </div>`;
     openSheet('sh');
+    carregarEquipeCentral(r.id);
   }
+  async function carregarEquipeCentral(rid) {
+    const ul = $('#eqCentral');
+    if (!ul) return;
+    try {
+      const { membros } = await api.equipe(rid, 'central_membros');
+      if ($('#eqCentral') !== ul) return;
+      ul.innerHTML = membros.length ? membros.map((m) => `<li class="acesso-linha"><span><b>${esc(m.nome)}</b>${m.admin ? ' · administrador' : ''}<br><small class="muted">${m.email ? `Recupera pelo e-mail ${esc(m.email)}` : 'Sem e-mail de recuperação'}</small></span>
+          <span class="acesso-acts"><button type="button" class="btn btn-quiet btn-sm" data-eq-pin="${esc(m.id)}" data-nome="${esc(m.nome)}">Trocar PIN</button>
+          <button type="button" class="btn btn-quiet btn-sm" data-eq-adm="${esc(m.id)}" data-admin="${m.admin ? 1 : ''}" data-nome="${esc(m.nome)}">${m.admin ? 'Tirar admin' : 'Tornar admin'}</button></span></li>`).join('')
+        : '<li class="muted">Ninguém criou conta ainda. A primeira pessoa que criar com o código da equipe vira administradora.</li>';
+    } catch (ex) {
+      ul.innerHTML = `<li class="form-error">${esc(ex.message)}</li>`;
+    }
+  }
+  document.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-eq-pin], [data-eq-adm]');
+    if (!b) return;
+    const rid = $('#eqCentral') && $('#eqCentral').dataset.rid;
+    try {
+      if (b.dataset.eqPin) {
+        const pin = prompt(`PIN novo para ${b.dataset.nome} (4 a 8 números). Passe para a pessoa e peça para ela trocar depois.`);
+        if (pin == null) return;
+        if (!/^\d{4,8}$/.test(pin.trim())) return toast('O PIN precisa ter de 4 a 8 números.', { tone: 'error' });
+        await api.equipe(rid, 'central_trocar_pin', { id: b.dataset.eqPin, pin: pin.trim() });
+        toast(`PIN de ${b.dataset.nome} trocado.`, { tone: 'ok' });
+      } else {
+        const vira = !b.dataset.admin;
+        if (!confirm(vira ? `Tornar ${b.dataset.nome} administrador do restaurante?` : `Tirar ${b.dataset.nome} de administrador?`)) return;
+        await api.equipe(rid, 'central_admin', { id: b.dataset.eqAdm, admin: vira });
+        toast('Feito.', { tone: 'ok' });
+      }
+    } catch (ex) {
+      toast(ex.message, { tone: 'error', ms: 4500 });
+    }
+    carregarEquipeCentral(rid);
+  });
+  document.addEventListener('submit', async (e) => {
+    if (e.target.id !== 'fBoasVindas') return;
+    e.preventDefault();
+    const email = $('#bvEmail').value.trim();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return toast('E-mail inválido.', { tone: 'error' });
+    try {
+      await api.boasVindas(e.target.dataset.rid, email);
+      toast(`Boas-vindas mandadas para ${email}.`, { tone: 'ok' });
+    } catch (ex) {
+      toast(ex.message, { tone: 'error', ms: 4500 });
+    }
+  });
+
   /* ---------- Planos: serviços, mesas e mensalidade (a mesma tabela de public.plano_preco) ---------- */
-  // Tabela em assets/js/precos.js (a mesma do banco): 2 serviços −10%, os três por R$ 399 (o sino vem incluso na página).
+  // Tabela em assets/js/precos.js (a mesma do banco): 2 itens −10%, 3 −17%, os quatro (com a Prorrogação) por R$ 449; o sino vem incluso na página.
   const SERVICOS = Precos.SERVICOS.map((s) => [s.id, s.nome, s.preco]);
   const reais = (v) => 'R$ ' + Number(v || 0).toLocaleString('pt-BR');
   const brl = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -139,8 +200,15 @@
       async sessao() { return { email: 'demonstração' }; },
       async entrar() {},
       async sair() {},
+      async esqueciSenha() {},
+      async primeiroAcesso() { throw new Error('Na demonstração não há contas: entre com qualquer e-mail.'); },
+      async novaSenha() {},
+      async convidarOperador() { return { status: 'ok' }; },
+      async boasVindas() { return { status: 'ok' }; },
+      async equipe(rid, acao) { if (acao === 'central_membros') return { membros: [{ id: 'm1', nome: 'Ana (demonstração)', admin: true, email: 'an•••@exemplo.com', criado_em: new Date().toISOString() }] }; return { ok: true }; },
       async listRestaurantes() { return read().restaurantes; },
       async sefazUso() { return { uso: [], meses: [] }; },
+      async cobrancas() { return {}; },
       async alterarPlano(rid, plano) {
         const db = read();
         const r = db.restaurantes.find((x) => x.id === rid);
@@ -171,16 +239,9 @@
         if (db.restaurantes.some((x) => x.slug === r.slug && x.id !== r.id)) throw new Error('Esse subdomínio já está em uso. Escolha outro.');
         let salvo;
         if (r.id) db.restaurantes = db.restaurantes.map((x) => (x.id === r.id ? (salvo = { ...x, ...r }) : x));
-        else db.restaurantes.push((salvo = { ...r, id: id(), codigo_ativacao: novoCodigo() + novoCodigo()[0], criado_em: new Date().toISOString() }));
+        else db.restaurantes.push((salvo = { ...r, id: id(), criado_em: new Date().toISOString() }));
         write(db);
         return salvo;
-      },
-      async trocarCodigo(rid) {
-        const db = read();
-        const c = novoCodigo() + novoCodigo()[0];
-        db.restaurantes.forEach((x) => x.id === rid && (x.codigo_ativacao = c));
-        write(db);
-        return c;
       },
       async listEtiquetas() { return read().etiquetas; },
       // Mesmas regras de public.limpar_etiquetas() do schema.sql.
@@ -279,12 +340,45 @@
         must(await sb.auth.signInWithPassword({ email, password: senha }));
       },
       async sair() { await sb.auth.signOut(); },
+      // Senha esquecida: o Supabase manda o link; ele volta para cá com type=recovery e pede a senha nova.
+      async esqueciSenha(email) {
+        must(await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname }));
+      },
+      // Primeiro acesso de quem foi convidado: cria a senha; o e-mail de confirmação libera a central.
+      async primeiroAcesso(email, senha) {
+        must(await sb.auth.signUp({ email, password: senha, options: { emailRedirectTo: location.origin + location.pathname } }));
+      },
+      async novaSenha(senha) {
+        must(await sb.auth.updateUser({ password: senha }));
+      },
+      async convidarOperador(email, nome) {
+        return must(await sb.rpc('central_convidar_operador', { p_email: email, p_nome: nome }));
+      },
+      async boasVindas(rid, email) {
+        return must(await sb.rpc('central_boas_vindas', { p_restaurante: rid, p_email: email }));
+      },
+      // Equipe de um restaurante (função "equipe", só operadores): quem tem conta, trocar PIN, dar acesso de administrador.
+      async equipe(rid, acao, dados = {}) {
+        const token = (await sb.auth.getSession()).data.session?.access_token;
+        const r = await fetch(`${env.SUPABASE_URL}/functions/v1/equipe`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', apikey: env.SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ acao, restaurante: rid, ...dados }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.erro || 'Não foi possível concluir agora.');
+        return j;
+      },
       async listRestaurantes() {
         return must(await sb.from('restaurantes').select('*, dominios(dominio, status)').order('nome'));
       },
       // Conferência na SEFAZ: notas por restaurante e total do mês (cobrado e custo estimado).
       async sefazUso() {
         return must(await sb.rpc('central_sefaz_uso', { p_meses: 3 }));
+      },
+      // Mensalidade no Asaas: forma, situação e próxima cobrança por restaurante.
+      async cobrancas() {
+        return must(await sb.rpc('central_cobrancas'));
       },
       async alterarPlano(rid, plano) {
         return must(await sb.rpc('plano_alterar_central', { p_restaurante: rid, p_plano: plano }));
@@ -301,9 +395,6 @@
         if (error) throw error.code === '23505' ? new Error('Esse subdomínio já está em uso. Escolha outro.') : error;
         if (senha) must(await sb.rpc('central_senha_equipe', { p_restaurante: id, p_senha: senha }));
         return data;
-      },
-      async trocarCodigo(rid) {
-        return must(await sb.rpc('trocar_codigo_ativacao', { p_restaurante: rid }));
       },
       async listEtiquetas() {
         const todas = [];
@@ -339,7 +430,8 @@
 
   async function carregar() {
     try {
-      const [rests, tags, met, mud, sefaz] = await Promise.all([api.listRestaurantes(), api.listEtiquetas(), api.metricas(S.dias), api.listMudancas().catch(() => []), api.sefazUso().catch(() => null)]);
+      const [rests, tags, met, mud, sefaz, cob] = await Promise.all([api.listRestaurantes(), api.listEtiquetas(), api.metricas(S.dias), api.listMudancas().catch(() => []), api.sefazUso().catch(() => null), api.cobrancas().catch(() => ({}))]);
+      S.cob = cob || {};
       S.rests = rests || [];
       S.sefaz = sefaz || { uso: [], meses: [] };
       S.mudancas = mud || [];
@@ -355,22 +447,105 @@
   }
 
   /* ============================== Entrada ============================== */
-  function showLogin(msg = '') {
+  // Modos: entrar, esqueci (link por e-mail), primeiro (convidado cria a senha), nova (veio do link de recuperação), enviado.
+  let modoLogin = 'entrar';
+  function showLogin(msg = '', modo = modoLogin) {
+    modoLogin = modo;
     $('#app').hidden = true;
     $('#login').hidden = false;
-    $('#loginErr').textContent = msg;
-    setTimeout(() => $('#lgEmail').focus(), 50);
+    const email = `<label class="field"><span>E-mail</span><input class="input" id="lgEmail" type="email" autocomplete="username" required></label>`;
+    const senha = (rot, auto) => `<label class="field"><span>${rot}</span><input class="input" id="lgSenha" type="password" minlength="8" autocomplete="${auto}" required></label>`;
+    const link = (m, txt) => `<button class="btn btn-quiet btn-block" type="button" data-login-modo="${m}">${txt}</button>`;
+    const erro = `<p class="form-error" id="loginErr" role="alert">${esc(msg)}</p>`;
+    $('#loginCampos').innerHTML = {
+      entrar: `<p class="muted">Acesso interno. Entre com o e-mail de operador.</p>${email}${senha('Senha', 'current-password')}${erro}
+        <button class="btn btn-cobalt btn-block" type="submit">Entrar</button>${link('esqueci', 'Esqueci a senha')}${link('primeiro', 'Primeiro acesso (fui convidado)')}`,
+      esqueci: `<p class="muted">Mandamos um link para criar uma senha nova.</p>${email}${erro}
+        <button class="btn btn-cobalt btn-block" type="submit">Mandar o link</button>${link('entrar', 'Voltar')}`,
+      primeiro: `<p class="muted">Use o e-mail que recebeu o convite e crie a sua senha (8 caracteres ou mais). Depois, confirme pelo link que chega no e-mail.</p>
+        ${email}${senha('Crie a senha', 'new-password')}${erro}
+        <button class="btn btn-cobalt btn-block" type="submit">Criar acesso</button>${link('entrar', 'Voltar')}`,
+      nova: `<p class="muted">Crie a sua senha nova (8 caracteres ou mais).</p>${senha('Senha nova', 'new-password')}${erro}
+        <button class="btn btn-cobalt btn-block" type="submit">Salvar a senha</button>`,
+      enviado: `<p>${esc(msg)}</p>${link('entrar', 'Voltar para entrar')}`,
+    }[modo];
+    setTimeout(() => ($('#lgEmail') || $('#lgSenha') || {}).focus?.(), 50);
   }
+  $('#loginForm').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-login-modo]');
+    if (b) showLogin('', b.dataset.loginModo);
+  });
   $('#loginForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = e.target.querySelector('[type=submit]');
+    if (!btn) return;
+    const email = $('#lgEmail') ? $('#lgEmail').value.trim() : '';
+    const senha = $('#lgSenha') ? $('#lgSenha').value : '';
+    const falhar = (m) => { $('#loginErr').textContent = m; btn.disabled = false; };
+    if ($('#lgEmail') && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return falhar('Digite um e-mail válido.');
+    if (['primeiro', 'nova'].includes(modoLogin) && senha.length < 8) return falhar('A senha precisa ter pelo menos 8 caracteres.');
+    btn.disabled = true;
+    try {
+      if (modoLogin === 'esqueci') {
+        await api.esqueciSenha(email);
+        return showLogin(`Se ${email} for de um operador, o link para criar a senha nova chega em alguns minutos. Confira também o spam.`, 'enviado');
+      }
+      if (modoLogin === 'primeiro') {
+        await api.primeiroAcesso(email, senha);
+        return showLogin(`Pronto. Abra o e-mail que mandamos para ${email} e toque no link para confirmar. Depois é só entrar.`, 'enviado');
+      }
+      if (modoLogin === 'nova') {
+        await api.novaSenha(senha);
+        history.replaceState(null, '', location.pathname);
+        toast('Senha nova salva.', { tone: 'ok' });
+      } else {
+        await api.entrar(email, senha);
+      }
+      S.user = await api.sessao();
+      start();
+    } catch (ex) {
+      falhar(/invalid/i.test(ex.message || '') ? 'E-mail ou senha incorretos.' : /already|registered/i.test(ex.message || '') ? 'Este e-mail já tem acesso. Entre ou use "Esqueci a senha".' : ex.message || 'Não foi possível concluir.');
+    }
+  });
+  // Trocar a minha senha (logado).
+  function abrirMinhaSenha() {
+    $('#shTitle').textContent = 'Trocar a minha senha';
+    $('#shBody').innerHTML = `<form class="stack" id="fSenha" novalidate>
+      <label class="field"><span>Senha nova (8 caracteres ou mais)</span><input class="input" id="nsSenha" type="password" minlength="8" autocomplete="new-password" required></label>
+      <label class="field"><span>Repita a senha nova</span><input class="input" id="nsSenha2" type="password" minlength="8" autocomplete="new-password" required></label>
+      <button class="btn btn-cobalt" type="submit">Salvar a senha</button>
+    </form>
+    <form class="stack" id="fConvite" novalidate style="margin-top:24px">
+      <h3>Convidar operador da central</h3>
+      <p class="muted">A pessoa recebe um e-mail e cria a senha em “Primeiro acesso”.</p>
+      <label class="field"><span>Nome</span><input class="input" id="cvNome" maxlength="60" required></label>
+      <label class="field"><span>E-mail</span><input class="input" id="cvEmail" type="email" maxlength="120" required></label>
+      <button class="btn btn-line" type="submit">Mandar convite</button>
+    </form>`;
+    openSheet('sh');
+  }
+  document.addEventListener('submit', async (e) => {
+    if (!['fSenha', 'fConvite'].includes(e.target.id)) return;
     e.preventDefault();
     const btn = e.target.querySelector('[type=submit]');
     btn.disabled = true;
     try {
-      await api.entrar($('#lgEmail').value.trim(), $('#lgSenha').value);
-      S.user = await api.sessao();
-      start();
+      if (e.target.id === 'fSenha') {
+        const a = $('#nsSenha').value;
+        if (a.length < 8) throw new Error('A senha precisa ter pelo menos 8 caracteres.');
+        if (a !== $('#nsSenha2').value) throw new Error('As duas senhas não estão iguais.');
+        await api.novaSenha(a);
+        toast('Senha trocada.', { tone: 'ok' });
+        e.target.reset();
+      } else {
+        const email = $('#cvEmail').value.trim();
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error('E-mail inválido.');
+        await api.convidarOperador(email, $('#cvNome').value.trim());
+        toast(`Convite mandado para ${email}.`, { tone: 'ok' });
+        e.target.reset();
+      }
     } catch (ex) {
-      $('#loginErr').textContent = /invalid/i.test(ex.message || '') ? 'E-mail ou senha incorretos.' : ex.message || 'Não foi possível entrar.';
+      toast(ex.message, { tone: 'error', ms: 4500 });
     }
     btn.disabled = false;
   });
@@ -452,7 +627,7 @@
   function start() {
     $('#login').hidden = true;
     $('#app').hidden = false;
-    $('#who').innerHTML = `<button type="button" class="btn btn-line btn-sm" id="btnApp" data-app="instalar" hidden>${icon('download')} Instalar app</button><span>${esc(S.user.email)}</span>${online ? `<button type="button" class="btn btn-quiet btn-sm" data-sair>${icon('logout')} Sair</button>` : ''}`;
+    $('#who').innerHTML = `<button type="button" class="btn btn-line btn-sm" id="btnApp" data-app="instalar" hidden>${icon('download')} Instalar app</button><button type="button" class="btn btn-quiet btn-sm" data-minha-conta title="Trocar a senha e convidar operadores">${esc(S.user.email)}</button>${online ? `<button type="button" class="btn btn-quiet btn-sm" data-sair>${icon('logout')} Sair</button>` : ''}`;
     botaoApp();
     setTimeout(avisoApp, 1200);
     $('#demoBar').hidden = online;
@@ -645,6 +820,14 @@
         }).join('')}</tbody></table></div></section>`;
   }
 
+  // Situação da mensalidade (Asaas). Sem assinatura: a cobrança ainda não foi ativada no painel do restaurante.
+  const dataCurta = (iso) => (iso ? new Date(`${iso}T12:00:00`).toLocaleDateString('pt-BR') : '');
+  function cobranca(rid) {
+    const c = (S.cob || {})[rid];
+    if (!c) return '<p class="rcard-plano is-sem">Cobrança não ativada (o administrador ativa em Ajustes › Plano)</p>';
+    if (c.status !== 'ativa') return '<p class="rcard-plano is-sem">Assinatura cancelada</p>';
+    return `<p class="rcard-plano ${c.atrasadas ? 'is-sem' : ''}">${c.forma === 'cartao' ? 'Cartão automático' : 'Pix ou boleto'} · ${reais(c.valor)}/mês${c.atrasadas ? ` · <b>${c.atrasadas} vencida${c.atrasadas > 1 ? 's' : ''}</b>` : ''}${c.proxima ? ` · próxima ${dataCurta(c.proxima)}` : ''}${c.ultimo_pago ? ` · pago em ${dataCurta(c.ultimo_pago)}` : ''}</p>`;
+  }
   function vRestaurantes() {
     const cont = (id) => S.tags.filter((t) => t.restaurante_id === id).length;
     return `<div class="vhead"><div><h1>Restaurantes</h1><p>Cada restaurante tem um endereço próprio e a senha da equipe. Na primeira leitura de uma plaquinha nova, alguém da equipe digita o endereço do restaurante e entra com o PIN: a plaquinha passa a ser dele. Em <b>Acesso</b> você copia os dados para mandar ao restaurante.</p></div>
@@ -656,6 +839,7 @@
             ${r.dominios && r.dominios.dominio && r.dominios.status !== 'ativo' ? `<p class="rcard-plano">Domínio próprio <b class="mono">${esc(r.dominios.dominio)}</b>: ${esc(DOM_STATUS[r.dominios.status] || r.dominios.status)}</p>` : ''}
             ${r.observacao ? `<p>${esc(r.observacao)}</p>` : ''}
             <p class="rcard-plano ${r.plano ? '' : 'is-sem'}">${esc(planoResumo(r.plano))}</p>
+            ${cobranca(r.id)}
             ${sefazLigada(r) || sefazDoMes(r.id).notas ? `<p class="rcard-plano">SEFAZ ${sefazLigada(r) ? 'ligada' : 'desligada'} · ${sefazDoMes(r.id).notas} notas este mês · ${brl(sefazDoMes(r.id).valor)}</p>` : ''}</div>
           <div class="rcard-foot"><span>${cont(r.id)} ${cont(r.id) === 1 ? 'plaquinha' : 'plaquinhas'}${r.ativo === false ? ' · <b>desativado</b>' : ''}</span>
             <span class="rcard-acts"><button type="button" class="btn btn-quiet btn-sm" data-ver-rest="${r.id}">Ver plaquinhas</button>
@@ -693,7 +877,7 @@
     return `<fieldset class="stack modulos" id="rPlano"><legend>Plano contratado</legend>
       ${r.id && !r.plano ? '<p class="note">Plano ainda não definido: hoje tudo está liberado. Confira os serviços e as mesas e salve.</p>' : ''}
       ${SERVICOS.map(([k, n, v]) => `<label class="check"><input type="checkbox" data-plano-sv="${k}" ${p.servicos[k] ? 'checked' : ''}> ${n} <span class="muted">· ${v ? `R$ ${v}/mês` : 'incluso na página'}</span></label>`).join('')}
-      ${Precos.ADICIONAIS.map((a) => `<label class="check"><input type="checkbox" data-plano-ad="${a.id}" ${(p.adicionais || {})[a.id] ? 'checked' : ''}> ${esc(a.nome)} <span class="muted">· adicional, ${a.preco ? `R$ ${a.preco}/mês` : 'preço a definir'}</span></label>`).join('')}
+      ${Precos.ADICIONAIS.map((a) => `<label class="check"><input type="checkbox" data-plano-ad="${a.id}" ${(p.adicionais || {})[a.id] ? 'checked' : ''}> ${esc(a.nome)} <span class="muted">· adicional, ${a.preco ? `R$ ${a.preco}/mês` : 'preço a definir'}${a.combo ? ', entra no combo' : ''}</span></label>`).join('')}
       <div class="plano-linha">
         <label class="field"><span>Mesas contratadas</span><input class="input mono" id="rMesas" type="number" min="1" max="500" value="${p.mesas}"></label>
         <label class="field"><span>Endereço</span><select class="input" id="rDominio">
@@ -703,7 +887,7 @@
         <label class="field"><span>Contrato</span><select class="input" id="rContrato">
           <option value="6" ${+p.contrato !== 12 ? 'selected' : ''}>6 meses</option><option value="12" ${+p.contrato === 12 ? 'selected' : ''}>12 meses</option></select></label>
       </div>
-      <p class="plano-preco">Mensalidade: <b id="rPreco">${reais(planoPreco(p))}</b> <span class="muted">(2 serviços −10%, os três: R$ ${Precos.TODOS})</span></p>
+      <p class="plano-preco">Mensalidade: <b id="rPreco">${reais(planoPreco(p))}</b> <span class="muted">(2 itens −10%, 3 −17%, os quatro: R$ ${Precos.TODOS})</span></p>
     </fieldset>`;
   }
   const planoDoForm = () => ({
@@ -729,6 +913,8 @@
         <small class="help">Letras minúsculas, números e hífen. O sistema do restaurante fica em <b id="rSite">${esc(r.slug ? siteCurto({ slug: r.slug }) : '…')}</b>, sem configurar nada no DNS. Domínio próprio (ex.: cardapio.seurestaurante.com.br): o próprio restaurante adiciona em Ajustes › Endereço, no painel, e o sistema confere o DNS e ativa sozinho.${id ? ' Trocar o subdomínio muda o endereço; as plaquinhas continuam funcionando.' : ''}</small></label>
       <label class="field"><span>${id ? 'Nova senha da equipe (opcional)' : 'Senha da equipe'}</span><input class="input" id="rSenha" type="text" minlength="6" maxlength="60" autocomplete="off" ${id ? 'placeholder="Deixe em branco para manter"' : 'required'}>
         <small class="help">A equipe usa esta senha para criar a conta no painel (cada pessoa depois entra com o próprio PIN).</small></label>
+      ${id ? '' : `<label class="field"><span>E-mail do dono (opcional)</span><input class="input" id="rEmail" type="email" maxlength="120" autocomplete="off" placeholder="dono@restaurante.com.br">
+        <small class="help">Recebe as boas-vindas com o endereço do painel e o código de ativação, e passa a receber os avisos do restaurante.</small></label>`}
       <label class="field"><span>Observação (opcional)</span><input class="input" id="rObs" maxlength="300" value="${esc(r.observacao || '')}"></label>
       <label class="check"><input type="checkbox" id="rAtivo" ${r.ativo !== false ? 'checked' : ''}> Ativo (desmarcado: as plaquinhas mostram “desativada”)</label>
       ${planoForm(r)}
@@ -1174,6 +1360,7 @@
     const v = t.closest('[data-view]');
     if (v) { S.view = v.dataset.view; return render(); }
     if (t.closest('[data-sair]')) { await api.sair(); return location.reload(); }
+    if (t.closest('[data-minha-conta]')) return abrirMinhaSenha();
     const ab = t.closest('[data-abrir]');
     if (ab) {
       const k = ab.dataset.abrir;
@@ -1371,6 +1558,11 @@
         }
         if (!S.editRest && salvo) {
           S.rests.push(salvo);
+          const dono = $('#rEmail') ? $('#rEmail').value.trim() : '';
+          if (dono) {
+            try { await api.boasVindas(salvo.id, dono); toast(`Boas-vindas mandadas para ${dono}.`, { tone: 'ok' }); }
+            catch (ex) { toast(`Restaurante criado, mas o e-mail não saiu: ${ex.message}`, { tone: 'error', ms: 5000 }); }
+          }
           mostrarAcesso(salvo, true, senha);
         } else {
           closeSheet();
@@ -1413,9 +1605,12 @@
 
   /* ============================== Início ============================== */
   $$('.sheet [data-close].icon-btn').forEach((b) => (b.innerHTML = icon('x')));
+  // Voltou do link "esqueci a senha": pede a senha nova antes de abrir a central.
+  const recuperando = /type=recovery/.test(location.hash);
   api.init()
     .then(() => api.sessao())
     .then((u) => {
+      if (recuperando && u) return showLogin('', 'nova');
       if (!u) return showLogin();
       S.user = u;
       start();

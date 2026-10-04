@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>VTX Tap · Fidelidade, delivery e a mesa no celular</title>
-<meta name="description" content="Clube de pontos pela nota fiscal, delivery próprio sem comissão, cardápio e chamar o garçom numa plaquinha na mesa. Sem aplicativo para baixar. Implantação e treinamento inclusos.">
+<title>VTX Tap · Fidelidade, delivery, happy hour e a mesa no celular</title>
+<meta name="description" content="Clube de pontos ou cartão fidelidade pela nota fiscal, delivery próprio sem comissão, happy hour que cresce a cada chopp, cardápio e chamar o garçom numa plaquinha na mesa. Sem aplicativo para baixar. Monte o seu orçamento em um minuto.">
 <meta name="theme-color" content="#F4F2F9">
 <meta name="color-scheme" content="light">
 <meta property="og:title" content="VTX Tap · Faça o cliente voltar e pedir direto com você">
@@ -278,6 +278,10 @@
   .c3-btn { color: #fff; }
   .c3-btn[aria-pressed="true"] { background: #fff; color: var(--noite); border-color: #fff; }
   .c3-dica { font: 500 12.5px var(--mono); letter-spacing: .04em; color: var(--lilas) !important; }
+  .c3-ar { display: grid; gap: 8px; justify-items: start; margin-top: 4px; }
+  .c3-ar .btn { white-space: normal; }
+  .c3-ar-txt { font-size: 14px; }
+  .c3-ar model-viewer { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
   .c3-sub { font: 900 26px/1 var(--display); text-transform: uppercase; margin: 8px 0 0; }
   @media (prefers-reduced-motion: reduce) { .c3-cartao.anima { transition: none; } }
   .placa p { color: var(--muted); font-size: 14.5px; }
@@ -301,6 +305,37 @@
   .inclui ul { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 8px 18px; color: var(--ink-2); }
   .inclui li { display: inline-flex; align-items: center; gap: 7px; font-size: 15px; }
   .inclui svg { width: 18px; height: 18px; color: var(--ok); }
+
+  /* Os dois jeitos de fidelizar (pontos e cartão de selos) */
+  .modos { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); }
+  .modo { display: grid; gap: 8px; align-content: start; padding: 20px; border-radius: 22px; background: rgba(255, 255, 255, .07); border: 1px solid rgba(255, 255, 255, .12); }
+  .modo.novo { border: 2px solid var(--ouro); }
+  .modo h3 { font: 900 26px/1 var(--display); text-transform: uppercase; }
+  .modo p { color: var(--noite-2); font-size: 15px; }
+  .modo .tag-novo { justify-self: start; padding: 3px 10px; border-radius: 999px; background: var(--ouro); color: #1D1400; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+  .modo .ex { font: 500 13px var(--mono); color: var(--lilas); }
+  .fid-nums { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+  .fid-nums div { padding: 16px; border-radius: 18px; background: rgba(255, 255, 255, .07); display: grid; gap: 2px; }
+  .fid-nums b { font: 900 34px/1 var(--display); color: var(--ouro); }
+  .fid-nums span { color: var(--noite-2); font-size: 14.5px; }
+  .fid-sozinho { display: grid; gap: 30px; align-items: center; }
+  @media (min-width: 920px) { .fid-sozinho { grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); gap: 48px; } }
+  .fid-sozinho .fone { max-width: 270px; justify-self: center; width: 100%; }
+
+  /* Prorrogação: telão na TV */
+  .tv { display: block; container-type: inline-size; position: relative; }
+  .tv-tela { display: block; padding: 1.4cqw; border-radius: 1.6cqw; background: #08060F; box-shadow: inset 0 0 0 .25cqw #2A2638, 0 30px 60px -20px rgba(0, 0, 0, .6); }
+  .tv-tela img { display: block; width: 100%; height: auto; border-radius: .5cqw; }
+  .tv-pe { display: block; width: 22%; height: 2.2cqw; margin: 0 auto; background: linear-gradient(#3A3548, #1C1828); border-radius: 0 0 1cqw 1cqw; }
+  .hh-grid { display: grid; gap: 30px; align-items: center; }
+  @media (min-width: 920px) { .hh-grid { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 40px; } }
+  .hh-grid .fone { max-width: 260px; justify-self: center; width: 100%; }
+
+  /* Faixa que leva ao orçamento */
+  .orc-faixa { display: flex; flex-wrap: wrap; gap: 14px 24px; align-items: center; justify-content: space-between; padding: 22px 26px; border-radius: 24px; background: var(--roxo-soft); border: 2px solid var(--roxo); }
+  .orc-faixa > div { flex: 1 1 320px; display: grid; gap: 6px; }
+  .orc-faixa b { font: 900 28px/1 var(--display); text-transform: uppercase; display: block; }
+  .orc-faixa span { color: var(--ink-2); }
 
   /* FAQ */
   .faq { display: grid; gap: 10px; max-width: 860px; width: 100%; margin-inline: auto; }
@@ -380,11 +415,11 @@
     <nav aria-label="Seções">
       <a href="#fidelidade">Fidelidade</a>
       <a href="#delivery">Delivery</a>
+      <a href="#prorrogacao">Happy hour</a>
       <a href="#mesa">Na mesa</a>
       <a href="#precos">Preços</a>
-      <a href="#duvidas">Dúvidas</a>
     </nav>
-    <a class="btn btn-roxo" data-contato href="#contato">Quero conhecer</a>
+    <a class="btn btn-roxo" data-precos href="/orcamento">Fazer orçamento</a>
   </div>
 </header>
 
@@ -393,10 +428,10 @@
     <div class="hero-txt">
       <p class="kicker" style="color: var(--lilas)">Para bares e restaurantes</p>
       <h1 id="heroTitulo">Faça o cliente voltar. <em>E pedir direto com você.</em></h1>
-      <p class="hero-sub">Um <b>clube de pontos pela nota fiscal</b>, um <b>delivery próprio sem comissão</b> e a mesa inteira no celular do cliente: cardápio, chamar o garçom e avaliação no Google. Tudo por uma plaquinha na mesa, <b>sem aplicativo para baixar</b>.</p>
+      <p class="hero-sub">Um <b>programa de fidelidade pela nota fiscal</b> (clube de pontos ou cartão de selos), um <b>delivery próprio sem comissão</b>, o <b>happy hour que cresce a cada chopp</b> e a mesa inteira no celular do cliente: cardápio, chamar o garçom e avaliação no Google. Tudo por uma plaquinha na mesa, <b>sem aplicativo para baixar</b>.</p>
       <div class="ctas">
-        <a class="btn btn-ouro" data-contato href="#contato"><svg><use href="#i-msg"/></svg>Quero ver funcionando</a>
-        <a class="btn btn-linha" data-precos href="/orcamento">Montar orçamento</a>
+        <a class="btn btn-ouro" data-precos href="/orcamento">Montar meu orçamento<svg><use href="#i-arrow"/></svg></a>
+        <a class="btn btn-linha" data-contato href="#contato"><svg><use href="#i-msg"/></svg>Falar com a gente</a>
       </div>
       <ul class="selos">
         <li><svg><use href="#i-check"/></svg>Sem comissão por pedido</li>
@@ -421,8 +456,8 @@
     <div class="ganhos">
       <a class="ganho" href="#fidelidade"><span class="ico"><svg><use href="#i-gift"/></svg></span><h3>O cliente volta mais</h3><p>Cada compra vira pontos, e os pontos viram prêmios. Quem está perto do próximo prêmio volta para buscar.</p><span class="mais">Ver a fidelidade →</span></a>
       <a class="ganho" href="#delivery"><span class="ico"><svg><use href="#i-moto"/></svg></span><h3>Delivery sem comissão</h3><p>Seu link de pedidos no Instagram e no WhatsApp. Mensalidade fixa: pode vender R$ 5 mil ou R$ 50 mil.</p><span class="mais">Ver o delivery →</span></a>
-      <a class="ganho" href="#mesa"><span class="ico"><svg><use href="#i-bell"/></svg></span><h3>Atendimento na hora certa</h3><p>O cliente chama pelo celular e diz o motivo. A equipe vê qual mesa, o que ela quer e há quanto tempo espera.</p><span class="mais">Ver a mesa →</span></a>
-      <a class="ganho" href="#mesa"><span class="ico"><svg><use href="#i-star"/></svg></span><h3>Mais avaliações no Google</h3><p>A página da mesa leva o cliente satisfeito direto para avaliar. A reclamação vai para a gerência, anônima.</p><span class="mais">Ver a página →</span></a>
+      <a class="ganho" href="#prorrogacao"><span class="ico"><svg><use href="#i-clock"/></svg></span><h3>Happy hour que vende mais</h3><p>Cada chopp vendido soma minutos no relógio da TV. A mesa pede mais uma rodada para o happy hour não acabar.</p><span class="mais">Ver a Prorrogação →</span></a>
+      <a class="ganho" href="#mesa"><span class="ico"><svg><use href="#i-bell"/></svg></span><h3>Atendimento e Google</h3><p>O cliente chama o garçom pelo celular, vê o cardápio e, satisfeito, avalia no Google. A reclamação vai para a gerência, anônima.</p><span class="mais">Ver a mesa →</span></a>
     </div>
   </section>
 
@@ -441,9 +476,15 @@
   <!-- FIDELIDADE -->
   <section class="destaque destaque--noite rev" id="fidelidade" aria-labelledby="fidTitulo">
     <div class="sec-h">
-      <p class="kicker">Programa de fidelidade</p>
-      <h2 id="fidTitulo">Um clube de pontos que funciona com a nota fiscal</h2>
-      <p>O cliente lê o QR Code da nota fiscal (NFC-e) com o celular e os pontos entram na conta dele. Não precisa de cartão fidelidade, carimbo, aplicativo nem integração com o seu caixa.</p>
+      <p class="kicker">Programa de fidelidade · o coração da VTX Tap</p>
+      <h2 id="fidTitulo">O cliente que volta é o que mais dá lucro</h2>
+      <p>Conquistar um cliente novo custa muito mais do que fazer o de hoje voltar. Com a VTX Tap, cada compra com CPF na nota vira ponto ou selo: o cliente lê o QR Code da nota fiscal (NFC-e) com o celular, sem aplicativo, sem cartão de papel e sem integração com o seu caixa.</p>
+    </div>
+
+    <div class="modos">
+      <article class="modo"><span class="ex">Bom para: jantar, bar, ticket variado</span><h3>Clube de pontos</h3><p>Cada real vira pontos. O cliente troca por prêmios com foto, sobe de nível (Bronze, Prata, Ouro), disputa o ranking e indica amigos.</p></article>
+      <article class="modo novo"><span class="tag-novo">Novo</span><span class="ex">Bom para: almoço, café, prato do dia</span><h3>Cartão fidelidade</h3><p>O cartão de carimbos, só que no celular: 1 selo por compra e, completou, ganhou. Você escolhe quantos selos (de 3 a 30), o prêmio, o valor mínimo e a validade.</p></article>
+      <article class="modo"><span class="ex">Bom para: quem abre almoço e noite</span><h3>Os dois, cada um no seu horário</h3><p>Cartão de selos no almoço de segunda a sexta e clube de pontos à noite, por exemplo. O horário da nota fiscal decide o programa, sozinho.</p></article>
     </div>
 
     <div class="fluxo">
@@ -468,6 +509,27 @@
       </ul>
     </div>
 
+    <div class="fid-sozinho">
+      <button type="button" class="zoom fone" data-zoom="/assets/img/lp/fid-selos.webp" aria-label="Ampliar: cartão fidelidade no celular"><span class="fone-tela"><span class="fone-status" aria-hidden="true"><span>9:41</span><svg><use href="#i-status"/></svg></span><img src="/assets/img/lp/fid-selos.webp" width="600" height="1299" alt="Cartão do almoço no celular do cliente: 7 de 10 selos marcados, faltam 3 selos para 1 prato executivo grátis, e o botão Ler nota fiscal" loading="lazy"></span></button>
+      <div class="sec-h">
+        <p class="kicker">Cartão fidelidade</p>
+        <h3 style="font: 900 clamp(30px, 4.4vw, 44px)/.95 var(--display); text-transform: uppercase; margin: 0">O cartão de carimbos que não se perde na carteira</h3>
+        <p>Pagou, leu a nota, ganhou o selo. O cliente vê quantos faltam para o prêmio toda vez que abre a página da mesa. Completou o cartão, aparece um código para mostrar ao garçom, e um cartão novo começa.</p>
+        <ul class="lista-fx" style="margin-top: 8px">
+          <li><span class="ico"><svg><use href="#i-check"/></svg></span><div><b>1 selo por dia, se quiser</b><span>Evita dividir a conta em várias notas para encher o cartão.</span></div></li>
+          <li><span class="ico"><svg><use href="#i-receipt"/></svg></span><div><b>Valor mínimo por compra</b><span>Só vale selo a compra acima do valor que você escolher.</span></div></li>
+          <li><span class="ico"><svg><use href="#i-clock"/></svg></span><div><b>Validade do cartão</b><span>Ex.: 90 dias a partir do primeiro selo, para o cliente voltar logo.</span></div></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="fid-nums">
+      <div><b>Sem limite</b><span>de clientes no programa</span></div>
+      <div><b>0</b><span>aplicativos para o cliente baixar</span></div>
+      <div><b>1 nota = 1 vez</b><span>nota repetida ou de outro CNPJ é barrada</span></div>
+      <div><b>Seus dados</b><span>nome, contato e frequência de cada cliente (LGPD)</span></div>
+    </div>
+
     <figure class="painel-fig" style="margin:0">
       <button type="button" class="zoom laptop" data-zoom="/assets/img/lp/painel-fid-hoje.webp" aria-label="Ampliar: painel da fidelidade"><span class="laptop-tela"><img src="/assets/img/lp/painel-fid-hoje.webp" width="1600" height="1012" alt="Painel da equipe na aba Clube de pontos: clientes, compras dos últimos 30 dias, pontos em aberto, notas para conferir com botão Aprovar e envio do arquivo XML do caixa" loading="lazy"></span><span class="laptop-base" aria-hidden="true"></span></button>
       <figcaption>O painel da equipe: notas para conferir, prêmios para entregar, clientes e o arquivo de notas do caixa.</figcaption>
@@ -487,8 +549,9 @@
     </div>
 
     <div class="ctas">
-      <a class="btn btn-ouro" data-contato href="#contato"><svg><use href="#i-msg"/></svg>Quero o clube de pontos</a>
-      <span style="color: var(--noite-2); font-size: 15px">A partir de <b class="num" style="color:#fff" data-preco-mes="fidelidade">R$ 229</b> por mês, sem limite de clientes.</span>
+      <a class="btn btn-ouro" data-precos href="/orcamento">Orçar a fidelidade<svg><use href="#i-arrow"/></svg></a>
+      <a class="btn btn-linha" style="color:#fff" data-contato href="#contato"><svg><use href="#i-msg"/></svg>Quero ver funcionando</a>
+      <span style="color: var(--noite-2); font-size: 15px"><b class="num" style="color:#fff" data-preco-mes="fidelidade">R$ 229</b> por mês, pontos e selos inclusos, sem limite de clientes.</span>
     </div>
   </section>
 
@@ -555,10 +618,55 @@
     </div>
 
     <div class="ctas">
-      <a class="btn btn-ouro" data-contato href="#contato"><svg><use href="#i-msg"/></svg>Quero o meu delivery</a>
+      <a class="btn btn-ouro" data-precos href="/orcamento">Orçar o delivery<svg><use href="#i-arrow"/></svg></a>
       <span style="color:#E6D9FF; font-size: 15px"><b class="num" style="color:#fff" data-preco-mes="delivery">R$ 169</b> por mês, fixo, com pedidos ilimitados.</span>
     </div>
   </section>
+
+  <!-- PRORROGAÇÃO -->
+  <section class="destaque destaque--noite rev" id="prorrogacao" aria-labelledby="hhTitulo">
+    <div class="sec-h">
+      <p class="kicker">Prorrogação · happy hour</p>
+      <h2 id="hhTitulo">O happy hour que cresce a cada chopp</h2>
+      <p>O relógio do happy hour aparece na TV do bar e no celular de cada mesa. A cada chopp vendido, o garçom lê a comanda e o relógio ganha minutos. Quanto mais a casa bebe, mais tempo o happy hour dura, e todo mundo vê isso acontecer.</p>
+    </div>
+
+    <div class="hh-grid">
+      <figure class="painel-fig" style="margin:0">
+        <button type="button" class="zoom tv" data-zoom="/assets/img/lp/hh-telao.webp" aria-label="Ampliar: relógio da Prorrogação na TV"><span class="tv-tela"><img src="/assets/img/lp/hh-telao.webp" width="1600" height="900" alt="Telão da Prorrogação: relógio de 1 hora e 22 minutos num copo de chopp, 23 chopps, mais 23 minutos de happy hour ganhos e o ranking de quem mais prorrogou" loading="lazy"></span><span class="tv-pe" aria-hidden="true"></span></button>
+        <figcaption>Na TV do bar: o painel abre o telão na segunda tela com um toque.</figcaption>
+      </figure>
+      <button type="button" class="zoom fone" data-zoom="/assets/img/lp/hh-mesa.webp" aria-label="Ampliar: Prorrogação no celular da mesa"><span class="fone-tela"><span class="fone-status" aria-hidden="true"><span>9:41</span><svg><use href="#i-status"/></svg></span><img src="/assets/img/lp/hh-mesa.webp" width="600" height="1299" alt="Página da mesa com o relógio da Prorrogação: 23 chopps, acaba às 00:21 e sua mesa é a segunda que mais prorrogou" loading="lazy"></span></button>
+    </div>
+
+    <div class="fluxo">
+      <div><b>1</b><strong>Abre o happy hour</strong><span>Com o tempo inicial, ex.: 60 minutos. Ou no horário marcado, sozinho.</span></div>
+      <div><b>2</b><strong>Saiu um chopp</strong><span>O garçom lê o QR da comanda (ou encosta no NFC) pelo celular.</span></div>
+      <div><b>3</b><strong>O relógio cresce</strong><span>Mais minutos na TV e no celular de todo mundo, com animação.</span></div>
+      <div><b>4</b><strong>A mesa disputa</strong><span>Ranking ao vivo de quem mais prorrogou, por mesa ou comanda.</span></div>
+    </div>
+
+    <div class="dupla dupla--igual">
+      <div class="aviso-box">
+        <b>Você controla a conta</b>
+        <p>Escolha quantos minutos vale cada chopp (ou drink, ou balde), o máximo de minutos que o happy hour pode ganhar e o horário-limite em que ele termina de qualquer jeito. Leitura errada se desfaz com um toque.</p>
+      </div>
+      <div class="aviso-box">
+        <b>Comanda individual</b>
+        <p>A plaquinha pode virar a comanda de uma pessoa: o garçom lê a comanda e o ranking mostra quem mais bebeu. Sem comanda, conta pela mesa.</p>
+      </div>
+    </div>
+
+    <div class="ctas">
+      <a class="btn btn-ouro" data-precos href="/orcamento">Orçar a Prorrogação<svg><use href="#i-arrow"/></svg></a>
+      <span style="color: var(--noite-2); font-size: 15px"><b class="num" style="color:#fff" data-preco-ad="prorrogacao">R$ 89</b> por mês, e entra no desconto do combo.</span>
+    </div>
+  </section>
+
+  <div class="orc-faixa rev">
+    <div><b>Quanto fica para o seu restaurante?</b><span>Escolha os serviços e o número de mesas: o preço aparece na hora, com a implantação e as plaquinhas.</span></div>
+    <a class="btn btn-roxo" data-precos href="/orcamento">Montar meu orçamento<svg><use href="#i-arrow"/></svg></a>
+  </div>
 
   <!-- MESA -->
   <section class="sec rev" id="mesa" aria-labelledby="mesaTitulo">
@@ -590,7 +698,7 @@
     <div class="sec-h">
       <p class="kicker">As plaquinhas</p>
       <h2 id="placasTitulo">Pequenas, bonitas, com NFC e QR</h2>
-      <p>Do tamanho de um cartão de crédito, impressas dos dois lados e instaladas pela nossa equipe. Gire a plaquinha para ver a frente e o verso.</p>
+      <p>Do tamanho de um cartão de crédito, impressas dos dois lados. Chegam prontas: para ligar cada uma, alguém da equipe aproxima o celular e escolhe a mesa, em menos de 10 segundos. Gire a plaquinha para ver a frente e o verso, ou veja na sua mesa pela câmera.</p>
     </div>
     <div class="c3">
       <div class="c3-palco" id="c3Palco" tabindex="0" role="img" aria-roledescription="plaquinha em 3D" aria-label="Plaquinha padrão da VTX Tap. Frente deitada: QR Code com a logo da VTX Tap e a faixa roxa com Aproxime o celular. Verso em pé: o QR Code em cima e a faixa embaixo. Arraste ou use as setas para girar.">
@@ -608,6 +716,10 @@
           <button type="button" class="btn btn-linha c3-btn" data-lado="verso" aria-pressed="false">Verso</button>
         </div>
         <p class="c3-dica">Arraste a plaquinha para girar.</p>
+        <div class="c3-ar">
+          <button type="button" class="btn btn-ouro" id="c3Ar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="m12 7 5 3v4l-5 3-5-3v-4Z"/><path d="M7 10l5 3 5-3M12 13v4"/></svg> Ver na minha mesa</button>
+          <p class="c3-ar-txt" id="c3ArTxt" role="status">Pelo celular: a câmera abre e a plaquinha aparece em cima da sua mesa, no tamanho real (8,6 × 5,4 cm).</p>
+        </div>
       </div>
     </div>
     <h3 class="c3-sub">Exemplos de artes personalizáveis</h3>
@@ -621,7 +733,7 @@
     <div class="sec-h">
       <p class="kicker">Preços</p>
       <h2 id="precosTitulo">Pague só pelo que usar</h2>
-      <p>Mensalidade por serviço, sem comissão e sem cobrança por cliente ou por pedido. Dois serviços juntos têm 10% de desconto; três, 15%.</p>
+      <p>Mensalidade por serviço, sem comissão e sem cobrança por cliente ou por pedido. Dois juntos têm 10% de desconto, três têm 17%, e os quatro saem por um preço fechado.</p>
     </div>
     <div class="precos" id="precosCards"></div>
     <div class="inclui">
@@ -630,13 +742,13 @@
         <li><svg><use href="#i-check"/></svg>Cadastro do restaurante</li>
         <li><svg><use href="#i-check"/></svg>Cardápio montado</li>
         <li><svg><use href="#i-check"/></svg>Mesas e áreas</li>
-        <li><svg><use href="#i-check"/></svg>Plaquinhas instaladas</li>
+        <li><svg><use href="#i-check"/></svg>Plaquinhas prontas para ligar (menos de 10 s cada)</li>
         <li><svg><use href="#i-check"/></svg>1 hora de treinamento da equipe</li>
       </ul>
     </div>
-    <div class="ctas">
+    <div class="orc-faixa">
+      <div><b>Monte o seu em um minuto</b><span>Simulador com a mensalidade, a implantação e as plaquinhas separadas, para o seu número de mesas.</span></div>
       <a class="btn btn-roxo" data-precos href="/orcamento">Montar meu orçamento<svg><use href="#i-arrow"/></svg></a>
-      <span class="muted">Simulador com implantação, plaquinhas e mensalidade separadas.</span>
     </div>
   </section>
 
@@ -650,10 +762,12 @@
       <details><summary>Funciona com o meu sistema de caixa (PDV)?</summary><div><p>Sim. A fidelidade usa a nota fiscal de consumidor (NFC-e) que o seu caixa já emite: não precisa de integração. Se o seu sistema exporta o XML das notas, você pode enviar o arquivo no painel e todas são conferidas de uma vez.</p></div></details>
       <details><summary>E se o cliente tentar usar a mesma nota duas vezes, ou a nota de outro restaurante?</summary><div><p>Não passa. Cada nota vale uma vez só, e a nota de outra conta é recusada na hora. Só valem notas do CNPJ do seu restaurante e dentro do prazo que você definir.</p></div></details>
       <details><summary>Preciso de alguém da equipe para conferir as notas?</summary><div><p>Você escolhe. Com a conferência automática na SEFAZ (R$ 0,25 por nota), os pontos entram sozinhos. Sem ela, a equipe aprova no painel com um toque, ou envia o XML do caixa.</p></div></details>
+      <details><summary>Clube de pontos ou cartão fidelidade: qual escolher?</summary><div><p>Os dois vêm na mesma mensalidade da fidelidade. O clube de pontos funciona melhor quando o valor da conta varia muito (jantar, bar). O cartão de selos é mais simples para o cliente e combina com almoço, café e prato do dia. Dá para usar os dois, cada um no seu horário: o horário da nota decide.</p></div></details>
+      <details><summary>Como funciona a Prorrogação no dia a dia?</summary><div><p>O painel abre o relógio na TV. A cada chopp, o garçom lê o QR da comanda ou da mesa no celular dele e o relógio ganha os minutos que você definiu. Você escolhe o máximo de minutos e o horário-limite, então o happy hour nunca passa do que você quer.</p></div></details>
       <details><summary>Posso contratar só o delivery ou só a fidelidade?</summary><div><p>Pode. Cada serviço tem a sua mensalidade e você liga só o que quiser. Dá para começar com um e somar outro depois, com desconto.</p></div></details>
       <details><summary>O delivery cobra alguma porcentagem das vendas?</summary><div><p>Não. É uma mensalidade fixa, com pedidos ilimitados. As taxas da sua maquininha e do seu banco continuam as mesmas de hoje.</p></div></details>
       <details><summary>Os dados dos clientes são meus?</summary><div><p>Sim. A lista do clube de pontos (com o consentimento de cada cliente, conforme a LGPD) fica no seu painel e pode ser exportada em planilha.</p></div></details>
-      <details><summary>Quanto tempo leva para começar e qual é o contrato?</summary><div><p>A nossa equipe monta o cardápio, cadastra as mesas, instala as plaquinhas e treina a equipe. O contrato mínimo é de 6 meses; no de 12 meses, a implantação sai pela metade.</p></div></details>
+      <details><summary>Quanto tempo leva para começar e qual é o contrato?</summary><div><p>A nossa equipe monta o cardápio, cadastra as mesas e treina a equipe. As plaquinhas chegam prontas: vocês aproximam o celular de cada uma e escolhem a mesa, menos de 10 segundos por plaquinha. O contrato mínimo é de 6 meses; no de 12 meses, a implantação sai pela metade.</p></div></details>
       <details><summary>Preciso de um tablet ou computador novo?</summary><div><p>Não. O painel da equipe funciona em qualquer celular, tablet ou computador com internet. Cada pessoa da equipe entra com o próprio PIN.</p></div></details>
     </div>
   </section>
@@ -663,8 +777,8 @@
     <h2 id="finalTitulo">Veja o VTX Tap <em>funcionando no seu restaurante</em></h2>
     <p>Mande uma mensagem: mostramos o sistema, montamos o orçamento para o seu número de mesas e tiramos as dúvidas. Sem compromisso.</p>
     <div class="ctas" style="justify-content:center">
-      <a class="btn btn-ouro" data-contato href="https://ig.me/m/vortexsoftwareco" target="_blank" rel="noopener"><svg><use href="#i-msg"/></svg>Falar com a gente</a>
-      <a class="btn btn-linha" data-precos href="/orcamento">Montar meu orçamento</a>
+      <a class="btn btn-ouro" data-precos href="/orcamento">Montar meu orçamento<svg><use href="#i-arrow"/></svg></a>
+      <a class="btn btn-linha" data-contato href="https://ig.me/m/vortexsoftwareco" target="_blank" rel="noopener"><svg><use href="#i-msg"/></svg>Falar com a gente</a>
     </div>
   </section>
 
@@ -675,8 +789,8 @@
 </main>
 
 <div class="cta-fixo" id="ctaFixo">
-  <a class="btn btn-ouro" data-contato href="#contato">Quero conhecer</a>
-  <a class="btn btn-linha" data-precos href="/orcamento">Orçamento</a>
+  <a class="btn btn-ouro" data-precos href="/orcamento">Montar orçamento</a>
+  <a class="btn btn-linha" data-contato href="#contato" aria-label="Falar com a gente"><svg><use href="#i-msg"/></svg></a>
 </div>
 
 <dialog class="zoom-dlg" id="zoomDlg" aria-label="Imagem ampliada"><img alt="" id="zoomImg"><button type="button" aria-label="Fechar" id="zoomFechar">×</button></dialog>
@@ -748,6 +862,60 @@
       // Só anima enquanto aparece na tela.
       new IntersectionObserver(([en]) => { if (en.isIntersecting) ligar(); else { cancelAnimationFrame(raf); raf = 0; } }).observe(palco);
     })();
+    // Realidade aumentada: a câmera do celular mostra a plaquinha na mesa, no tamanho real (ar-scale fixed).
+    // Android abre o Scene Viewer do Google; iPhone, o Quick Look (o model-viewer converte o modelo na hora).
+    // O model-viewer (1 MB) só carrega no toque do botão.
+    (function () {
+      const btn = $('c3Ar'), txt = $('c3ArTxt');
+      if (!btn) return;
+      const MV = 'https://cdn.jsdelivr.net/npm/@google/model-viewer@4.3.1/dist/model-viewer.min.js';
+      const SRI = 'sha384-cprcVQt7wbUl0xngF3PGP6yBB7n4/t+4AoAMG9biiMCGFiWOdzUH10Ie2COTqFNW';
+      let mv = null, carregando = null;
+      const carregar = () => carregando || (carregando = new Promise((ok, falha) => {
+        if (customElements.get('model-viewer')) return ok();
+        const s = document.createElement('script');
+        s.type = 'module'; s.src = MV; s.integrity = SRI; s.crossOrigin = 'anonymous';
+        s.onload = () => customElements.whenDefined('model-viewer').then(ok);
+        s.onerror = () => { carregando = null; falha(new Error('script')); };
+        document.head.appendChild(s);
+      }));
+      const celular = matchMedia('(pointer: coarse)').matches;
+      if (!celular) txt.textContent = 'Abra esta página no celular e toque aqui: a câmera mostra a plaquinha em cima da sua mesa, no tamanho real (8,6 × 5,4 cm).';
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        txt.textContent = 'Abrindo a câmera…';
+        try {
+          await carregar();
+          if (!mv) {
+            mv = document.createElement('model-viewer');
+            mv.setAttribute('src', new URL('/assets/3d/plaquinha-vtx.glb', location.href).href);
+            mv.setAttribute('alt', 'Plaquinha da VTX Tap em tamanho real');
+            mv.setAttribute('ar', '');
+            mv.setAttribute('ar-modes', 'webxr scene-viewer quick-look');
+            mv.setAttribute('ar-scale', 'fixed');
+            mv.setAttribute('ar-placement', 'floor');
+            mv.setAttribute('loading', 'eager');
+            mv.setAttribute('reveal', 'manual');
+            mv.addEventListener('ar-status', (e) => {
+              if (e.detail.status === 'failed') txt.textContent = 'Não deu para abrir a câmera neste celular. Atualize o navegador ou tente pelo Chrome (Android) ou Safari (iPhone).';
+              if (e.detail.status === 'session-started') txt.textContent = 'Aponte a câmera para a mesa e espere a plaquinha aparecer.';
+            });
+            btn.parentElement.appendChild(mv);
+            await new Promise((ok) => { mv.addEventListener('load', ok, { once: true }); setTimeout(ok, 8000); });
+          }
+          if (mv.canActivateAR) {
+            txt.textContent = 'Aponte a câmera para a mesa. A plaquinha aparece no tamanho real.';
+            await mv.activateAR();
+          } else {
+            txt.textContent = celular ? 'Este celular não abre realidade aumentada pelo navegador. Tente pelo Chrome (Android) ou Safari (iPhone).'
+              : 'Abra esta página no celular e toque em "Ver na minha mesa": a câmera mostra a plaquinha em cima da sua mesa.';
+          }
+        } catch (e) {
+          txt.textContent = 'Não foi possível carregar a plaquinha em 3D agora. Confira a conexão e tente de novo.';
+        }
+        btn.disabled = false;
+      });
+    })();
     // Local (/lp/) o simulador é orcamento.html; publicado, é /orcamento.
     if (location.pathname.startsWith('/lp/')) document.querySelectorAll('[data-precos]').forEach((a) => (a.href = '/lp/orcamento.html'));
 
@@ -756,13 +924,21 @@
     if (P) {
       const s = Object.fromEntries(P.SERVICOS.map((x) => [x.id, x]));
       document.querySelectorAll('[data-preco-mes]').forEach((el) => { const x = s[el.dataset.precoMes]; if (x) el.textContent = brl(x.preco); });
-      const todos = P.combo(Object.fromEntries(P.SERVICOS.map((x) => [x.id, true])));
-      const txt = { pagina: 'Cardápio, Wi-Fi, Google, comentários e o sino para chamar o garçom.', fidelidade: 'Pontos pela nota, prêmios, níveis e ranking.', delivery: 'Pedidos ilimitados, sem comissão.' };
-      const ordem = ['fidelidade', 'delivery', 'pagina'];
-      $('precosCards').innerHTML = ordem.map((id) => `<article class="preco-card"><h3>${s[id].nome}</h3><p class="valor num">${brl(s[id].preco)}<span>/mês</span></p><p>${txt[id]}</p></article>`).join('')
-        + `<article class="preco-card combo"><span class="tag">Os três</span><h3>Tudo junto</h3><p class="valor num">${brl(todos.total)}<span>/mês</span></p>
+      const a = Object.fromEntries(P.ADICIONAIS.map((x) => [x.id, x]));
+      document.querySelectorAll('[data-preco-ad]').forEach((el) => { const x = a[el.dataset.precoAd]; if (x) el.textContent = brl(x.preco); });
+      const todos = P.combo(Object.fromEntries(P.COBRADOS.map((x) => [x.id, true])));
+      // Os quatro cards (o sino vem incluso na página) e o combo.
+      const cards = [
+        { ...s.fidelidade, txt: 'Clube de pontos e cartão de selos pela nota fiscal, prêmios, níveis e ranking.' },
+        { ...s.delivery, txt: 'Link próprio de pedidos, ilimitados, sem comissão.' },
+        { ...a.prorrogacao, nome: 'Prorrogação (happy hour)', txt: 'Relógio na TV e no celular que ganha minutos a cada chopp.' },
+        { ...s.pagina, txt: 'Cardápio, Wi-Fi, Google, comentários e o sino para chamar o garçom.' },
+      ];
+      $('precosCards').innerHTML = cards.map((c) => `<article class="preco-card"><h3>${c.nome}</h3><p class="valor num">${brl(c.preco)}<span>/mês</span></p><p>${c.txt}</p></article>`).join('')
+        + `<article class="preco-card combo"><span class="tag">Os quatro</span><h3>Tudo junto</h3><p class="valor num">${brl(todos.total)}<span>/mês</span></p>
           <p class="eco">Economia de ${brl(todos.economia)}/mês</p>
-          <ul>${ordem.map((id) => `<li>${s[id].nome}</li>`).join('')}</ul></article>`;
+          <ul>${cards.map((c) => `<li>${c.nome}</li>`).join('')}</ul>
+          <p>Três juntos: 17% de desconto. Página, fidelidade e delivery: ${brl(P.combo({ pagina: true, fidelidade: true, delivery: true }).total)}/mês.</p></article>`;
       $('rVtx').textContent = brl(s.delivery.preco);
     }
 

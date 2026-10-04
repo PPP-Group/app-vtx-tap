@@ -3,7 +3,7 @@
  *
  *   init()                       → prepara conexão
  *   subscribe(fn)                → fn() a cada mudança em chamados/comentários
- *   watchCall(id, fn)            → fn(chamado) quando um chamado específico muda
+ *   watchCall(id, fn, token)     → fn(chamado) quando um chamado específico muda (token da sessão da mesa)
  *   listCalls({ desde })         → chamados criados depois de `desde` (Date)
  *   getCall(id) / updateCall(id, patch)          (equipe)
  *
@@ -26,6 +26,7 @@
  *   auth.estado()                → { temSenha } — se a senha da equipe já foi criada
  *   auth.entrar(pin) / auth.cadastrar({ nome, pin, senhaEquipe }) / auth.sessao() / auth.sair()
  *   auth.membros() / auth.remover(id) / auth.trocarSenha(senha)   (só administrador)
+ *   auth.esqueci(email) / auth.redefinir({ email, codigo, pin }) / auth.meuEmail(email)  (PIN esquecido: código no e-mail)
  *   auth.adicionar({ nome, pin, admin }) / auth.definirAdmin(id, admin) (só administrador) / auth.trocarPin(id|null, pin)
  *
  *   Programa de fidelidade (módulo liberado pela Vortex; regras em settings.fidelidade):
@@ -910,6 +911,17 @@
         listeners.add(fn);
         return () => listeners.delete(fn);
       },
+      // Cliente novo no clube (avisa o painel). Na demonstração, compara a lista a cada mudança.
+      onNovoCliente(fn) {
+        let vistos = new Set(F(read()).clientes.map((c) => c.cpf));
+        const run = () => {
+          const lista = F(read()).clientes;
+          lista.filter((c) => !vistos.has(c.cpf)).forEach((c) => fn({ nome: c.nome }));
+          vistos = new Set(lista.map((c) => c.cpf));
+        };
+        listeners.add(run);
+        return () => listeners.delete(run);
+      },
       watchCall(id, fn) {
         const run = () => fn(read().chamados.find((c) => c.id === id) || null);
         run();
@@ -1136,6 +1148,38 @@
         write(db);
         return { ...novo, taxa_unica: db.planoHistorico[0].taxa_unica };
       },
+      // Mensalidade na demonstração: sem Asaas; a cobrança fica neste navegador e "paga" na hora.
+      async minhaCobranca() {
+        const db = read();
+        const c = db.cobranca || { assinatura: null, faturas: [] };
+        if (c.assinatura) c.assinatura.valor = precoPlano((await this.meuPlano()).plano);
+        return c;
+      },
+      async pagamento(acao, dados = {}) {
+        const db = read();
+        const c = db.cobranca || { assinatura: null, faturas: [] };
+        const mensal = precoPlano((await this.meuPlano()).plano);
+        const venc = (dias) => diaIso(new Date(Date.now() + dias * 864e5));
+        if (acao === 'ativar') {
+          const doc = soDigitos(dados.documento);
+          if (String(dados.nome || '').trim().length < 3) throw new Error('Informe o nome ou a razão social.');
+          if (!/^(\d{11}|\d{14})$/.test(doc)) throw new Error('CPF ou CNPJ inválido.');
+          if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(dados.email || '')) throw new Error('E-mail inválido.');
+          const forma = dados.forma === 'pix' ? 'pix' : 'cartao';
+          c.assinatura = { forma, valor: mensal, status: 'ativa', cartao: forma === 'cartao' ? 'VISA final 4242' : null, nome: dados.nome, email: dados.email,
+            documento: doc.length === 11 ? `•••.${doc.slice(3, 6)}.•••-${doc.slice(-2)}` : `${doc.slice(0, 2)}.•••.•••/${doc.slice(8, 12)}-${doc.slice(-2)}` };
+          c.faturas = [{ id: 'demo-' + Date.now(), descricao: 'VTX Tap · mensalidade', valor: mensal, vencimento: venc(30), status: 'PENDING', forma: forma === 'cartao' ? 'CREDIT_CARD' : 'UNDEFINED', url: null },
+            { id: 'demo-0', descricao: 'VTX Tap · mensalidade', valor: mensal, vencimento: venc(0), status: 'CONFIRMED', forma: forma === 'cartao' ? 'CREDIT_CARD' : 'PIX', url: null, pago_em: venc(0) }];
+        } else if (!c.assinatura) {
+          throw new Error('A cobrança ainda não foi ativada.');
+        } else if (acao === 'forma') {
+          c.assinatura.forma = dados.forma === 'pix' ? 'pix' : 'cartao';
+          c.assinatura.cartao = c.assinatura.forma === 'cartao' ? 'VISA final 4242' : null;
+        }
+        db.cobranca = c;
+        write(db);
+        return { status: 'ok', url: null, demo: true };
+      },
 
       /* ---------- Fidelidade: cliente ---------- */
       async fidPrograma() {
@@ -1269,6 +1313,86 @@
         const db = read();
         delete F(db).sessoes[token];
         write(db);
+      },
+      // Esqueci o PIN (demonstração: o código volta na resposta em vez de ir por e-mail).
+      async fidPinEsqueci(cpf) {
+        const db = read();
+        cpf = soDigitos(cpf);
+        if (!cpfValido(cpf)) return { status: 'erro', mensagem: 'CPF inválido. Confira os números.' };
+        const c = cliDe(db, cpf);
+        if (!c || !c.email) return { status: 'enviado', email: null };
+        const codigo = String(Math.floor(100000 + Math.random() * 900000));
+        F(db).codigos = { ...(F(db).codigos || {}), [cpf]: { codigo, ate: Date.now() + 15 * 60e3 } };
+        write(db);
+        return { status: 'enviado', email: c.email.replace(/^(.{2})[^@]*/, '$1•••'), demoCodigo: codigo };
+      },
+      async fidPinCodigo(cpf, codigo, pin) {
+        const db = read();
+        cpf = soDigitos(cpf);
+        if (!/^\d{4}$/.test(pin || '')) return { status: 'erro', mensagem: 'O PIN tem 4 números.' };
+        const k = (F(db).codigos || {})[cpf];
+        if (!k || k.ate < Date.now()) return { status: 'erro', mensagem: 'Este código venceu. Peça um novo.' };
+        if (String(codigo) !== k.codigo) return { status: 'erro', mensagem: 'Código incorreto. Confira o e-mail.' };
+        const f = F(db);
+        delete f.codigos[cpf];
+        f.pins[cpf] = await hashTxt(cpf + ':' + pin);
+        for (const [t, c] of Object.entries(f.sessoes)) if (c === cpf) delete f.sessoes[t];
+        const token = uid();
+        f.sessoes[token] = cpf;
+        write(db);
+        return { status: 'ok', token };
+      },
+      async fidTrocarPin(token, atual, novo) {
+        const db = read();
+        const cpf = sessaoDe(db, token);
+        if (!cpf) return { status: 'sem_sessao' };
+        if (!/^\d{4}$/.test(novo || '')) return { status: 'erro', mensagem: 'O PIN novo tem 4 números.' };
+        const f = F(db);
+        if (f.pins[cpf] !== await hashTxt(cpf + ':' + atual)) return { status: 'erro', mensagem: 'PIN incorreto.' };
+        f.pins[cpf] = await hashTxt(cpf + ':' + novo);
+        for (const [t, c] of Object.entries(f.sessoes)) if (c === cpf && t !== token) delete f.sessoes[t];
+        write(db);
+        return { status: 'ok' };
+      },
+      async fidMeusDados(token) {
+        const db = read();
+        const cpf = sessaoDe(db, token);
+        if (!cpf) return { status: 'sem_sessao' };
+        const c = cliDe(db, cpf);
+        return { status: 'ok', nome: c.nome, email: c.email, telefone: c.telefone, marketing: !!c.marketing, nascimento: c.nascimento || null,
+          cpf: '•••.' + cpf.slice(3, 6) + '.' + cpf.slice(6, 9) + '-••' };
+      },
+      async fidAtualizarMeusDados(token, { pin, email, telefone, marketing }) {
+        const db = read();
+        const cpf = sessaoDe(db, token);
+        if (!cpf) return { status: 'sem_sessao' };
+        email = String(email || '').trim().toLowerCase();
+        telefone = soDigitos(telefone);
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return { status: 'erro', mensagem: 'E-mail inválido.' };
+        if (!/^[1-9][0-9]{9,10}$/.test(telefone)) return { status: 'erro', mensagem: 'Telefone inválido. Use DDD + número.' };
+        if (F(db).pins[cpf] !== await hashTxt(cpf + ':' + pin)) return { status: 'erro', mensagem: 'PIN incorreto.' };
+        Object.assign(cliDe(db, cpf), { email, telefone, marketing: marketing == null ? cliDe(db, cpf).marketing : !!marketing });
+        write(db);
+        return { status: 'ok' };
+      },
+      async fidApagarMinhaConta(token, pin) {
+        const db = read();
+        const cpf = sessaoDe(db, token);
+        if (!cpf) return { status: 'sem_sessao' };
+        if (F(db).pins[cpf] !== await hashTxt(cpf + ':' + pin)) return { status: 'erro', mensagem: 'PIN incorreto.' };
+        await this.fidExcluirCliente(cpf);
+        return { status: 'ok' };
+      },
+      async meusAvisos() {
+        return read().avisos || {};
+      },
+      async salvarAvisos(a) {
+        const email = String(a.email || '').trim().toLowerCase();
+        if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error('E-mail inválido.');
+        const db = read();
+        db.avisos = { email: email || null, novo_cliente: a.novo_cliente !== false, novo_pedido: !!a.novo_pedido, boas_vindas: a.boas_vindas !== false };
+        write(db);
+        return db.avisos;
       },
       async fidNotaSituacao({ cpf, qr }) {
         const db = read();
@@ -2041,6 +2165,7 @@
       async estado() {
         return { temSenha: !!equipe().senhaHash, temEquipe: equipe().membros.length > 0 };
       },
+      async esquecerAparelhos() { soAdmin(); },
       async entrar(pin) {
         if (!/^\d{4,8}$/.test(pin)) falha('O PIN tem de 4 a 8 números.');
         const h = await hash('pin:' + pin);
@@ -2074,7 +2199,8 @@
       },
       async membros() {
         const x = eu();
-        return equipe().membros.map((m) => ({ id: m.id, nome: m.nome, criado_em: m.criado_em, admin: !!m.admin, voce: !!x && x.id === m.id }));
+        return equipe().membros.map((m) => ({ id: m.id, nome: m.nome, criado_em: m.criado_em, admin: !!m.admin, voce: !!x && x.id === m.id,
+          email: !x || x.id !== m.id ? (m.email ? m.email.replace(/^(.{2})[^@]*/, '$1•••') : null) : m.email || null }));
       },
       async adicionar({ nome, pin, admin }) {
         soAdmin();
@@ -2112,6 +2238,34 @@
         if (String(senha || '').length < 6) falha('O código da equipe precisa ter pelo menos 6 caracteres.');
         salvar({ ...equipe(), senhaHash: await hash('senha:' + senha) });
       },
+      // Demonstração: o código não vai por e-mail, volta na resposta para aparecer na tela.
+      async esqueci(email) {
+        email = String(email || '').trim().toLowerCase();
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) falha('E-mail inválido.');
+        const m = equipe().membros.find((x) => x.email === email);
+        const codigo = String(Math.floor(100000 + Math.random() * 900000));
+        if (m) salvar({ ...equipe(), membros: equipe().membros.map((x) => (x.id === m.id ? { ...x, codigo, codigoAte: Date.now() + 15 * 60e3 } : x)) });
+        return { ok: true, email: email.replace(/^(.{2})[^@]*/, '$1•••'), demoCodigo: m ? codigo : null };
+      },
+      async redefinir({ email, codigo, pin }) {
+        email = String(email || '').trim().toLowerCase();
+        if (!/^\d{4,8}$/.test(pin)) falha('O PIN precisa ter de 4 a 8 números.');
+        const m = equipe().membros.find((x) => x.email === email);
+        if (!m || !m.codigo || m.codigoAte < Date.now()) falha('Este código venceu. Peça um novo.');
+        if (String(codigo) !== m.codigo) falha('Código incorreto. Confira o e-mail.');
+        const pinHash = await pinLivre(pin, m.id);
+        salvar({ ...equipe(), membros: equipe().membros.map((x) => (x.id === m.id ? { ...x, pinHash, codigo: null } : x)) });
+        abrir(m);
+        return { nome: m.nome, admin: !!m.admin };
+      },
+      async meuEmail(email) {
+        const x = eu();
+        if (!x) falha('Entre com seu PIN para continuar.');
+        email = String(email || '').trim().toLowerCase();
+        if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) falha('E-mail inválido.');
+        if (email && equipe().membros.some((m) => m.email === email && m.id !== x.id)) falha('Esse e-mail já está na conta de outra pessoa da equipe.');
+        salvar({ ...equipe(), membros: equipe().membros.map((m) => (m.id === x.id ? { ...m, email: email || null } : m)) });
+      },
     };
   }
 
@@ -2123,14 +2277,17 @@
     // Restaurante deste endereço: o subdomínio (ou ?r=). Num domínio próprio, sai de restaurante_por_dominio no init.
     let slug = cfg.backend.slug;
     const listeners = new Set();
+    const novosClientes = new Set();
     let sb;
     let rid = null;
 
-    const loadScript = (src) =>
+    const loadScript = (src, integrity) =>
       new Promise((ok, fail) => {
         if (window.supabase) return ok();
         const s = document.createElement('script');
         s.src = src;
+        // Versão fixa com conferência de integridade: o arquivo do CDN não pode ser trocado no caminho.
+        if (integrity) { s.integrity = integrity; s.crossOrigin = 'anonymous'; }
         s.onload = ok;
         s.onerror = () => fail(new Error('Falha ao carregar o Supabase'));
         document.head.appendChild(s);
@@ -2143,7 +2300,7 @@
     return {
       mode: 'supabase',
       async init({ realtimeAll = false } = {}) {
-        await loadScript('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js');
+        await loadScript('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.min.js', 'sha384-WgXwGL6fUsYJWNaKJgVbrJKGRQwc1vieh2oy4kw9nXqpNDz3tdSsqEYUgeHD/NuF');
         sb = window.supabase.createClient(supabaseUrl, supabaseAnonKey);
         let r = null;
         // Domínio próprio (ex.: cardapio.seurestaurante.com.br): o restaurante sai do endereço cadastrado.
@@ -2160,6 +2317,8 @@
           for (const table of ['chamados', 'comentarios', 'sessoes', 'mesas_abertas', 'etiquetas', 'fid_notas', 'fid_resgates', 'pedidos']) {
             ch.on('postgres_changes', { event: '*', schema: 'public', table, filter: 'restaurante_id=eq.' + rid }, () => listeners.forEach((f) => f()));
           }
+          ch.on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'fid_clientes', filter: 'restaurante_id=eq.' + rid },
+            (p) => novosClientes.forEach((f) => f({ nome: p.new && p.new.nome })));
           ch.subscribe();
         }
       },
@@ -2167,13 +2326,28 @@
         listeners.add(fn);
         return () => listeners.delete(fn);
       },
-      watchCall(id, fn) {
-        this.getCall(id).then(fn).catch(() => fn(null));
-        const ch = sb
-          .channel('chamado-' + id)
-          .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chamados', filter: 'id=eq.' + id }, (p) => fn(p.new))
-          .subscribe();
-        return () => sb.removeChannel(ch);
+      onNovoCliente(fn) {
+        novosClientes.add(fn);
+        return () => novosClientes.delete(fn);
+      },
+      // Cliente acompanha o próprio chamado pelo token da sessão (public.chamado_status): sem login, ninguém lê
+      // os chamados dos outros. Consulta a cada 4 s com a página aberta; para quando o chamado termina.
+      watchCall(id, fn, token) {
+        let timer = 0;
+        let parado = false;
+        const ver = async () => {
+          if (parado) return;
+          let c = null;
+          try { c = token ? must(await sb.rpc('chamado_status', { p_token: token, p_id: id })) : null; } catch { c = undefined; }
+          if (parado) return;
+          if (c !== undefined) fn(c);
+          if (c && ['resolvido', 'cancelado'].includes(c.status)) return;
+          timer = setTimeout(ver, document.hidden ? 15000 : 4000);
+        };
+        const aoVoltar = () => { if (!document.hidden) { clearTimeout(timer); ver(); } };
+        document.addEventListener('visibilitychange', aoVoltar);
+        ver();
+        return () => { parado = true; clearTimeout(timer); document.removeEventListener('visibilitychange', aoVoltar); };
       },
       async listCalls({ desde } = {}) {
         let q = sb.from('chamados').select('*').eq('restaurante_id', rid).order('criado_em', { ascending: true });
@@ -2273,6 +2447,21 @@
       },
       async alterarPlano(plano) {
         return must(await sb.rpc('meu_plano_alterar', { p_plano: plano }));
+      },
+      // Mensalidade (Asaas): leitura pelo banco; ativar, pagar e trocar a forma pela função "pagamentos".
+      async minhaCobranca() {
+        return must(await sb.rpc('minha_cobranca'));
+      },
+      async pagamento(acao, dados = {}) {
+        const token = (await sb.auth.getSession()).data.session?.access_token;
+        const r = await fetch(`${supabaseUrl}/functions/v1/pagamentos`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', apikey: supabaseAnonKey, Authorization: `Bearer ${token || supabaseAnonKey}` },
+          body: JSON.stringify({ ...dados, acao, restaurante: rid }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.erro || 'Não foi possível falar com o sistema de pagamento. Tente de novo em instantes.');
+        return j;
       },
       async uploadImage(blob, nome) {
         const ext = (blob.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
@@ -2542,6 +2731,31 @@
       async fidExcluirPremio(id) {
         must(await sb.from('fid_premios').delete().eq('id', id));
       },
+      async meusAvisos() {
+        return must(await sb.rpc('meus_avisos')) || {};
+      },
+      async salvarAvisos(a) {
+        return must(await sb.rpc('salvar_avisos', { p: a }));
+      },
+      // Cliente do clube: resolve sozinho (código no e-mail, trocar o PIN, dados e apagar a conta).
+      async fidPinEsqueci(cpf) {
+        return must(await sb.rpc('fid_pin_esqueci', { p_restaurante: rid, p_cpf: soDigitos(cpf) }));
+      },
+      async fidPinCodigo(cpf, codigo, pin) {
+        return must(await sb.rpc('fid_pin_codigo', { p_restaurante: rid, p_cpf: soDigitos(cpf), p_codigo: String(codigo), p_pin: pin }));
+      },
+      async fidTrocarPin(token, atual, novo) {
+        return must(await sb.rpc('fid_trocar_pin', { p_token: token, p_atual: atual, p_novo: novo }));
+      },
+      async fidMeusDados(token) {
+        return must(await sb.rpc('fid_meus_dados', { p_token: token }));
+      },
+      async fidAtualizarMeusDados(token, { pin, email, telefone, marketing }) {
+        return must(await sb.rpc('fid_atualizar_meus_dados', { p_token: token, p_pin: pin, p_email: email, p_telefone: telefone, p_marketing: marketing }));
+      },
+      async fidApagarMinhaConta(token, pin) {
+        return must(await sb.rpc('fid_apagar_minha_conta', { p_token: token, p_pin: pin }));
+      },
       async fidExportar() {
         const todos = [];
         for (let de = 0; ; de += 1000) {
@@ -2573,15 +2787,29 @@
         async estado() {
           return this.chamar('estado');
         },
-        async entrar(pin) {
-          const r = await this.chamar('entrar', { pin });
+        // Aparelho confiável: guardado neste navegador, por restaurante. Sem ele, o PIN vai junto com o código da equipe.
+        aparelho() { try { return localStorage.getItem('vtx-aparelho:' + rid) || ''; } catch { return ''; } },
+        guardarAparelho(t) { if (t) try { localStorage.setItem('vtx-aparelho:' + rid, t); } catch {} },
+        async entrar(pin, senhaEquipe) {
+          let r;
+          try {
+            r = await this.chamar('entrar', { pin, aparelho: this.aparelho(), senhaEquipe: senhaEquipe || undefined });
+          } catch (e) {
+            if (/código da equipe/i.test(e.message)) e.aparelhoNovo = true;
+            throw e;
+          }
+          this.guardarAparelho(r.aparelho);
           must(await sb.auth.setSession(r.sessao));
           return { nome: r.nome, admin: !!r.admin };
         },
         async cadastrar({ nome, pin, senhaEquipe }) {
           const r = await this.chamar('cadastrar', { nome, pin, senhaEquipe });
+          this.guardarAparelho(r.aparelho);
           must(await sb.auth.setSession(r.sessao));
           return { nome: r.nome, admin: !!r.admin, primeiraConta: r.primeiraConta };
+        },
+        async esquecerAparelhos() {
+          await this.chamar('esquecer_aparelhos', {}, true);
         },
         async sessao() {
           const { data } = await sb.auth.getSession();
@@ -2621,6 +2849,19 @@
         },
         async trocarSenha(senha) {
           await this.chamar('trocar_senha', { senha }, true);
+        },
+        // Esqueci o PIN: código no e-mail de recuperação; com ele, o PIN novo já entra.
+        async esqueci(email) {
+          return this.chamar('esqueci', { email });
+        },
+        async redefinir({ email, codigo, pin }) {
+          const r = await this.chamar('redefinir', { email, codigo, pin });
+          this.guardarAparelho(r.aparelho);
+          must(await sb.auth.setSession(r.sessao));
+          return { nome: r.nome, admin: !!r.admin };
+        },
+        async meuEmail(email) {
+          await this.chamar('meu_email', { email }, true);
         },
       },
     };

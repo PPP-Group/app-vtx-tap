@@ -13,10 +13,12 @@ server {
   location = / {
     try_files /lp/index.html =404;
     add_header Cache-Control "no-cache";
+    include /etc/nginx/snippets/seguranca.conf;
   }
   location ~ ^/orcamento/?$ {
     try_files /lp/orcamento.html =404;
     add_header Cache-Control "no-cache";
+    include /etc/nginx/snippets/seguranca.conf;
   }
   # Endereço antigo da página de preços.
   location ~ ^/precos/?$ {
@@ -27,6 +29,7 @@ server {
   location ~ ^/master/?$ {
     try_files /central/index.html =404;
     add_header Cache-Control "no-cache";
+    include /etc/nginx/snippets/seguranca.conf;
   }
 }
 

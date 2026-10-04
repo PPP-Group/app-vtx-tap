@@ -4,11 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>VTX Tap · Orçamento</title>
-<meta name="description" content="Uma plaquinha na mesa: chamar o garçom, cardápio digital, avaliação no Google e programa de fidelidade. Veja os preços e monte o seu plano.">
+<meta name="description" content="Uma plaquinha na mesa: cardápio, chamar o garçom, avaliação no Google, programa de fidelidade (pontos ou cartão de selos), delivery sem comissão e o happy hour que cresce a cada chopp. Veja os preços e monte o seu plano.">
 <meta name="theme-color" content="#0C0820">
 <meta name="color-scheme" content="dark">
 <meta property="og:title" content="VTX Tap · Orçamento">
-<meta property="og:description" content="Chamar o garçom, cardápio, avaliação no Google e fidelidade numa plaquinha só. Monte o seu plano.">
+<meta property="og:description" content="Cardápio e garçom, fidelidade, delivery e happy hour numa plaquinha só. Monte o seu plano.">
 <meta property="og:image" content="/assets/img/vtx-tap-escuro.png">
 <link rel="icon" href="/assets/img/icon-64.png" type="image/png">
 <style>[hidden] { display: none !important; } img { max-width: 100%; }</style>
@@ -154,6 +154,26 @@
   .op .preco { font-family: var(--mono); font-weight: 600; font-size: 14px; color: var(--roxo-ink); white-space: nowrap; }
   code { font-family: var(--mono); font-size: .92em; overflow-wrap: anywhere; }
 
+  /* O que vem em cada serviço */
+  .op details { margin-top: 6px; }
+  .op summary { cursor: pointer; color: var(--roxo-ink); font-weight: 600; font-size: 13.5px; list-style: none; display: inline-flex; align-items: center; gap: 6px; }
+  .op summary::-webkit-details-marker { display: none; }
+  .op summary::before { content: '+'; font: 700 15px var(--mono); }
+  .op details[open] summary::before { content: '−'; }
+  .op details ul { margin: 6px 0 0; padding-left: 1.1em; color: var(--ink-2); font-size: 13.5px; display: grid; gap: 3px; }
+  .op .para { display: block; color: var(--ink-2); font-size: 13.5px; font-weight: 600; margin-top: 2px; }
+  /* Sugestões prontas */
+  .sugs { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  .sug { display: grid; gap: 8px; align-content: start; padding: 18px; border-radius: 20px; background: var(--surface); border: 1px solid var(--line); }
+  .sug h3 { font-family: var(--display); font-weight: 900; font-size: 24px; text-transform: uppercase; line-height: 1; }
+  .sug p { color: var(--muted); font-size: 14.5px; }
+  .sug .itens { color: var(--ink-2); font-size: 14px; font-weight: 600; }
+  .sug .v { font: 900 30px/1 var(--display); }
+  .sug .v small { font: 600 14px var(--body); color: var(--muted); }
+  .sug button { justify-self: start; min-height: 40px; padding: 0 16px; border-radius: 999px; border: 2px solid var(--roxo); background: transparent; color: var(--roxo-ink); font: 700 14.5px var(--body); cursor: pointer; }
+  .sug button:hover { background: var(--roxo-soft); }
+  .sug button:focus-visible { outline: 3px solid var(--roxo); outline-offset: 2px; }
+
   /* Resumo */
   .resumo { display: grid; gap: 14px; padding: 22px; border-radius: 24px; background: var(--noite); color: var(--noite-ink); min-width: 0; }
   .resumo > h3 { font-family: var(--display); font-weight: 900; font-size: 28px; text-transform: uppercase; }
@@ -205,6 +225,7 @@
   .card { display: grid; gap: 10px; align-content: start; padding: 20px; border-radius: 20px; background: var(--surface); border: 1px solid var(--line); }
   .card.destaque { border: 2px solid var(--roxo); }
   .card .valor { font-family: var(--display); font-weight: 900; font-size: 40px; line-height: 1; }
+  .card .valor i { font-style: normal; }
   .card .valor span { font-family: var(--body); font-size: 15px; font-weight: 600; color: var(--muted); margin-left: 2px; }
   .card ul { margin: 0; padding-left: 1.1em; color: var(--ink-2); font-size: 14.5px; display: grid; gap: 4px; }
   .card-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -234,10 +255,24 @@
   .btn-cta { display: inline-flex; align-items: center; justify-content: center; min-height: 42px; padding: 0 18px; border-radius: 999px; background: var(--roxo); color: #fff; font: 700 15px var(--body); text-decoration: none; box-shadow: 0 10px 28px rgba(125, 39, 252, .38); white-space: nowrap; }
   .btn-cta:focus-visible { outline: 3px solid #A874FF; outline-offset: 3px; }
   @media (max-width: 760px) { .topo nav { display: none; } .btn-cta { margin-left: auto; } }
-  .fechamento { display: flex; flex-wrap: wrap; gap: 14px 24px; align-items: center; justify-content: space-between; padding: 26px; border-radius: 24px; background: var(--noite); color: var(--noite-ink); }
-  .fechamento h3 { font-family: var(--display); font-weight: 900; font-size: 30px; text-transform: uppercase; }
-  .fechamento p { color: var(--noite-2); max-width: 60ch; }
-  .fechamento .btn-cta { background: #FFC61A; color: #1D1400; box-shadow: none; min-height: 50px; padding: 0 22px; font-size: 16px; }
+  .contratar { display: grid; gap: 20px 32px; padding: clamp(22px, 4vw, 34px); border-radius: 24px; background: var(--noite); color: var(--noite-ink); }
+  @media (min-width: 860px) { .contratar { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); align-items: start; } }
+  .contratar h3 { font-family: var(--display); font-weight: 900; font-size: 34px; text-transform: uppercase; line-height: 1; }
+  .contratar p { color: var(--noite-2); max-width: 60ch; }
+  .stack-c { display: grid; gap: 12px; align-content: start; }
+  .ct-resumo { padding: 12px 14px; border-radius: 14px; background: rgba(255, 255, 255, .07); font-size: 14.5px; }
+  .ct-resumo b { color: #fff; }
+  .ct-form { display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); }
+  @media (min-width: 560px) { .ct-form { grid-template-columns: repeat(2, minmax(0, 1fr)); } .ct-form .btn-cta, .ct-erro, .ct-alt { grid-column: 1 / -1; } }
+  .ct-campo { display: grid; gap: 6px; font-size: 14px; font-weight: 600; color: var(--noite-2); }
+  .ct-campo input { min-height: 46px; padding: 0 14px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, .2); background: rgba(255, 255, 255, .06); color: #fff; font: 500 16px var(--body); }
+  .ct-campo input:focus-visible { outline: 3px solid #A874FF; outline-offset: 1px; }
+  .ct-erro { margin: 0; min-height: 1.2em; color: #FFB4B4; font-size: 14px; }
+  .ct-erro.is-ok { color: #7CE3B1; }
+  .contratar .btn-cta { background: #FFC61A; color: #1D1400; box-shadow: none; min-height: 50px; padding: 0 22px; font-size: 16px; border: 0; cursor: pointer; }
+  .contratar .btn-cta:disabled { opacity: .6; cursor: progress; }
+  .ct-alt { color: #CFC6F2; font-size: 14px; }
+  .ct-form .btn-cta { justify-self: stretch; }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 <link rel="stylesheet" href="/assets/css/campos.css">
@@ -246,8 +281,8 @@
 <header class="topo">
   <div class="topo-in">
     <a href="/" data-home aria-label="VTX Tap, início"><img class="logo-escuro" src="/assets/img/vtx-tap-escuro.png" alt="VTX Tap" width="104" height="48"><img class="logo-claro" src="/assets/img/vtx-tap.png" alt="VTX Tap" width="104" height="48"></a>
-    <nav aria-label="Seções"><a href="/#fidelidade" data-home>Fidelidade</a><a href="/#delivery" data-home>Delivery</a><a href="/#mesa" data-home>Na mesa</a><a href="#simTitulo">Simulador</a><a href="/#duvidas" data-home>Dúvidas</a></nav>
-    <a class="btn-cta" href="https://ig.me/m/vortexsoftwareco" target="_blank" rel="noopener">Falar com a gente</a>
+    <nav aria-label="Seções"><a href="/#fidelidade" data-home>Fidelidade</a><a href="/#delivery" data-home>Delivery</a><a href="/#prorrogacao" data-home>Happy hour</a><a href="/#mesa" data-home>Na mesa</a><a href="#simTitulo">Simulador</a></nav>
+    <a class="btn-cta" href="#contratar">Quero contratar</a>
   </div>
 </header>
 <div class="wrap">
@@ -255,8 +290,8 @@
     <img src="/assets/img/vtx-tap.png" alt="VTX Tap" width="150" height="69">
     
     <h1>Uma plaquinha na mesa. <em>O restaurante inteiro no celular do cliente.</em></h1>
-    <p>O cliente encosta o celular (NFC) ou lê o QR Code da mesa. Na mesma página ele chama o garçom, vê o cardápio, avalia no Google e junta pontos. Sem baixar aplicativo.</p>
-    <ul><li>Chamar o garçom</li><li>Cardápio digital</li><li>Avaliação no Google</li><li>Programa de fidelidade</li><li>Painel da equipe</li></ul>
+    <p>O cliente encosta o celular (NFC) ou lê o QR Code da mesa. Na mesma página ele vê o cardápio, chama o garçom, avalia no Google, junta pontos ou selos e acompanha o relógio do happy hour. Sem baixar aplicativo.</p>
+    <ul><li>Cardápio e chamar o garçom</li><li>Avaliação no Google</li><li>Clube de pontos</li><li>Cartão fidelidade</li><li>Delivery sem comissão</li><li>Happy hour (Prorrogação)</li><li>Painel da equipe</li></ul>
   </header>
 
   <section class="sec" aria-labelledby="cobTitulo">
@@ -269,10 +304,19 @@
       <article><span class="tipo tipo--unico">Pagamento único</span><h3>Você paga uma vez, na contratação</h3>
         <ul><li>Implantação no restaurante</li><li>Plaquinhas das mesas</li><li>Configuração do domínio próprio, se quiser um</li></ul></article>
       <article><span class="tipo tipo--mensal">Todo mês</span><h3>A mensalidade dos serviços que você usar</h3>
-        <ul><li>Página da mesa e cardápio</li><li>Chamar o garçom</li><li>Programa de fidelidade</li><li>Domínio próprio, se tiver</li></ul></article>
+        <ul><li>Página da mesa, cardápio e sino</li><li>Programa de fidelidade</li><li>Delivery</li><li>Prorrogação (happy hour)</li><li>Domínio próprio, se tiver</li></ul></article>
       <article><span class="tipo tipo--anual">Todo ano</span><h3>Só se registrarmos um domínio para você</h3>
         <ul><li>Renovação do domínio .com.br</li><li>Com o endereço incluso (subdomínio), não existe cobrança anual</li></ul></article>
     </div>
+  </section>
+
+  <section class="sec" aria-labelledby="sugTitulo">
+    <div class="sec-h">
+      <p class="kicker">Por onde começar</p>
+      <h2 id="sugTitulo">Escolha pelo tipo de casa</h2>
+      <p>Não sabe o que escolher? Comece por uma destas combinações e ajuste no simulador logo abaixo.</p>
+    </div>
+    <div class="sugs" id="sugs"></div>
   </section>
 
   <section class="sec" aria-labelledby="simTitulo">
@@ -295,13 +339,50 @@
           <h3>Serviços <span class="tipo tipo--mensal">Todo mês</span></h3>
           <div class="opcoes">
             <label class="op"><input type="checkbox" id="svPagina" checked><span class="op-txt"><span class="op-top"><b>Página da mesa, cardápio e sino</b><span class="preco" data-preco="pagina"></span></span>
-              <small>Cardápio com fotos e filtros, Wi-Fi, avaliação no Google, comentário anônimo e Instagram. O sino já vem incluso: o cliente chama o garçom pelo celular e a equipe recebe na hora no painel, com som e mapa do salão.</small></span></label>
+              <small>A página que abre na plaquinha: o cliente vê o cardápio, chama o garçom pelo celular e avalia no Google.</small>
+              <span class="para">Para: toda casa com mesa.</span>
+              <details><summary>O que vem incluso</summary><ul>
+                <li>Cardápio digital com fotos, busca, categorias e selos (vegetariano, sem glúten, picante), importado da sua planilha</li>
+                <li>Sino para chamar o garçom: o cliente escolhe o motivo (pedido, conta, água) e a equipe recebe no painel com som e o tempo de espera</li>
+                <li>Proteção contra trote: a equipe libera o celular uma vez e a mesa ganha um código</li>
+                <li>Mapa do salão no painel, com quem está em cada mesa e o fechamento da mesa</li>
+                <li>Avaliação no Google em um toque e comentário anônimo para a gerência</li>
+                <li>Wi-Fi, Instagram, endereço, telefone e horários</li>
+              </ul></details></span></label>
             <label class="op"><input type="checkbox" id="svFid" checked><span class="op-txt"><span class="op-top"><b>Programa de fidelidade</b><span class="preco" data-preco="fidelidade"></span></span>
-              <small>Pontos pela nota fiscal, prêmios, níveis do clube, ranking, indicação de amigos e dias com pontos em dobro.</small></span></label>
+              <small>Faz o cliente voltar: cada compra com CPF na nota vira pontos (clube de pontos) ou selos (cartão fidelidade). Os dois estão inclusos.</small>
+              <span class="para">Para: quem quer que o cliente volte mais vezes.</span>
+              <details><summary>O que vem incluso</summary><ul>
+                <li>Clube de pontos: cada real vira pontos e os pontos viram prêmios com foto</li>
+                <li>Cartão fidelidade: 1 selo por compra, de 3 a 30 selos, com prêmio, valor mínimo e validade</li>
+                <li>Os dois juntos, cada um no seu horário (ex.: cartão no almoço, pontos à noite)</li>
+                <li>Leitura do QR Code da nota fiscal (NFC-e), sem integração com o caixa; nota repetida é barrada</li>
+                <li>Níveis do clube, ranking com pódio, indicação de amigos, pontos em dobro, aniversário e transferência de pontos</li>
+                <li>Lista dos clientes com contato e frequência, exportável (LGPD)</li>
+                <li>Conferência automática na SEFAZ opcional: R$ 0,25 por nota conferida</li>
+              </ul></details></span></label>
             <label class="op"><input type="checkbox" id="svDel"><span class="op-txt"><span class="op-top"><b>Delivery</b><span class="preco" data-preco="delivery"></span></span>
-              <small>Pedido para entrega com endereço, taxa por distância, comanda na cozinha e acompanhamento do pedido.</small></span></label>
-            <label class="op"><input type="checkbox" id="adProrrogacao"><span class="op-txt"><span class="op-top"><b>Prorrogação <small class="op-ad">· adicional</small></b><span class="preco" data-preco-ad="prorrogacao"></span></span>
-              <small>Happy hour que ganha minutos a cada chopp: o garçom lê a comanda e o relógio cresce na TV e no celular de todo mundo.</small></span></label>
+              <small>Seu link de pedidos para o Instagram e o WhatsApp. Mensalidade fixa, pedidos ilimitados, sem comissão.</small>
+              <span class="para">Para: quem entrega e paga comissão para aplicativo.</span>
+              <details><summary>O que vem incluso</summary><ul>
+                <li>Página de pedidos com a sua marca e o mesmo cardápio da mesa</li>
+                <li>CEP que preenche o endereço, taxa por distância e área de entrega</li>
+                <li>Adicionais, tamanhos e observações nos itens</li>
+                <li>Pedidos no painel com som, comanda para imprimir e entregador</li>
+                <li>O cliente acompanha o pedido, e paga no Pix, cartão ou dinheiro na entrega</li>
+                <li>Com o CPF no pedido, os pontos ou selos da fidelidade entram sozinhos</li>
+              </ul></details></span></label>
+            <label class="op"><input type="checkbox" id="adProrrogacao"><span class="op-txt"><span class="op-top"><b>Prorrogação (happy hour)</b><span class="preco" data-preco-ad="prorrogacao"></span></span>
+              <small>O happy hour que cresce a cada chopp: o garçom lê a comanda e o relógio ganha minutos na TV e no celular de todo mundo.</small>
+              <span class="para">Para: bares e casas com happy hour.</span>
+              <details><summary>O que vem incluso</summary><ul>
+                <li>Telão para a TV do bar, aberto pelo painel na segunda tela</li>
+                <li>O relógio no celular de cada mesa, com a posição dela no ranking</li>
+                <li>Você escolhe o produto (chopp, drink, balde), os minutos por item, o máximo de minutos e o horário-limite</li>
+                <li>Happy hour que abre sozinho nos dias e horários marcados</li>
+                <li>Plaquinha como comanda individual e ranking de quem mais prorrogou</li>
+                <li>Histórico de cada happy hour e recorde da casa</li>
+              </ul></details></span></label>
           </div>
           <p class="dica" id="comboDica"></p>
         </div>
@@ -370,6 +451,7 @@
           <div class="grupo-total"><span>Total por ano</span><b id="totAnual">R$ 0</b></div>
         </div>
         
+        <a class="btn-cta" href="#contratar" style="background:#FFC61A;color:#1D1400;box-shadow:none">Quero contratar este plano</a>
         <p class="nota">Mensalidades reajustadas uma vez por ano pelo IPCA.</p>
       </aside>
     </div>
@@ -382,19 +464,20 @@
     </div>
 
     <div class="grupo-tab">
-      <header><span class="tipo tipo--mensal">Todo mês</span><p>Mensalidade de cada serviço. Dois serviços juntos: 10% de desconto. Os três: preço fechado.</p></header>
+      <header><span class="tipo tipo--mensal">Todo mês</span><p>Mensalidade de cada serviço. Dois juntos: 10% de desconto. Três: 17%. Os quatro: preço fechado.</p></header>
       <div class="cards">
         <article class="card"><h3>Página da mesa, cardápio e sino</h3><p class="valor num"><i data-preco-n="pagina"></i><span>por mês</span></p>
-          <ul><li>Cardápio digital com fotos e filtros</li><li>Wi-Fi, Instagram e endereço</li><li>Avaliação no Google em um toque</li><li>Comentário anônimo para a gerência</li></ul></article>
-        <article class="card"><h3>Chamar o garçom</h3><p class="valor num"><i>Incluso</i><span>na página</span></p>
-          <ul><li>Chamado pelo celular, sem botão na mesa</li><li>Painel da equipe com som e alerta de atraso</li><li>Mapa do salão e fechamento da mesa</li><li>Proteção contra trote</li></ul></article>
+          <ul><li>Cardápio digital com fotos e busca</li><li>Chamar o garçom pelo celular, com painel e mapa do salão</li><li>Avaliação no Google e comentário anônimo</li><li>Wi-Fi, Instagram, endereço e horários</li></ul></article>
         <article class="card"><h3>Programa de fidelidade</h3><p class="valor num"><i data-preco-n="fidelidade"></i><span>por mês</span></p>
-          <ul><li>Pontos pela nota fiscal (QR da NFC-e)</li><li>Prêmios com foto e código para o garçom</li><li>Níveis do clube, ranking e pontos em dobro</li><li>Indicação de amigos</li></ul></article>
+          <ul><li>Clube de pontos e cartão fidelidade (selos)</li><li>Pontos ou selos pela nota fiscal (QR da NFC-e)</li><li>Prêmios, níveis, ranking e indicação de amigos</li><li>Lista de clientes para exportar</li></ul></article>
         <article class="card"><h3>Delivery</h3><p class="valor num"><i data-preco-n="delivery"></i><span>por mês</span></p>
-          <ul><li>Pedido com endereço e taxa por distância</li><li>Comanda na cozinha</li><li>Entregador e acompanhamento do pedido</li><li>Mesmo cardápio da página da mesa</li></ul></article>
-        <article class="card destaque"><div class="card-top"><h3>Os três juntos</h3><span class="tipo tipo--mensal">Combo</span></div><p class="valor num"><i id="precoTodos"></i><span>por mês</span></p>
+          <ul><li>Pedidos ilimitados, sem comissão</li><li>Taxa por distância e área de entrega</li><li>Comanda na cozinha e entregador</li><li>O cliente acompanha o pedido</li></ul></article>
+        <article class="card"><h3>Prorrogação (happy hour)</h3><p class="valor num"><i data-preco-n-ad="prorrogacao"></i><span>por mês</span></p>
+          <ul><li>Relógio na TV e no celular de cada mesa</li><li>Cada chopp lido soma minutos</li><li>Máximo de minutos e horário-limite</li><li>Ranking de quem mais prorrogou</li></ul></article>
+        <article class="card destaque"><div class="card-top"><h3>Os quatro juntos</h3><span class="tipo tipo--mensal">Combo</span></div><p class="valor num"><i id="precoTodos"></i><span>por mês</span></p>
           <p class="combo-eco" id="economiaTodos"></p>
-          <ul class="combo-lista"><li>Página da mesa, cardápio e sino</li><li>Programa de fidelidade</li><li>Delivery</li></ul></article>
+          <ul class="combo-lista"><li>Página da mesa, cardápio e sino</li><li>Programa de fidelidade</li><li>Delivery</li><li>Prorrogação (happy hour)</li></ul>
+          <p class="muted" id="precoTres"></p></article>
       </div>
     </div>
 
@@ -417,7 +500,7 @@
           <tbody id="tabPlacas"></tbody>
         </table>
       </div>
-      <p class="muted">A implantação inclui o cadastro do restaurante, o cardápio montado, as mesas e áreas, a instalação das plaquinhas no local e 1 hora de treinamento da equipe. A personalizada simples usa a logo e a cor do restaurante; a sob demanda segue a arte que você mandar.</p>
+      <p class="muted">A implantação inclui o cadastro do restaurante, o cardápio montado, as mesas e áreas e 1 hora de treinamento da equipe. As plaquinhas chegam prontas: para ligar cada uma, alguém da equipe aproxima o celular e escolhe a mesa, em menos de 10 segundos. A personalizada simples usa a logo e a cor do restaurante; a sob demanda segue a arte que você mandar.</p>
     </div>
 
     <div class="grupo-tab">
@@ -447,10 +530,22 @@
     </div>
   </section>
 
-  <div class="fechamento">
-    <div><h3>Montou o seu?</h3><p>Mande uma mensagem com o número de mesas e os serviços: a gente confirma o orçamento e agenda a implantação.</p></div>
-    <a class="btn-cta" href="https://ig.me/m/vortexsoftwareco" target="_blank" rel="noopener">Falar com a gente</a>
-  </div>
+  <section class="contratar" id="contratar" aria-labelledby="ctTitulo">
+    <div class="stack-c">
+      <h3 id="ctTitulo">Quero contratar</h3>
+      <p>Mande o plano que você montou acima. A gente confirma pelo WhatsApp e agenda a implantação. Você recebe a cópia por e-mail.</p>
+      <p class="ct-resumo" id="ctResumo"></p>
+    </div>
+    <form class="ct-form" id="ctForm" novalidate>
+      <label class="ct-campo"><span>Seu nome</span><input id="ctNome" autocomplete="name" maxlength="80" required></label>
+      <label class="ct-campo"><span>Nome do restaurante</span><input id="ctEmpresa" autocomplete="organization" maxlength="100" required></label>
+      <label class="ct-campo"><span>E-mail</span><input id="ctEmail" type="email" autocomplete="email" maxlength="120" required></label>
+      <label class="ct-campo"><span>WhatsApp</span><input id="ctZap" type="tel" inputmode="tel" autocomplete="tel" maxlength="16" placeholder="(31) 99999-9999" required></label>
+      <p class="ct-erro" id="ctErro" role="alert"></p>
+      <button class="btn-cta" type="submit">Quero contratar este plano</button>
+      <a class="ct-alt" href="https://ig.me/m/vortexsoftwareco" target="_blank" rel="noopener">Prefere conversar antes? Fale com a gente no Instagram</a>
+    </form>
+  </section>
 
   <footer class="rodape">
     <span class="rodape-marca"><img class="logo-escuro" src="/assets/img/vtx-tap-escuro.png" alt="VTX Tap" width="110" height="51"><img class="logo-claro" src="/assets/img/vtx-tap.png" alt="" width="110" height="51"><a class="endosso-link" href="https://vortexsystems.tech" target="_blank" rel="noopener" aria-label="Uma solução Vortex: abrir o site da Vortex"><img class="logo-escuro endosso" src="/assets/img/marca/endosso-cor.svg" alt="" width="108" height="14"><img class="logo-claro endosso" src="/assets/img/marca/endosso-negativo.svg" alt="" width="108" height="14"></a></span>
@@ -458,6 +553,7 @@
   </footer>
 </div>
 
+<script src="/env.js"></script>
 <script src="/assets/js/precos.js"></script>
 <script src="/assets/js/campos.js"></script>
 <script>
@@ -476,10 +572,35 @@
       document.querySelectorAll(`[data-preco="${s.id}"]`).forEach((el) => (el.textContent = `${brl(s.preco)} por mês`));
       document.querySelectorAll(`[data-preco-n="${s.id}"]`).forEach((el) => (el.textContent = brl(s.preco)));
     });
-    Precos.ADICIONAIS.forEach((a) => document.querySelectorAll(`[data-preco-ad="${a.id}"]`).forEach((el) => (el.textContent = `${brl(a.preco)} por mês`)));
-    const todos = Precos.combo(Object.fromEntries(Precos.SERVICOS.map((s) => [s.id, true])));
+    Precos.ADICIONAIS.forEach((a) => {
+      document.querySelectorAll(`[data-preco-ad="${a.id}"]`).forEach((el) => (el.textContent = `${brl(a.preco)} por mês`));
+      document.querySelectorAll(`[data-preco-n-ad="${a.id}"]`).forEach((el) => (el.textContent = brl(a.preco)));
+    });
+    const todos = Precos.combo(Object.fromEntries(Precos.COBRADOS.map((s) => [s.id, true])));
     $('precoTodos').textContent = brl(todos.total);
     $('economiaTodos').textContent = `Economia de ${brl(todos.economia)}/mês`;
+    $('precoTres').textContent = `Três juntos: 17% de desconto. Página, fidelidade e delivery: ${brl(Precos.combo({ pagina: true, fidelidade: true, delivery: true }).total)}/mês.`;
+    // Sugestões por tipo de casa: marcam os serviços no simulador.
+    const SUGS = [
+      { nome: 'Almoço e prato do dia', txt: 'O cartão de selos faz o cliente do almoço voltar na semana seguinte.', sv: { svPagina: true, svFid: true } },
+      { nome: 'Bar e happy hour', txt: 'O relógio na TV vende a próxima rodada e o clube de pontos traz a turma de volta.', sv: { svPagina: true, svFid: true, adProrrogacao: true } },
+      { nome: 'Restaurante com entrega', txt: 'Delivery sem comissão e pontos para quem pede direto com você.', sv: { svPagina: true, svFid: true, svDel: true } },
+      { nome: 'Tudo junto', txt: 'Mesa, fidelidade, delivery e happy hour, com o maior desconto.', sv: { svPagina: true, svFid: true, svDel: true, adProrrogacao: true } },
+    ];
+    const NOMES = { svPagina: 'Página e sino', svFid: 'Fidelidade', svDel: 'Delivery', adProrrogacao: 'Prorrogação' };
+    const ID = { svPagina: 'pagina', svFid: 'fidelidade', svDel: 'delivery', adProrrogacao: 'prorrogacao' };
+    $('sugs').innerHTML = SUGS.map((x, i) => `<article class="sug"><h3>${x.nome}</h3><p>${x.txt}</p>
+      <p class="itens">${Object.keys(x.sv).map((k) => NOMES[k]).join(' + ')}</p>
+      <p class="v num">${brl(Precos.combo(Object.fromEntries(Object.keys(x.sv).map((k) => [ID[k], true]))).total)} <small>por mês</small></p>
+      <button type="button" data-sug="${i}">Usar no simulador</button></article>`).join('');
+    document.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-sug]');
+      if (!b) return;
+      const x = SUGS[+b.dataset.sug];
+      Object.keys(NOMES).forEach((k) => ($(k).checked = !!x.sv[k]));
+      calcular();
+      $('simTitulo').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+    });
     // Plaquinha padrão: preço por unidade conforme a quantidade.
     const FAIXAS = [
       { de: 1, ate: 19, valor: 24.9, basica: 39.9 },
@@ -501,11 +622,43 @@
       + '<tr><td>Personalizada sob demanda<small>Arte do restaurante, avaliada pelo nosso time.</small></td><td class="v" colspan="2">Sob consulta</td></tr>';
 
     let placasManual = false;
+    let ultimo = null;
+    // Pedido de contratação: vai para o banco (public.lead_enviar), que avisa a Vortex e manda a cópia por e-mail.
+    $('ctForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const erro = $('ctErro');
+      erro.className = 'ct-erro';
+      const env = window.NFC_ENV || {};
+      const dados = { nome: $('ctNome').value.trim(), empresa: $('ctEmpresa').value.trim(), email: $('ctEmail').value.trim(), whatsapp: $('ctZap').value.trim(),
+        mesas: ultimo && ultimo.mesas, mensal: ultimo && ultimo.mensal, plano: ultimo };
+      if (!dados.nome || !dados.empresa) { erro.textContent = 'Preencha o seu nome e o nome do restaurante.'; return; }
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(dados.email)) { erro.textContent = 'Digite um e-mail válido.'; return; }
+      if (dados.whatsapp.replace(/\D/g, '').length < 10) { erro.textContent = 'Digite o WhatsApp com DDD.'; return; }
+      if (!ultimo || !ultimo.itens.length) { erro.textContent = 'Escolha pelo menos um serviço no simulador.'; return; }
+      if (!env.SUPABASE_URL) { erro.textContent = 'Nesta página de teste o envio está desligado. Fale com a gente pelo Instagram.'; return; }
+      const btn = e.target.querySelector('[type=submit]');
+      btn.disabled = true;
+      try {
+        const r = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/lead_enviar`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json', apikey: env.SUPABASE_ANON_KEY },
+          body: JSON.stringify({ p: dados }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || j.status !== 'ok') throw new Error(j.mensagem || 'Não foi possível enviar agora.');
+        erro.className = 'ct-erro is-ok';
+        erro.textContent = `Recebemos. A gente fala com você pelo WhatsApp em breve, e a cópia foi para ${dados.email}.`;
+        e.target.reset();
+      } catch (ex) {
+        erro.textContent = `${ex.message} Se preferir, fale com a gente pelo Instagram.`;
+      }
+      btn.disabled = false;
+    });
     function calcular() {
       const m = Math.min(Math.max(Math.round(+$('mesasNum').value || 1), 1), 500);
       const q = Math.min(Math.max(Math.round(+$('placasNum').value || 1), 1), 1000);
-      const sv = { pagina: $('svPagina').checked, garcom: $('svPagina').checked, fidelidade: $('svFid').checked, delivery: $('svDel').checked };
-      const qtd = Object.values(sv).filter(Boolean).length;
+      // O sino vem com a página; a Prorrogação entra no combo como os serviços.
+      const sv = { pagina: $('svPagina').checked, garcom: $('svPagina').checked, fidelidade: $('svFid').checked, delivery: $('svDel').checked, prorrogacao: $('adProrrogacao').checked };
+      const qtd = Precos.COBRADOS.filter((x) => sv[x.id]).length;
       const dom = document.querySelector('input[name="dom"]:checked').value;
       const meses = +document.querySelector('input[name="contrato"]:checked').value;
       const placa = document.querySelector('input[name="placa"]:checked').value;
@@ -544,12 +697,10 @@
       const mm = [];
       let totM = 0;
       const cb = Precos.combo(sv);
-      Precos.SERVICOS.forEach((s) => { if (sv[s.id] && s.preco) mm.push(linha(s.nome, brl(s.preco))); });
-      if (cb.economia) mm.push(linha(cb.qtd === Precos.COBRADOS.length ? 'Desconto do combo (os três)' : `Desconto de ${Math.round(cb.desconto * 100)}% (${cb.qtd} serviços)`, '− ' + brl(cb.economia), 'desc'));
+      Precos.COBRADOS.forEach((s) => { if (sv[s.id]) mm.push(linha(s.nome, brl(s.preco))); });
+      if (cb.economia) mm.push(linha(cb.qtd === Precos.COBRADOS.length ? 'Desconto do combo (os quatro)' : `Desconto de ${Math.round(cb.desconto * 100)}% (${cb.qtd} serviços)`, '− ' + brl(cb.economia), 'desc'));
       totM += cb.total;
       if (dom !== 'sub') { mm.push(linha('Domínio próprio', brl(PRECO.domMes))); totM += PRECO.domMes; }
-      // Adicionais: fora do desconto de combo.
-      Precos.ADICIONAIS.forEach((a) => { if ($('ad' + a.id[0].toUpperCase() + a.id.slice(1)).checked) { mm.push(linha(`${a.nome} (adicional)`, brl(a.preco))); totM += a.preco; } });
       if (!mm.length) mm.push(linha('Escolha pelo menos um serviço', '—'));
       $('lnMensal').innerHTML = mm.join('');
       $('totMensal').textContent = brl(totM);
@@ -561,8 +712,11 @@
 
       $('comboDica').textContent = !qtd ? 'Escolha pelo menos um serviço.'
         : cb.economia ? `Desconto aplicado: ${brl(cb.economia)} a menos por mês.`
-        : 'Dois serviços juntos têm 10% de desconto; os três saem por ' + brl(Precos.TODOS) + '.';
+        : 'Dois serviços juntos têm 10% de desconto, três têm 17% e os quatro saem por ' + brl(Precos.TODOS) + '.';
 
+      // Resumo para o pedido de contratação.
+      ultimo = { mesas: m, mensal: totM, unico: totU, itens: Precos.COBRADOS.filter((x) => sv[x.id]).map((x) => x.nome), placas: q, placa, dom, meses };
+      $('ctResumo').innerHTML = qtd ? `<b>${ultimo.itens.join(' + ')}</b> · ${m} mesas · <b>${brl(totM)}</b> por mês · ${brl(totU)} na contratação` : 'Escolha pelo menos um serviço no simulador.';
       if (INTERNO) interno({ q, pu: puPlaca, placa, totPlacas, impTotal, totM, dom, meses });
     }
 
@@ -591,6 +745,13 @@
     $('mesasNum').addEventListener('input', () => { sincronizar('mesasNum', 'mesasRange', 120); if (!placasManual) { $('placasNum').value = $('mesasNum').value; sincronizar('placasNum', 'placasRange', 150); } calcular(); });
     $('placasRange').addEventListener('input', () => { placasManual = true; sincronizar('placasRange', 'placasNum', 1000); calcular(); });
     $('placasNum').addEventListener('input', () => { placasManual = true; sincronizar('placasNum', 'placasRange', 150); calcular(); });
+    // "O que vem incluso" fica dentro do label do serviço: abrir a lista não marca nem desmarca o serviço.
+    $('sim').addEventListener('click', (e) => {
+      const d = e.target.closest('.op details');
+      if (!d) return;
+      e.preventDefault();
+      if (e.target.closest('summary')) d.open = !d.open;
+    });
     $('sim').addEventListener('change', calcular);
     $('sim').addEventListener('submit', (e) => e.preventDefault());
     document.addEventListener('input', (e) => { if (e.target.closest('.interno')) calcular(); });

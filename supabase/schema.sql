@@ -92,7 +92,6 @@ create table if not exists public.restaurantes (
                     and slug not in ('tap', 'www', 'admin', 'api', 'app', 'central', 'mail', 'ftp', 'painel')),
   nome            text not null check (char_length(nome) between 1 and 80),
   ativo           boolean not null default true,
-  codigo_ativacao text not null unique default public.novo_codigo(8),
   observacao      text check (char_length(observacao) <= 300),
   -- Configuração editada pelo painel do restaurante. Vazio = valores iniciais.
   restaurante     jsonb,
@@ -126,8 +125,8 @@ create table if not exists private.equipe_senha (
 -- ---------------------------------------------------------------------------
 -- Plano contratado: serviços (página + cardápio, chamar o garçom, fidelidade),
 -- mesas, domínio e contrato. Sem plano definido = tudo liberado, como antes.
--- A mensalidade segue a tabela de preços (assets/js/precos.js): página com sino 79 (o sino vem incluso) + 229 + 169,
--- 2 serviços −10% (arredondado para terminar em 9), os três por R$ 399.
+-- A mensalidade segue a tabela de preços (assets/js/precos.js): página com sino 79 (o sino vem incluso) + 229 + 169
+-- + Prorrogação 89 (adicional que entra no combo); 2 itens −10%, 3 −17% (arredondado para terminar em 9), os quatro por R$ 449.
 -- ---------------------------------------------------------------------------
 alter table public.restaurantes add column if not exists plano jsonb;
 
@@ -166,7 +165,7 @@ language sql stable security definer set search_path = public as $$
   from public.restaurantes where id = p_restaurante;
 $$;
 
--- Preço mensal de cada adicional (o mesmo de Precos.ADICIONAIS), fora do desconto de combo.
+-- Preço mensal de cada adicional (o mesmo de Precos.ADICIONAIS). A Prorrogação entra no desconto de combo.
 create or replace function public.adicional_preco(p_adicional text) returns numeric language sql immutable as $$
   select (case p_adicional when 'prorrogacao' then 89 else 0 end)::numeric;
 $$;
@@ -182,12 +181,14 @@ begin
   if coalesce(sv ->> 'pagina', '') = 'true' or coalesce(sv ->> 'garcom', '') = 'true' then soma := soma + 79; n := n + 1; end if;
   if coalesce(sv ->> 'fidelidade', '') = 'true' then soma := soma + 229; n := n + 1; end if;
   if coalesce(sv ->> 'delivery', '') = 'true' then soma := soma + 169; n := n + 1; end if;
+  -- A Prorrogação fica em plano.adicionais, mas entra no combo como os serviços.
+  if coalesce(p -> 'adicionais' ->> 'prorrogacao', '') = 'true' then soma := soma + public.adicional_preco('prorrogacao'); n := n + 1; end if;
   total := case
-    when n = 3 then 399
+    when n = 4 then 449
+    when n = 3 then least(soma, floor(soma * 0.83 / 10) * 10 + 9)
     when n = 2 then least(soma, floor(soma * 0.90 / 10) * 10 + 9)
     else soma end;
-  return total + (case when p ->> 'dominio' in ('proprio', 'registro') then 19 else 0 end)
-    + (case when coalesce(p -> 'adicionais' ->> 'prorrogacao', '') = 'true' then public.adicional_preco('prorrogacao') else 0 end);
+  return total + (case when p ->> 'dominio' in ('proprio', 'registro') then 19 else 0 end);
 end $$;
 
 create or replace function public.plano_tem(p_restaurante uuid, p_servico text) returns boolean
@@ -493,14 +494,6 @@ drop policy if exists "operador ve leituras" on public.leituras_dia;
 create policy "operador ve leituras" on public.leituras_dia
   for select to authenticated using (public.eh_operador());
 
-create table if not exists public.tentativas_ativacao (
-  codigo text not null,
-  em     timestamptz not null default now()
-);
-create index if not exists tentativas_ativacao_idx on public.tentativas_ativacao (codigo, em);
-alter table public.tentativas_ativacao enable row level security;
-revoke all on public.tentativas_ativacao from anon, authenticated;
-
 -- A cada toque/leitura de QR (sem login). Devolve só o subdomínio do dono.
 create or replace function public.resolver_etiqueta(p_codigo text) returns jsonb
 language plpgsql security definer set search_path = public as $$
@@ -516,37 +509,6 @@ begin
   select * into r from public.restaurantes where id = e.restaurante_id;
   if not found or not r.ativo then return jsonb_build_object('status', 'inativo'); end if;
   return jsonb_build_object('status', 'ok', 'slug', r.slug);
-end $$;
-
--- Plaquinha nova + código de ativação = plaquinha do restaurante.
--- Status: ok | codigo_incorreto | bloqueado | inexistente | inativo.
--- Devolve status em vez de lançar erro: um erro desfaria o registro da tentativa.
-create or replace function public.ativar_etiqueta(p_codigo text, p_ativacao text) returns jsonb
-language plpgsql security definer set search_path = public as $$
-declare
-  v_cod text := upper(regexp_replace(coalesce(p_codigo, ''), '[^A-Za-z0-9]', '', 'g'));
-  v_atv text := upper(regexp_replace(coalesce(p_ativacao, ''), '[^A-Za-z0-9]', '', 'g'));
-  e public.etiquetas; r public.restaurantes;
-begin
-  select * into e from public.etiquetas where codigo = v_cod;
-  if not found then return jsonb_build_object('status', 'inexistente'); end if;
-  if e.restaurante_id is not null then
-    select * into r from public.restaurantes where id = e.restaurante_id;
-    if not found or not r.ativo then return jsonb_build_object('status', 'inativo'); end if;
-    return jsonb_build_object('status', 'ok', 'slug', r.slug, 'restaurante', r.nome, 'ja_ativada', true);
-  end if;
-  delete from public.tentativas_ativacao where em < now() - interval '1 day';
-  if (select count(*) from public.tentativas_ativacao where codigo = v_cod and em > now() - interval '10 minutes') >= 8 then
-    return jsonb_build_object('status', 'bloqueado');
-  end if;
-  select * into r from public.restaurantes where codigo_ativacao = v_atv and ativo;
-  if not found then
-    insert into public.tentativas_ativacao (codigo) values (v_cod);
-    return jsonb_build_object('status', 'codigo_incorreto');
-  end if;
-  update public.etiquetas set restaurante_id = r.id, ativada_em = now(), mesa = null
-   where codigo = v_cod and restaurante_id is null;
-  return jsonb_build_object('status', 'ok', 'slug', r.slug, 'restaurante', r.nome, 'ja_ativada', false);
 end $$;
 
 -- Página da mesa: qual mesa é esta plaquinha, neste restaurante.
@@ -827,11 +789,6 @@ grant insert (restaurante_id, estrelas, tags, texto, mesa) on public.comentarios
 revoke all on public.sessoes from anon;
 revoke all on public.mesas_abertas from anon;
 
--- Necessário para o cliente acompanhar o status do chamado em tempo real.
-drop policy if exists "cliente acompanha chamados recentes" on public.chamados;
-create policy "cliente acompanha chamados recentes" on public.chamados
-  for select to anon using (criado_em > now() - interval '3 hours');
-
 drop policy if exists "equipe gerencia chamados" on public.chamados;
 create policy "equipe gerencia chamados" on public.chamados
   for all to authenticated using (restaurante_id = public.meu_restaurante())
@@ -885,21 +842,6 @@ begin
   perform public.equipe_trocar_senha(p_restaurante, p_senha);
 end $$;
 
-create or replace function public.trocar_codigo_ativacao(p_restaurante uuid) returns text
-language plpgsql security definer set search_path = public as $$
-declare c text;
-begin
-  if not public.eh_operador() then raise exception 'Acesso negado.'; end if;
-  loop
-    c := public.novo_codigo(8);
-    begin
-      update public.restaurantes set codigo_ativacao = c where id = p_restaurante;
-      return c;
-    exception when unique_violation then
-      -- raríssimo: sorteia de novo
-    end;
-  end loop;
-end $$;
 
 -- Códigos de 7 caracteres; a chave primária garante que nunca repetem.
 create or replace function public.gerar_etiquetas(p_qtd int, p_lote text) returns setof text
@@ -1292,6 +1234,8 @@ create table if not exists private.fid_pins (
   primary key (restaurante_id, cpf),
   foreign key (restaurante_id, cpf) references public.fid_clientes (restaurante_id, cpf) on delete cascade
 );
+-- PIN redefinido pela equipe: pin_hash vazio até o cliente criar o novo, e só até redefinir_ate (24 h).
+alter table private.fid_pins add column if not exists redefinir_ate timestamptz;
 
 -- Aparelho do cliente que já confirmou o PIN (lembrado por 180 dias).
 create table if not exists private.fid_sessoes (
@@ -1687,7 +1631,7 @@ begin
     'nivel', public.fid_nivel(p_restaurante, v_cpf),
     'pendentes', (select count(*) from public.fid_notas where restaurante_id = p_restaurante and cpf = v_cpf and status = 'pendente'),
     'cartao', case when public.fid_modo(p_restaurante) <> 'pontos' then public.fid_cartao_resumo(p_restaurante, v_cpf) end,
-    'tem_pin', exists (select 1 from private.fid_pins where restaurante_id = p_restaurante and cpf = v_cpf));
+    'tem_pin', exists (select 1 from private.fid_pins where restaurante_id = p_restaurante and cpf = v_cpf and pin_hash <> ''));
 end $$;
 
 -- Primeiro nome de quem indicou (para mostrar no cadastro).
@@ -1798,7 +1742,7 @@ end $$;
 
 create or replace function public.fid_entrar(p_restaurante uuid, p_cpf text, p_pin text) returns jsonb
 language plpgsql security definer set search_path = public as $$
-declare v_cpf text := regexp_replace(coalesce(p_cpf, ''), '[^0-9]', '', 'g'); h text;
+declare v_cpf text := regexp_replace(coalesce(p_cpf, ''), '[^0-9]', '', 'g'); h text; v_ate timestamptz;
 begin
   if not public.fid_no_ar(p_restaurante) then return jsonb_build_object('status', 'inativo'); end if;
   if not public.cpf_valido(v_cpf) then return jsonb_build_object('status', 'erro', 'mensagem', 'CPF inválido. Confira os números.'); end if;
@@ -1811,17 +1755,22 @@ begin
   if not exists (select 1 from public.fid_clientes where restaurante_id = p_restaurante and cpf = v_cpf) then
     return jsonb_build_object('status', 'novo');
   end if;
-  select pin_hash into h from private.fid_pins where restaurante_id = p_restaurante and cpf = v_cpf;
+  select pin_hash, redefinir_ate into h, v_ate from private.fid_pins where restaurante_id = p_restaurante and cpf = v_cpf;
   if h is null then
-    -- PIN redefinido pela equipe: o próximo PIN digitado passa a valer.
-    insert into private.fid_pins (restaurante_id, cpf, pin_hash)
-    values (p_restaurante, v_cpf, extensions.crypt(p_pin, extensions.gen_salt('bf')));
+    return jsonb_build_object('status', 'erro', 'mensagem', 'Peça para a equipe do restaurante redefinir o seu PIN.');
+  elsif h = '' then
+    -- PIN redefinido pela equipe: o próximo PIN digitado passa a valer, por 24 horas.
+    if v_ate is null or v_ate < now() then
+      return jsonb_build_object('status', 'erro', 'mensagem', 'O prazo para criar o PIN novo acabou. Peça para a equipe redefinir de novo.');
+    end if;
+    update private.fid_pins set pin_hash = extensions.crypt(p_pin, extensions.gen_salt('bf')), redefinir_ate = null
+     where restaurante_id = p_restaurante and cpf = v_cpf;
   elsif extensions.crypt(p_pin, h) <> h then
     return jsonb_build_object('status', 'erro', 'mensagem', 'PIN incorreto.');
   end if;
   perform public.equipe_limpar_tentativas('fid-pin:' || p_restaurante || ':' || v_cpf);
   perform public.equipe_limpar_tentativas('fid-pin-dia:' || p_restaurante || ':' || v_cpf);
-  return jsonb_build_object('status', 'ok', 'token', public.fid_nova_sessao(p_restaurante, v_cpf), 'pin_novo', h is null);
+  return jsonb_build_object('status', 'ok', 'token', public.fid_nova_sessao(p_restaurante, v_cpf), 'pin_novo', h = '');
 end $$;
 
 -- Conta completa (aparelho com PIN confirmado).
@@ -2254,7 +2203,10 @@ language plpgsql security definer set search_path = public as $$
 declare r uuid := public.meu_restaurante();
 begin
   if r is null then raise exception 'Acesso negado.'; end if;
-  delete from private.fid_pins where restaurante_id = r and cpf = p_cpf;
+  if not exists (select 1 from public.fid_clientes where restaurante_id = r and cpf = p_cpf) then raise exception 'Cliente não encontrado.'; end if;
+  -- O cliente cria o PIN novo no celular nas próximas 24 horas; depois disso, só redefinindo de novo.
+  insert into private.fid_pins (restaurante_id, cpf, pin_hash, redefinir_ate) values (r, p_cpf, '', now() + interval '24 hours')
+  on conflict (restaurante_id, cpf) do update set pin_hash = '', redefinir_ate = excluded.redefinir_ate;
   delete from private.fid_sessoes where restaurante_id = r and cpf = p_cpf;
 end $$;
 
@@ -2405,7 +2357,7 @@ begin
   -- na regra de acesso dos comentários, que roda como o cliente.
   foreach f in array array[
     'public.restaurante_ativo(uuid)',
-    'public.restaurante_publico(text)', 'public.resolver_etiqueta(text)', 'public.ativar_etiqueta(text, text)',
+    'public.restaurante_publico(text)', 'public.resolver_etiqueta(text)',
     'public.mesa_da_etiqueta(uuid, text)', 'public.sessao_status(uuid)', 'public.sessao_abrir(uuid, int, text, text)',
     'public.sessao_sair(uuid)', 'public.chamar(uuid, text, text, text, jsonb)', 'public.chamado_cancelar(uuid, uuid)',
     'public.fid_programa(uuid)', 'public.fid_consultar(uuid, text)', 'public.fid_indicador(uuid, text)',
@@ -2422,7 +2374,7 @@ begin
     'public.limpar_etiquetas(text[], text)',
     'public.sessao_decidir(uuid, boolean)', 'public.mesa_fechar(int)',
     'public.criar_restaurante(text, text, text)', 'public.central_senha_equipe(uuid, text)',
-    'public.trocar_codigo_ativacao(uuid)', 'public.gerar_etiquetas(int, text)',
+    'public.gerar_etiquetas(int, text)',
     'public.atribuir_etiquetas(text[], uuid)', 'public.marcar_gravadas(text[], boolean)', 'public.metricas(int)',
     'public.fid_resumo()', 'public.fid_aprovar_nota(text, numeric, timestamptz)', 'public.fid_recusar_nota(text, text)',
     'public.fid_importar_xml(jsonb)', 'public.fid_resgate_decidir(uuid, boolean)', 'public.fid_lancar(text, numeric, text)',
@@ -3596,7 +3548,7 @@ begin
     return jsonb_build_object('status', 'erro', 'mensagem', 'Muitas tentativas. Aguarde 15 minutos.');
   end if;
   select pin_hash into h from private.fid_pins where restaurante_id = v_r and cpf = v_cpf;
-  if h is null or extensions.crypt(p_pin, h) <> h then return jsonb_build_object('status', 'erro', 'mensagem', 'PIN incorreto.'); end if;
+  if coalesce(h, '') = '' or extensions.crypt(p_pin, h) <> h then return jsonb_build_object('status', 'erro', 'mensagem', 'PIN incorreto.'); end if;
   perform public.equipe_limpar_tentativas('fid-pin:' || v_r || ':' || v_cpf);
   perform public.equipe_limpar_tentativas('fid-pin-dia:' || v_r || ':' || v_cpf);
   d := public.fid_destino(v_r, p_destino);
@@ -4497,4 +4449,871 @@ begin
   end loop;
   execute 'revoke execute on function public.fid_resgatar_cartao(uuid, uuid) from public';
   execute 'grant execute on function public.fid_resgatar_cartao(uuid, uuid) to anon, authenticated';
+end $$;
+
+-- ===========================================================================
+-- Contas e avisos por e-mail
+--   * Fila de e-mails (private.avisos_fila): o banco enfileira e chama a função "avisos" (pg_net),
+--     que envia pelo Resend. Sem a chave do Resend, os e-mails ficam na fila e nada quebra.
+--   * Códigos de recuperação (private.codigos): 6 números, valem 15 minutos, 5 tentativas.
+--   * Cliente do clube resolve tudo sozinho: esqueci o PIN (código no e-mail), trocar o PIN,
+--     atualizar os dados e apagar a conta. A equipe continua podendo redefinir o PIN.
+--   * Avisos para o restaurante (novo cliente no clube, novo pedido) e para a Vortex (pedido de
+--     contratação, restaurante novo, mudança de plano).
+-- ===========================================================================
+create table if not exists private.avisos_config (
+  id      int primary key default 1 check (id = 1),
+  url     text,                     -- https://<projeto>.supabase.co/functions/v1/avisos
+  segredo text not null default encode(extensions.gen_random_bytes(24), 'hex'),
+  vortex  text                      -- e-mails extras para os avisos internos (os operadores da central já recebem)
+);
+insert into private.avisos_config (id) values (1) on conflict (id) do nothing;
+
+create table if not exists private.avisos_fila (
+  id             uuid primary key default gen_random_uuid(),
+  tipo           text not null,
+  para           text not null check (char_length(para) <= 320),
+  assunto        text not null check (char_length(assunto) <= 200),
+  html           text not null,
+  restaurante_id uuid,
+  criado_em      timestamptz not null default now(),
+  enviado_em     timestamptz,
+  tentativas     int not null default 0,
+  erro           text,
+  pego_em        timestamptz
+);
+create index if not exists avisos_fila_pendentes_idx on private.avisos_fila (criado_em) where enviado_em is null;
+
+-- Pedidos de contratação vindos da página de orçamento.
+create table if not exists private.leads (
+  id        uuid primary key default gen_random_uuid(),
+  nome      text not null,
+  empresa   text not null,
+  email     text not null,
+  whatsapp  text not null,
+  mesas     int,
+  plano     jsonb,
+  mensal    numeric,
+  ip        text,
+  criado_em timestamptz not null default now()
+);
+
+create table if not exists private.codigos (
+  chave       text primary key,
+  codigo_hash text not null,
+  expira_em   timestamptz not null,
+  tentativas  int not null default 0
+);
+
+-- Avisos do restaurante (não aparecem na página pública): e-mail e o que avisar.
+alter table public.restaurantes add column if not exists avisos jsonb not null default '{}'::jsonb;
+-- E-mail de recuperação do PIN de cada pessoa da equipe (opcional).
+alter table public.equipe_membros add column if not exists email text check (email is null or char_length(email) <= 120);
+create unique index if not exists equipe_membros_email_uidx on public.equipe_membros (restaurante_id, email) where email is not null;
+
+create or replace function private.esc_html(p text) returns text language sql immutable as $$
+  select replace(replace(replace(replace(coalesce(p, ''), '&', '&amp;'), '<', '&lt;'), '>', '&gt;'), '"', '&quot;');
+$$;
+
+-- Corpo do e-mail no manual de marca da VTX: faixa noite (#140B33) com o logo, título em Big Shoulders
+-- (caixa alta), texto em Schibsted Grotesk, botão roxo (#7D27FC), detalhe ouro (#FFC61A), códigos em
+-- IBM Plex Mono e o endosso "uma solução VORTEX". Sem emoji e sem exclamação. As fontes vêm do Google
+-- Fonts; quem não carrega fonte (Gmail) cai nas alternativas da pilha.
+create or replace function private.email_html(p_titulo text, p_corpo text, p_botao text default null, p_url text default null) returns text
+language sql immutable as $$
+  select '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+    || '<meta name="color-scheme" content="light"><link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@900&family=IBM+Plex+Mono:wght@600&family=Schibsted+Grotesk:wght@400;600;700&display=swap" rel="stylesheet">'
+    || '<style>.vtx-codigo{font-family:''IBM Plex Mono'',Consolas,''Courier New'',monospace}</style></head>'
+    || '<body style="margin:0;padding:0;background:#F4F2F9;font-family:''Schibsted Grotesk'',Arial,Helvetica,sans-serif;color:#160E33">'
+    || '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F4F2F9;padding:28px 12px"><tr><td align="center">'
+    || '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#FFFFFF;border-radius:20px;overflow:hidden">'
+    || '<tr><td style="background:#140B33;padding:22px 28px"><img src="https://tap.vortexsystems.tech/assets/img/vtx-tap.png" width="104" height="48" alt="VTX Tap" style="display:block;border:0"></td></tr>'
+    || '<tr><td style="height:4px;background:#7D27FC;line-height:4px;font-size:0">&nbsp;</td></tr>'
+    || '<tr><td style="padding:28px 28px 8px"><h1 style="margin:0 0 16px;font-family:''Big Shoulders Display'',Impact,''Arial Narrow'',Arial,sans-serif;font-weight:900;font-size:30px;line-height:1;text-transform:uppercase;letter-spacing:.3px;color:#160E33">'
+    || private.esc_html(p_titulo) || '</h1>'
+    || '<div style="font-size:15px;line-height:1.6;color:#2F2752">' || p_corpo || '</div>'
+    || case when p_botao is not null and p_url ~ '^https://' then
+         '<p style="margin:24px 0 4px"><a href="' || private.esc_html(p_url) || '" style="display:inline-block;background:#7D27FC;color:#FFFFFF;text-decoration:none;font-weight:700;font-size:15px;padding:13px 22px;border-radius:999px">'
+         || private.esc_html(p_botao) || '</a></p>' else '' end
+    || '</td></tr><tr><td style="padding:22px 28px 26px"><table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-top:1px solid #E1DCEE"><tr>'
+    || '<td style="padding-top:16px;font-size:12px;line-height:1.5;color:#625A80">VTX Tap · uma solução <b style="letter-spacing:1.5px;color:#140B33">VORTEX</b><br>vortexsystems.tech</td>'
+    || '<td align="right" style="padding-top:16px"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#FFC61A"></span></td>'
+    || '</tr></table></td></tr></table></td></tr></table></body></html>';
+$$;
+
+-- Enfileira e já chama a função "avisos" (assíncrono; o cron reenvia o que falhar).
+create or replace function private.aviso(p_tipo text, p_para text, p_assunto text, p_html text, p_restaurante uuid default null) returns void
+language plpgsql security definer set search_path = public as $$
+declare c private.avisos_config; v_para text := lower(btrim(coalesce(p_para, '')));
+begin
+  if v_para !~ '^[^@\s,]+@[^@\s,]+\.[^@\s,]+$' then return; end if;
+  insert into private.avisos_fila (tipo, para, assunto, html, restaurante_id) values (p_tipo, v_para, left(p_assunto, 200), p_html, p_restaurante);
+  select * into c from private.avisos_config where id = 1;
+  if c.url is not null then
+    perform net.http_post(url := c.url, body := jsonb_build_object('acao', 'enviar'),
+      headers := jsonb_build_object('Content-Type', 'application/json', 'x-segredo', c.segredo), timeout_milliseconds := 5000);
+  end if;
+end $$;
+
+-- Aviso interno para a Vortex: vai para o e-mail de cada operador cadastrado na central (master)
+-- e para os endereços extras de avisos_config.vortex, se houver (separados por vírgula).
+create or replace function private.aviso_vortex(p_tipo text, p_assunto text, p_html text) returns void
+language plpgsql security definer set search_path = public as $$
+declare e text;
+begin
+  for e in
+    select distinct lower(btrim(x)) from (
+      select u.email as x from public.operadores o join auth.users u on u.id = o.user_id
+      union all
+      select unnest(string_to_array(coalesce((select vortex from private.avisos_config where id = 1), ''), ','))
+    ) t where btrim(coalesce(x, '')) <> ''
+  loop
+    perform private.aviso(p_tipo, e, p_assunto, p_html);
+  end loop;
+end $$;
+
+-- Só a função "avisos" (service role): pega o lote pendente e marca o resultado.
+create or replace function public.avisos_lote(p_segredo text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare r jsonb;
+begin
+  if p_segredo is distinct from (select segredo from private.avisos_config where id = 1) then return jsonb_build_object('status', 'negado'); end if;
+  -- Marca o lote como "pego" para duas chamadas ao mesmo tempo não mandarem o mesmo e-mail.
+  with u as (
+    update private.avisos_fila a set pego_em = now() where a.id in (
+      select id from private.avisos_fila where enviado_em is null and tentativas < 5 and criado_em > now() - interval '2 days'
+         and (pego_em is null or pego_em < now() - interval '2 minutes')
+       order by criado_em limit 40 for update skip locked)
+    returning a.id, a.para, a.assunto, a.html)
+  select coalesce(jsonb_agg(jsonb_build_object('id', u.id, 'para', u.para, 'assunto', u.assunto, 'html', u.html)), '[]'::jsonb) into r from u;
+  return jsonb_build_object('status', 'ok', 'avisos', r);
+end $$;
+create or replace function public.avisos_marcar(p_segredo text, p_id uuid, p_ok boolean, p_erro text default null) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if p_segredo is distinct from (select segredo from private.avisos_config where id = 1) then return; end if;
+  update private.avisos_fila set tentativas = tentativas + 1, enviado_em = case when p_ok then now() end, erro = left(p_erro, 300) where id = p_id;
+end $$;
+
+-- Código de 6 números para a chave dada (ex.: 'fid:<restaurante>:<cpf>' ou 'equipe:<membro>').
+create or replace function private.codigo_novo(p_chave text) returns text
+language plpgsql security definer set search_path = public as $$
+declare b bytea := extensions.gen_random_bytes(4); c text;
+begin
+  c := lpad((((get_byte(b, 0)::bigint << 24) | (get_byte(b, 1) << 16) | (get_byte(b, 2) << 8) | get_byte(b, 3)) % 1000000)::text, 6, '0');
+  insert into private.codigos (chave, codigo_hash, expira_em) values (p_chave, extensions.crypt(c, extensions.gen_salt('bf')), now() + interval '15 minutes')
+  on conflict (chave) do update set codigo_hash = excluded.codigo_hash, expira_em = excluded.expira_em, tentativas = 0;
+  return c;
+end $$;
+-- 'ok' | 'errado' | 'vencido' (vencido também depois de 5 erros). Código certo é usado uma vez só.
+create or replace function private.codigo_conferir(p_chave text, p_codigo text) returns text
+language plpgsql security definer set search_path = public as $$
+declare k private.codigos;
+begin
+  select * into k from private.codigos where chave = p_chave for update;
+  if not found or k.expira_em < now() or k.tentativas >= 5 then return 'vencido'; end if;
+  if coalesce(p_codigo, '') !~ '^[0-9]{6}$' or extensions.crypt(p_codigo, k.codigo_hash) <> k.codigo_hash then
+    update private.codigos set tentativas = tentativas + 1 where chave = p_chave;
+    return 'errado';
+  end if;
+  delete from private.codigos where chave = p_chave;
+  return 'ok';
+end $$;
+
+create or replace function private.email_mascarado(p text) returns text language sql immutable as $$
+  select case when p ~ '@' then left(split_part(p, '@', 1), 2) || repeat('•', greatest(char_length(split_part(p, '@', 1)) - 2, 1)) || '@' || split_part(p, '@', 2) else '' end;
+$$;
+
+-- Endereço público do restaurante (domínio próprio no ar ou o subdomínio).
+create or replace function private.endereco_rest(p_restaurante uuid) returns text
+language sql stable security definer set search_path = public as $$
+  select 'https://' || coalesce((select d.dominio from public.dominios d where d.restaurante_id = r.id and d.status = 'ativo'), r.slug || '.vortexsystems.tech')
+    from public.restaurantes r where r.id = p_restaurante;
+$$;
+
+/* ---------- Cliente do clube: resolve sozinho ---------- */
+
+-- Esqueci o PIN: manda um código para o e-mail do cadastro.
+create or replace function public.fid_pin_esqueci(p_restaurante uuid, p_cpf text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare v_cpf text := regexp_replace(coalesce(p_cpf, ''), '[^0-9]', '', 'g'); cli public.fid_clientes; c text; rn text;
+begin
+  if not public.fid_no_ar(p_restaurante) then return jsonb_build_object('status', 'inativo'); end if;
+  if not public.cpf_valido(v_cpf) then return jsonb_build_object('status', 'erro', 'mensagem', 'CPF inválido. Confira os números.'); end if;
+  if not public.equipe_pode_tentar('fid-esqueci:' || p_restaurante || ':' || v_cpf, 3, 60)
+     or not public.equipe_pode_tentar('fid-esqueci-ip:' || public.ip_do_pedido(), 10, 60) then
+    return jsonb_build_object('status', 'erro', 'mensagem', 'Você já pediu alguns códigos. Confira o e-mail (e o spam) ou tente de novo em 1 hora.');
+  end if;
+  select * into cli from public.fid_clientes where restaurante_id = p_restaurante and cpf = v_cpf;
+  -- Mesma resposta exista ou não o CPF (não revela quem tem cadastro).
+  if not found or coalesce(cli.email, '') = '' then
+    return jsonb_build_object('status', 'enviado', 'email', null);
+  end if;
+  c := private.codigo_novo('fid:' || p_restaurante || ':' || v_cpf);
+  select nome into rn from public.restaurantes where id = p_restaurante;
+  perform private.aviso('fid_pin', cli.email, c || ' é o seu código do ' || rn,
+    private.email_html('Seu código para criar um PIN novo',
+      '<p>Olá, ' || private.esc_html(split_part(cli.nome, ' ', 1)) || '.</p><p>Use este código na página do <b>' || private.esc_html(rn)
+      || '</b> para criar um PIN novo no clube:</p><p class="vtx-codigo" style="font-family:''IBM Plex Mono'',Consolas,''Courier New'',monospace;font-size:34px;font-weight:600;letter-spacing:8px;margin:18px 0;color:#140B33">' || c
+      || '</p><p>O código vale 15 minutos. Se não foi você que pediu, ignore este e-mail: o seu PIN continua o mesmo.</p>'), p_restaurante);
+  return jsonb_build_object('status', 'enviado', 'email', private.email_mascarado(cli.email));
+end $$;
+
+-- Código do e-mail + PIN novo: troca o PIN e já entra.
+create or replace function public.fid_pin_codigo(p_restaurante uuid, p_cpf text, p_codigo text, p_pin text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare v_cpf text := regexp_replace(coalesce(p_cpf, ''), '[^0-9]', '', 'g'); r text;
+begin
+  if not public.fid_no_ar(p_restaurante) then return jsonb_build_object('status', 'inativo'); end if;
+  if coalesce(p_pin, '') !~ '^[0-9]{4}$' then return jsonb_build_object('status', 'erro', 'mensagem', 'O PIN tem 4 números.'); end if;
+  if not public.equipe_pode_tentar('fid-codigo-ip:' || public.ip_do_pedido(), 30, 15) then
+    return jsonb_build_object('status', 'erro', 'mensagem', 'Muitas tentativas. Aguarde 15 minutos.');
+  end if;
+  r := private.codigo_conferir('fid:' || p_restaurante || ':' || v_cpf, p_codigo);
+  if r = 'errado' then return jsonb_build_object('status', 'erro', 'mensagem', 'Código incorreto. Confira o e-mail.'); end if;
+  if r = 'vencido' then return jsonb_build_object('status', 'erro', 'mensagem', 'Este código venceu. Peça um novo.'); end if;
+  insert into private.fid_pins (restaurante_id, cpf, pin_hash) values (p_restaurante, v_cpf, extensions.crypt(p_pin, extensions.gen_salt('bf')))
+  on conflict (restaurante_id, cpf) do update set pin_hash = excluded.pin_hash, redefinir_ate = null;
+  -- Sai dos outros aparelhos: quem tinha o PIN antigo não continua logado.
+  delete from private.fid_sessoes where restaurante_id = p_restaurante and cpf = v_cpf;
+  perform public.equipe_limpar_tentativas('fid-pin:' || p_restaurante || ':' || v_cpf);
+  perform public.equipe_limpar_tentativas('fid-pin-dia:' || p_restaurante || ':' || v_cpf);
+  return jsonb_build_object('status', 'ok', 'token', public.fid_nova_sessao(p_restaurante, v_cpf));
+end $$;
+
+-- Sessão do cliente pelo token (null se não houver).
+create or replace function private.fid_sessao(p_token uuid) returns table (restaurante_id uuid, cpf text)
+language sql stable security definer set search_path = public as $$
+  select s.restaurante_id, s.cpf from private.fid_sessoes s
+   where s.token_hash = public.hash_token(p_token) and s.criado_em > now() - interval '180 days';
+$$;
+
+-- Confere o PIN atual do cliente logado (com as mesmas travas do login). null = certo; texto = o erro.
+create or replace function private.fid_pin_errado(p_restaurante uuid, p_cpf text, p_pin text) returns text
+language plpgsql security definer set search_path = public as $$
+declare h text;
+begin
+  if coalesce(p_pin, '') !~ '^[0-9]{4}$' then return 'O PIN tem 4 números.'; end if;
+  if not public.equipe_pode_tentar('fid-pin:' || p_restaurante || ':' || p_cpf, 5, 15)
+     or not public.equipe_pode_tentar('fid-pin-dia:' || p_restaurante || ':' || p_cpf, 12, 1440) then
+    return 'Muitas tentativas. Aguarde 15 minutos.';
+  end if;
+  select pin_hash into h from private.fid_pins where restaurante_id = p_restaurante and cpf = p_cpf;
+  if coalesce(h, '') = '' or extensions.crypt(p_pin, h) <> h then return 'PIN incorreto.'; end if;
+  perform public.equipe_limpar_tentativas('fid-pin:' || p_restaurante || ':' || p_cpf);
+  return null;
+end $$;
+
+-- Trocar o PIN (logado): PIN atual + PIN novo.
+create or replace function public.fid_trocar_pin(p_token uuid, p_atual text, p_novo text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare v_r uuid; v_cpf text; e text;
+begin
+  select s.restaurante_id, s.cpf into v_r, v_cpf from private.fid_sessao(p_token) s;
+  if v_r is null then return jsonb_build_object('status', 'sem_sessao'); end if;
+  if coalesce(p_novo, '') !~ '^[0-9]{4}$' then return jsonb_build_object('status', 'erro', 'mensagem', 'O PIN novo tem 4 números.'); end if;
+  e := private.fid_pin_errado(v_r, v_cpf, p_atual);
+  if e is not null then return jsonb_build_object('status', 'erro', 'mensagem', e); end if;
+  update private.fid_pins set pin_hash = extensions.crypt(p_novo, extensions.gen_salt('bf')), redefinir_ate = null where restaurante_id = v_r and cpf = v_cpf;
+  -- Fica logado só neste aparelho.
+  delete from private.fid_sessoes where restaurante_id = v_r and cpf = v_cpf and token_hash <> public.hash_token(p_token);
+  return jsonb_build_object('status', 'ok');
+end $$;
+
+-- Meus dados (logado): o que o cliente pode ver e mudar.
+create or replace function public.fid_meus_dados(p_token uuid) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare v_r uuid; v_cpf text; cli public.fid_clientes;
+begin
+  select s.restaurante_id, s.cpf into v_r, v_cpf from private.fid_sessao(p_token) s;
+  if v_r is null then return jsonb_build_object('status', 'sem_sessao'); end if;
+  select * into cli from public.fid_clientes where restaurante_id = v_r and cpf = v_cpf;
+  return jsonb_build_object('status', 'ok', 'nome', cli.nome, 'email', cli.email, 'telefone', cli.telefone, 'marketing', cli.marketing,
+    'nascimento', cli.nascimento, 'cpf', '•••.' || substr(v_cpf, 4, 3) || '.' || substr(v_cpf, 7, 3) || '-••');
+end $$;
+
+-- Atualizar e-mail, telefone e ofertas (logado, com o PIN).
+create or replace function public.fid_atualizar_meus_dados(p_token uuid, p_pin text, p_email text, p_telefone text, p_marketing boolean) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare v_r uuid; v_cpf text; e text; v_email text := lower(btrim(coalesce(p_email, ''))); v_tel text := regexp_replace(coalesce(p_telefone, ''), '[^0-9]', '', 'g');
+begin
+  select s.restaurante_id, s.cpf into v_r, v_cpf from private.fid_sessao(p_token) s;
+  if v_r is null then return jsonb_build_object('status', 'sem_sessao'); end if;
+  if char_length(v_tel) in (12, 13) and v_tel like '55%' then v_tel := substr(v_tel, 3); end if;
+  if char_length(v_email) > 120 or v_email !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' then return jsonb_build_object('status', 'erro', 'mensagem', 'E-mail inválido.'); end if;
+  if v_tel !~ '^[1-9][0-9]{9,10}$' then return jsonb_build_object('status', 'erro', 'mensagem', 'Telefone inválido. Use DDD + número.'); end if;
+  e := private.fid_pin_errado(v_r, v_cpf, p_pin);
+  if e is not null then return jsonb_build_object('status', 'erro', 'mensagem', e); end if;
+  update public.fid_clientes set email = v_email, telefone = v_tel, marketing = coalesce(p_marketing, marketing) where restaurante_id = v_r and cpf = v_cpf;
+  return jsonb_build_object('status', 'ok');
+end $$;
+
+-- Apagar a minha conta (LGPD), com o PIN. Some o cadastro, os pontos e o histórico deste restaurante.
+create or replace function public.fid_apagar_minha_conta(p_token uuid, p_pin text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare v_r uuid; v_cpf text; e text;
+begin
+  select s.restaurante_id, s.cpf into v_r, v_cpf from private.fid_sessao(p_token) s;
+  if v_r is null then return jsonb_build_object('status', 'sem_sessao'); end if;
+  e := private.fid_pin_errado(v_r, v_cpf, p_pin);
+  if e is not null then return jsonb_build_object('status', 'erro', 'mensagem', e); end if;
+  update public.fid_clientes set indicado_por = null where restaurante_id = v_r and indicado_por = v_cpf;
+  delete from private.fid_sessoes where restaurante_id = v_r and cpf = v_cpf;
+  delete from public.fid_clientes where restaurante_id = v_r and cpf = v_cpf;
+  return jsonb_build_object('status', 'ok');
+end $$;
+
+/* ---------- Restaurante: e-mail de avisos ---------- */
+create or replace function public.meus_avisos() returns jsonb
+language sql stable security definer set search_path = public as $$
+  select coalesce(avisos, '{}'::jsonb) from public.restaurantes where id = public.meu_restaurante();
+$$;
+create or replace function public.salvar_avisos(p jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare r uuid := public.meu_restaurante(); v_email text := lower(btrim(coalesce(p ->> 'email', ''))); a jsonb;
+begin
+  if r is null then raise exception 'Acesso negado.'; end if;
+  if not public.eu_admin() then raise exception 'Só o administrador do restaurante muda os avisos.'; end if;
+  if v_email <> '' and (char_length(v_email) > 120 or v_email !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$') then raise exception 'E-mail inválido.'; end if;
+  a := jsonb_build_object('email', nullif(v_email, ''), 'novo_cliente', coalesce((p ->> 'novo_cliente')::boolean, true),
+    'novo_pedido', coalesce((p ->> 'novo_pedido')::boolean, false), 'boas_vindas', coalesce((p ->> 'boas_vindas')::boolean, true));
+  update public.restaurantes set avisos = a where id = r;
+  return a;
+end $$;
+
+-- Novo cliente no clube: boas-vindas para ele e aviso para o restaurante.
+create or replace function private.fid_cliente_novo_aviso() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare r public.restaurantes; url text;
+begin
+  select * into r from public.restaurantes where id = new.restaurante_id;
+  url := private.endereco_rest(r.id);
+  if coalesce(r.avisos ->> 'boas_vindas', 'true') = 'true' and coalesce(new.email, '') <> '' then
+    perform private.aviso('fid_boas_vindas', new.email, 'Bem-vindo ao clube do ' || r.nome,
+      private.email_html('Você entrou no clube do ' || r.nome,
+        '<p>Olá, ' || private.esc_html(split_part(new.nome, ' ', 1)) || '. Seu cadastro está pronto.</p>'
+        || '<p>A cada compra com o seu CPF na nota, leia o QR Code da nota fiscal na página do restaurante para ganhar pontos ou selos.</p>'
+        || '<p>Seu código de indicação: <b>' || private.esc_html(new.codigo) || '</b>. Guarde o seu PIN de 4 números: é com ele que você entra. Se esquecer, peça um código novo na própria página.</p>',
+        'Abrir a página do clube', url || '/?fidelidade'), r.id);
+  end if;
+  if coalesce(r.avisos ->> 'novo_cliente', 'true') = 'true' and coalesce(r.avisos ->> 'email', '') <> '' then
+    perform private.aviso('rest_novo_cliente', r.avisos ->> 'email', 'Novo cliente no clube: ' || split_part(new.nome, ' ', 1),
+      private.email_html('Novo cliente no clube',
+        '<p><b>' || private.esc_html(new.nome) || '</b> entrou no clube do ' || private.esc_html(r.nome) || '.</p>'
+        || '<p>Clientes no clube: <b>' || (select count(*) from public.fid_clientes where restaurante_id = r.id) || '</b>.</p>',
+        'Ver no painel', url || '/admin/#fidelidade'), r.id);
+  end if;
+  return new;
+end $$;
+drop trigger if exists fid_cliente_novo_aviso on public.fid_clientes;
+create trigger fid_cliente_novo_aviso after insert on public.fid_clientes
+  for each row execute function private.fid_cliente_novo_aviso();
+
+-- Novo pedido do delivery: e-mail para o restaurante, se ligado.
+create or replace function private.pedido_novo_aviso() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare r public.restaurantes;
+begin
+  select * into r from public.restaurantes where id = new.restaurante_id;
+  if coalesce(r.avisos ->> 'novo_pedido', 'false') = 'true' and coalesce(r.avisos ->> 'email', '') <> '' then
+    perform private.aviso('rest_novo_pedido', r.avisos ->> 'email', 'Novo pedido no delivery: #' || new.numero,
+      private.email_html('Pedido #' || new.numero || ' recebido',
+        '<p>Chegou um pedido no delivery do ' || private.esc_html(r.nome) || '.</p>', 'Abrir o painel', private.endereco_rest(r.id) || '/admin/#delivery'), r.id);
+  end if;
+  return new;
+end $$;
+drop trigger if exists pedido_novo_aviso on public.pedidos;
+create trigger pedido_novo_aviso after insert on public.pedidos
+  for each row execute function private.pedido_novo_aviso();
+
+-- Mudança de plano feita pelo restaurante: aviso para a Vortex.
+create or replace function private.plano_mudou_aviso() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare n text;
+begin
+  if new.origem <> 'restaurante' then return new; end if;
+  select nome into n from public.restaurantes where id = new.restaurante_id;
+  perform private.aviso_vortex('vtx_plano', 'Plano alterado: ' || n,
+    private.email_html('O ' || n || ' mudou o plano',
+      '<p>Mensalidade: ' || coalesce(public.brl(new.mensal_antes), '—') || ' → <b>' || public.brl(new.mensal_depois) || '</b>'
+      || case when coalesce(new.taxa_unica, 0) > 0 then ' · taxa única ' || public.brl(new.taxa_unica) else '' end || '.</p>'
+      || '<p>Feito por ' || private.esc_html(coalesce(new.por, 'Equipe')) || '.</p>', 'Abrir a central', 'https://tap.vortexsystems.tech/master/'));
+  return new;
+end $$;
+drop trigger if exists plano_mudou_aviso on public.plano_mudancas;
+create trigger plano_mudou_aviso after insert on public.plano_mudancas
+  for each row execute function private.plano_mudou_aviso();
+
+-- O painel mostra na hora quem entrou no clube (Realtime; a regra "equipe ve clientes" filtra por restaurante).
+do $$
+begin
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'fid_clientes') then
+    execute 'alter publication supabase_realtime add table public.fid_clientes';
+  end if;
+end $$;
+
+/* ---------- Página de orçamento: pedido de contratação ---------- */
+create or replace function public.lead_enviar(p jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  v_nome text := left(btrim(coalesce(p ->> 'nome', '')), 80);
+  v_emp  text := left(btrim(coalesce(p ->> 'empresa', '')), 100);
+  v_email text := lower(btrim(coalesce(p ->> 'email', '')));
+  v_tel text := regexp_replace(coalesce(p ->> 'whatsapp', ''), '[^0-9]', '', 'g');
+  v_mesas int := least(greatest(public.num_ou(p ->> 'mesas', 0), 0), 1000)::int;
+  v_mensal numeric := least(greatest(public.num_ou(p ->> 'mensal', 0), 0), 100000);
+  itens text;
+begin
+  if v_nome !~ '\S{2,}' then return jsonb_build_object('status', 'erro', 'mensagem', 'Informe seu nome.'); end if;
+  if v_emp !~ '\S{2,}' then return jsonb_build_object('status', 'erro', 'mensagem', 'Informe o nome do restaurante.'); end if;
+  if char_length(v_email) > 120 or v_email !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' then return jsonb_build_object('status', 'erro', 'mensagem', 'E-mail inválido.'); end if;
+  if v_tel !~ '^(55)?[1-9][0-9]{9,10}$' then return jsonb_build_object('status', 'erro', 'mensagem', 'WhatsApp inválido. Use DDD + número.'); end if;
+  if not public.equipe_pode_tentar('lead-ip:' || public.ip_do_pedido(), 5, 60) then
+    return jsonb_build_object('status', 'erro', 'mensagem', 'Recebemos os seus pedidos. A gente responde em breve.');
+  end if;
+  insert into private.leads (nome, empresa, email, whatsapp, mesas, plano, mensal, ip)
+  values (v_nome, v_emp, v_email, v_tel, v_mesas, p -> 'plano', v_mensal, public.ip_do_pedido());
+  select string_agg(private.esc_html(x), ', ') into itens from jsonb_array_elements_text(coalesce(p -> 'plano' -> 'itens', '[]'::jsonb)) x;
+  perform private.aviso_vortex('vtx_lead', 'Pedido de contratação: ' || v_emp,
+    private.email_html('Novo pedido de contratação',
+      '<p><b>' || private.esc_html(v_nome) || '</b> · ' || private.esc_html(v_emp) || '</p>'
+      || '<p>E-mail: ' || private.esc_html(v_email) || '<br>WhatsApp: ' || v_tel || '<br>Mesas: ' || v_mesas || '</p>'
+      || '<p>Serviços: ' || coalesce(itens, '—') || '<br>Mensalidade simulada: <b>' || public.brl(v_mensal) || '</b></p>'));
+  perform private.aviso('lead_confirmacao', v_email, 'Recebemos o seu pedido · VTX Tap',
+    private.email_html('Recebemos o seu pedido',
+      '<p>Olá, ' || private.esc_html(split_part(v_nome, ' ', 1)) || '. Recebemos o orçamento do <b>' || private.esc_html(v_emp) || '</b>.</p>'
+      || '<p>Nossa equipe fala com você pelo WhatsApp para confirmar os detalhes e agendar a implantação.</p>'
+      || '<p>Serviços: ' || coalesce(itens, '—') || '<br>Mensalidade simulada: <b>' || public.brl(v_mensal) || '</b></p>'));
+  return jsonb_build_object('status', 'ok');
+end $$;
+
+/* ---------- Central: restaurante novo com o e-mail do dono ---------- */
+create or replace function public.central_boas_vindas(p_restaurante uuid, p_email text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare r public.restaurantes; v_email text := lower(btrim(coalesce(p_email, ''))); url text;
+begin
+  if not public.eh_operador() then raise exception 'Acesso negado.'; end if;
+  if v_email !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' then raise exception 'E-mail inválido.'; end if;
+  select * into r from public.restaurantes where id = p_restaurante;
+  if not found then raise exception 'Restaurante não encontrado.'; end if;
+  update public.restaurantes set avisos = coalesce(avisos, '{}'::jsonb) || jsonb_build_object('email', v_email) where id = r.id;
+  url := private.endereco_rest(r.id);
+  perform private.aviso('rest_boas_vindas', v_email, 'Bem-vindo à VTX Tap · ' || r.nome,
+    private.email_html('O ' || r.nome || ' já está na VTX Tap',
+      '<p>O painel da equipe é <b>' || url || '/admin</b>. Para criar a sua conta de administrador, toque em "Criar conta", use o <b>código da equipe</b> que combinamos com você e escolha um PIN só seu.</p>'
+      || '<p>Depois, em Ajustes › Restaurante › Equipe, cadastre o seu e-mail para recuperar o PIN sozinho se esquecer, e convide a equipe.</p>'
+      || '<p>Para ligar uma plaquinha: encoste o celular nela, digite o endereço <b>' || private.esc_html(r.slug) || '</b> (só na primeira vez), entre com o PIN e escolha a mesa.</p>'
+      || '<p>Os avisos do restaurante (novo cliente no clube, pedidos) chegam neste e-mail. Dá para mudar em Ajustes.</p>',
+      'Abrir o painel', url || '/admin/'), r.id);
+  perform private.aviso_vortex('vtx_restaurante', 'Restaurante novo: ' || r.nome,
+    private.email_html('Restaurante novo na VTX Tap', '<p><b>' || private.esc_html(r.nome) || '</b> (' || url || ') foi criado e recebeu o e-mail de boas-vindas em ' || private.esc_html(v_email) || '.</p>'));
+  return jsonb_build_object('status', 'ok');
+end $$;
+
+-- Operador convida outro operador: entra na lista de convites e recebe o e-mail para criar a senha.
+create or replace function public.central_convidar_operador(p_email text, p_nome text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare v_email text := lower(btrim(coalesce(p_email, ''))); v_nome text := left(btrim(coalesce(p_nome, '')), 60);
+begin
+  if not public.eh_operador() then raise exception 'Acesso negado.'; end if;
+  if v_email !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' then raise exception 'E-mail inválido.'; end if;
+  insert into public.operadores_convite (email, nome) values (v_email, v_nome) on conflict (email) do update set nome = excluded.nome;
+  -- Quem já tem conta confirmada vira operador na hora.
+  insert into public.operadores (user_id, nome) select u.id, v_nome from auth.users u
+   where lower(u.email) = v_email and u.email_confirmed_at is not null on conflict (user_id) do nothing;
+  perform private.aviso('vtx_convite', v_email, 'Convite para a central da VTX Tap',
+    private.email_html('Você foi convidado para a central',
+      '<p>Olá' || case when v_nome <> '' then ', ' || private.esc_html(split_part(v_nome, ' ', 1)) else '' end || '. Você agora pode acessar a central da VTX Tap.</p>'
+      || '<p>Abra a central, toque em <b>Primeiro acesso</b>, use este e-mail e crie a sua senha. Depois, confirme pelo link que chega no e-mail.</p>',
+      'Abrir a central', 'https://tap.vortexsystems.tech/master/'));
+  return jsonb_build_object('status', 'ok');
+end $$;
+
+-- Equipe: e-mail de recuperação e código (só a função "equipe", com a service role).
+create or replace function public.equipe_codigo(p_membro uuid) returns text
+language sql security definer set search_path = public as $$
+  select private.codigo_novo('equipe:' || p_membro);
+$$;
+create or replace function public.equipe_codigo_conferir(p_membro uuid, p_codigo text) returns text
+language sql security definer set search_path = public as $$
+  select private.codigo_conferir('equipe:' || p_membro, p_codigo);
+$$;
+create or replace function public.equipe_aviso(p_para text, p_assunto text, p_titulo text, p_corpo text, p_restaurante uuid) returns void
+language sql security definer set search_path = public as $$
+  select private.aviso('equipe', p_para, p_assunto, private.email_html(p_titulo, p_corpo), p_restaurante);
+$$;
+
+do $$
+declare f text;
+begin
+  foreach f in array array['private.esc_html(text)', 'private.email_html(text, text, text, text)', 'private.aviso(text, text, text, text, uuid)',
+    'private.aviso_vortex(text, text, text)', 'private.codigo_novo(text)', 'private.codigo_conferir(text, text)', 'private.email_mascarado(text)',
+    'private.endereco_rest(uuid)', 'private.fid_sessao(uuid)', 'private.fid_pin_errado(uuid, text, text)', 'private.fid_cliente_novo_aviso()',
+    'private.pedido_novo_aviso()', 'private.plano_mudou_aviso()'] loop
+    execute format('revoke execute on function %s from public, anon, authenticated', f);
+  end loop;
+  foreach f in array array['public.avisos_lote(text)', 'public.avisos_marcar(text, uuid, boolean, text)', 'public.equipe_codigo(uuid)',
+    'public.equipe_codigo_conferir(uuid, text)', 'public.equipe_aviso(text, text, text, text, uuid)'] loop
+    execute format('revoke execute on function %s from public, anon, authenticated', f);
+    execute format('grant execute on function %s to service_role', f);
+  end loop;
+  foreach f in array array['public.fid_pin_esqueci(uuid, text)', 'public.fid_pin_codigo(uuid, text, text, text)', 'public.fid_trocar_pin(uuid, text, text)',
+    'public.fid_meus_dados(uuid)', 'public.fid_atualizar_meus_dados(uuid, text, text, text, boolean)', 'public.fid_apagar_minha_conta(uuid, text)',
+    'public.lead_enviar(jsonb)'] loop
+    execute format('revoke execute on function %s from public', f);
+    execute format('grant execute on function %s to anon, authenticated', f);
+  end loop;
+  foreach f in array array['public.meus_avisos()', 'public.salvar_avisos(jsonb)', 'public.central_boas_vindas(uuid, text)', 'public.central_convidar_operador(text, text)'] loop
+    execute format('revoke execute on function %s from public, anon', f);
+    execute format('grant execute on function %s to authenticated', f);
+  end loop;
+end $$;
+
+-- Reenvia a cada 5 minutos o que ficou na fila (função fora do ar, limite do provedor).
+do $$
+begin
+  if exists (select 1 from pg_extension where extname = 'pg_cron') then
+    perform cron.unschedule(jobid) from cron.job where jobname = 'avisos-reenviar';
+    perform cron.schedule('avisos-reenviar', '*/5 * * * *', $c$
+      select net.http_post(url := c.url, body := '{"acao":"enviar"}'::jsonb,
+        headers := jsonb_build_object('Content-Type', 'application/json', 'x-segredo', c.segredo), timeout_milliseconds := 5000)
+      from private.avisos_config c
+      where c.url is not null and exists (select 1 from private.avisos_fila where enviado_em is null and tentativas < 5 and criado_em > now() - interval '2 days')
+    $c$);
+  end if;
+end $$;
+
+-- ===========================================================================
+-- Limpeza (03/10)
+--   * Sai a ativação de plaquinha por código (substituída por "digitar o endereço do restaurante"):
+--     ativar_etiqueta, trocar_codigo_ativacao, a tabela tentativas_ativacao e a coluna codigo_ativacao.
+--   * Faxina diária: o que já venceu e não serve para nada (sessões vencidas, códigos vencidos,
+--     e-mails enviados há mais de 30 dias, chamados com mais de 1 ano).
+-- ===========================================================================
+drop function if exists public.ativar_etiqueta(text, text);
+drop function if exists public.trocar_codigo_ativacao(uuid);
+drop table if exists public.tentativas_ativacao;
+alter table public.restaurantes drop column if exists codigo_ativacao;
+
+create or replace function private.faxina() returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  delete from private.fid_sessoes where criado_em < now() - interval '180 days';
+  delete from public.sessoes where criado_em < now() - interval '30 days';
+  delete from private.codigos where expira_em < now() - interval '1 day';
+  delete from private.tentativas where em < now() - interval '1 day';
+  delete from private.avisos_fila where (enviado_em is not null and enviado_em < now() - interval '30 days')
+     or criado_em < now() - interval '30 days';
+  delete from public.chamados where criado_em < now() - interval '1 year';
+end $$;
+revoke execute on function private.faxina() from public, anon, authenticated;
+
+do $$
+begin
+  if exists (select 1 from pg_extension where extname = 'pg_cron') then
+    perform cron.unschedule(jobid) from cron.job where jobname = 'faxina-diaria';
+    perform cron.schedule('faxina-diaria', '41 6 * * *', 'select private.faxina()');
+  end if;
+end $$;
+
+-- ===========================================================================
+-- Segurança (03/10)
+-- ===========================================================================
+-- O cliente acompanha só o próprio chamado (pelo token da sessão da mesa). Antes, qualquer pessoa sem
+-- login lia os chamados das últimas 3 horas de todos os restaurantes (mesa, observação, quem atendeu).
+create or replace function public.chamado_status(p_token uuid, p_id uuid) returns jsonb
+language sql stable security definer set search_path = public as $$
+  select to_jsonb(c) - 'sessao_id' - 'restaurante_id'
+    from public.chamados c join public.sessoes s on s.id = c.sessao_id
+   where c.id = p_id and s.token_hash = public.hash_token(p_token);
+$$;
+revoke execute on function public.chamado_status(uuid, uuid) from public;
+grant execute on function public.chamado_status(uuid, uuid) to anon, authenticated;
+drop policy if exists "cliente acompanha chamados recentes" on public.chamados;
+revoke select on public.chamados from anon;
+
+-- Comentário anônimo: até 6 por hora do mesmo aparelho/rede e 200 por hora por restaurante (contra spam).
+create or replace function private.limita_comentarios() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if auth.role() = 'anon' and (not public.equipe_pode_tentar('comentario:' || public.ip_do_pedido(), 6, 60)
+     or not public.equipe_pode_tentar('comentario-rest:' || new.restaurante_id, 200, 60)) then
+    raise exception 'Recebemos vários comentários seguidos. Tente de novo mais tarde.';
+  end if;
+  new.texto := left(new.texto, 500);
+  return new;
+end $$;
+revoke execute on function private.limita_comentarios() from public, anon, authenticated;
+drop trigger if exists comentarios_limite on public.comentarios;
+create trigger comentarios_limite before insert on public.comentarios
+  for each row execute function private.limita_comentarios();
+
+-- Equipe: aparelho confiável. O PIN (4 a 8 números) só vale em aparelho que já entrou uma vez com o
+-- código da equipe (ou pelo código do e-mail). De um aparelho novo, pede o código da equipe junto.
+-- Assim, descobrir um PIN de fora do restaurante não basta para entrar no painel.
+create table if not exists private.equipe_aparelhos (
+  token_hash     text primary key,
+  restaurante_id uuid not null references public.restaurantes (id) on delete cascade,
+  criado_em      timestamptz not null default now(),
+  usado_em       timestamptz not null default now()
+);
+create index if not exists equipe_aparelhos_rest_idx on private.equipe_aparelhos (restaurante_id);
+
+create or replace function public.equipe_aparelho_ok(p_restaurante uuid, p_token text) returns boolean
+language plpgsql security definer set search_path = public as $$
+begin
+  if coalesce(p_token, '') !~ '^[0-9a-f]{64}$' then return false; end if;
+  update private.equipe_aparelhos set usado_em = now()
+   where token_hash = encode(extensions.digest(p_token, 'sha256'), 'hex') and restaurante_id = p_restaurante
+     and usado_em > now() - interval '180 days';
+  return found;
+end $$;
+create or replace function public.equipe_aparelho_novo(p_restaurante uuid) returns text
+language plpgsql security definer set search_path = public as $$
+declare t text := encode(extensions.gen_random_bytes(32), 'hex');
+begin
+  insert into private.equipe_aparelhos (token_hash, restaurante_id) values (encode(extensions.digest(t, 'sha256'), 'hex'), p_restaurante);
+  return t;
+end $$;
+-- Trocar o código da equipe desconecta os aparelhos: cada um pede o código novo na próxima entrada.
+create or replace function public.equipe_aparelhos_esquecer(p_restaurante uuid) returns void
+language sql security definer set search_path = public as $$
+  delete from private.equipe_aparelhos where restaurante_id = p_restaurante;
+$$;
+do $$
+declare f text;
+begin
+  foreach f in array array['public.equipe_aparelho_ok(uuid, text)', 'public.equipe_aparelho_novo(uuid)', 'public.equipe_aparelhos_esquecer(uuid)'] loop
+    execute format('revoke execute on function %s from public, anon, authenticated', f);
+    execute format('grant execute on function %s to service_role', f);
+  end loop;
+end $$;
+
+-- Funções sem search_path fixo (aviso do Supabase): fixa no public.
+alter function private.sefaz_custo(integer) set search_path = public;
+alter function public.sefaz_preco_nota() set search_path = public;
+alter function public.implantacao_faixa(integer) set search_path = public;
+alter function public.adicional_preco(text) set search_path = public;
+alter function private.email_mascarado(text) set search_path = public;
+alter function private.esc_html(text) set search_path = public;
+alter function private.email_html(text, text, text, text) set search_path = public;
+
+-- Índices das chaves estrangeiras que o Supabase apontou (crescimento com muitos restaurantes).
+create index if not exists fid_resgates_cartao_idx on public.fid_resgates (cartao_id) where cartao_id is not null;
+create index if not exists fid_resgates_premio_idx on public.fid_resgates (premio_id) where premio_id is not null;
+create index if not exists fid_resgates_cliente_idx on public.fid_resgates (restaurante_id, cpf);
+create index if not exists fid_selos_cartao_idx on public.fid_selos (cartao_id);
+create index if not exists fid_torcidas_cliente_idx on public.fid_torcidas (restaurante_id, cpf);
+create index if not exists hh_leituras_rest_idx on public.hh_leituras (restaurante_id, em desc);
+create index if not exists leituras_dia_codigo_idx on public.leituras_dia (codigo);
+
+-- ===========================================================================
+-- Pagamentos (Asaas): mensalidade recorrente no cartão (o cartão é digitado na página segura do
+-- Asaas e fica guardado lá, nunca passa pelo VTX Tap) ou Pix/boleto todo mês.
+--   * private.assinaturas: uma por restaurante (cliente e assinatura no Asaas).
+--   * private.faturas: espelho das cobranças, atualizado pelo webhook do Asaas.
+--   * private.pag_eventos: eventos do webhook já processados (o Asaas pode mandar o mesmo duas vezes).
+--   * Mudou o plano: o banco chama a função "pagamentos" (pg_net), que ajusta o valor da assinatura
+--     e lança a taxa única das mesas a mais.
+-- A função "pagamentos" usa as RPCs pag_* com a chave de serviço; o painel só lê (minha_cobranca).
+-- ===========================================================================
+create table if not exists private.pag_config (
+  id      int primary key default 1 check (id = 1),
+  url     text,                     -- https://<projeto>.supabase.co/functions/v1/pagamentos
+  segredo text not null default encode(extensions.gen_random_bytes(24), 'hex')
+);
+insert into private.pag_config (id) values (1) on conflict (id) do nothing;
+
+create table if not exists private.assinaturas (
+  restaurante_id uuid primary key references public.restaurantes (id) on delete cascade,
+  cliente_id     text not null,                       -- cus_... no Asaas
+  assinatura_id  text unique,                         -- sub_... no Asaas
+  forma          text not null check (forma in ('cartao', 'pix')),
+  valor          numeric(10, 2) not null,
+  status         text not null default 'ativa' check (status in ('ativa', 'cancelada')),
+  nome           text not null check (char_length(nome) <= 120),
+  documento      text not null check (documento ~ '^[0-9]{11}([0-9]{3})?$'),
+  email          text not null check (char_length(email) <= 120),
+  cartao         text check (char_length(cartao) <= 40),   -- ex.: "VISA final 1234"
+  criado_em      timestamptz not null default now(),
+  atualizado_em  timestamptz not null default now()
+);
+
+create table if not exists private.faturas (
+  id             text primary key,                    -- pay_... no Asaas
+  restaurante_id uuid not null references public.restaurantes (id) on delete cascade,
+  descricao      text,
+  valor          numeric(10, 2) not null,
+  vencimento     date not null,
+  status         text not null,                       -- PENDING, RECEIVED, CONFIRMED, OVERDUE, REFUNDED...
+  forma          text,                                -- CREDIT_CARD, PIX, BOLETO, UNDEFINED
+  url            text,                                -- página de pagamento (invoiceUrl)
+  pago_em        date,
+  atualizado_em  timestamptz not null default now()
+);
+create index if not exists faturas_rest_idx on private.faturas (restaurante_id, vencimento desc);
+
+create table if not exists private.pag_eventos (
+  id          text primary key,
+  evento      text not null,
+  recebido_em timestamptz not null default now()
+);
+
+-- Painel: cobrança do próprio restaurante (qualquer pessoa da equipe vê; só o administrador muda).
+create or replace function public.minha_cobranca() returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare r uuid := public.meu_restaurante(); a private.assinaturas;
+begin
+  if r is null then raise exception 'Acesso negado.'; end if;
+  select * into a from private.assinaturas where restaurante_id = r;
+  return jsonb_build_object(
+    'assinatura', case when a.restaurante_id is null then null else jsonb_build_object('forma', a.forma, 'valor', a.valor,
+      'status', a.status, 'cartao', a.cartao, 'nome', a.nome, 'email', a.email,
+      'documento', case when char_length(a.documento) = 11 then '•••.' || substr(a.documento, 4, 3) || '.•••-' || right(a.documento, 2)
+                        else left(a.documento, 2) || '.•••.•••/' || substr(a.documento, 9, 4) || '-' || right(a.documento, 2) end) end,
+    'faturas', coalesce((select jsonb_agg(jsonb_build_object('id', f.id, 'descricao', f.descricao, 'valor', f.valor, 'vencimento', f.vencimento,
+        'status', f.status, 'forma', f.forma, 'url', f.url, 'pago_em', f.pago_em) order by f.vencimento desc)
+      from (select * from private.faturas where restaurante_id = r order by vencimento desc limit 12) f), '[]'::jsonb));
+end $$;
+
+-- Central: situação da cobrança de todos os restaurantes.
+create or replace function public.central_cobrancas() returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+begin
+  if not public.eh_operador() then raise exception 'Acesso negado.'; end if;
+  return coalesce((select jsonb_object_agg(a.restaurante_id, jsonb_build_object('forma', a.forma, 'valor', a.valor, 'status', a.status,
+      'atrasadas', (select count(*) from private.faturas f where f.restaurante_id = a.restaurante_id and f.status = 'OVERDUE'),
+      'proxima', (select min(f.vencimento) from private.faturas f where f.restaurante_id = a.restaurante_id and f.status in ('PENDING', 'OVERDUE')),
+      'ultimo_pago', (select max(f.pago_em) from private.faturas f where f.restaurante_id = a.restaurante_id)))
+    from private.assinaturas a), '{}'::jsonb);
+end $$;
+
+/* ---------- Só a função "pagamentos" (service role) ---------- */
+-- Dados para criar ou ajustar a assinatura: plano, mensalidade e o que já existe.
+create or replace function public.pag_dados(p_restaurante uuid) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare a private.assinaturas; r public.restaurantes;
+begin
+  select * into r from public.restaurantes where id = p_restaurante;
+  if r.id is null then return null; end if;
+  select * into a from private.assinaturas where restaurante_id = p_restaurante;
+  return jsonb_build_object('nome', r.nome, 'slug', r.slug, 'mensal', public.plano_preco(public.plano_de(p_restaurante)),
+    'assinatura', case when a.restaurante_id is null then null else to_jsonb(a) end,
+    'pendente', (select jsonb_build_object('id', f.id, 'url', f.url) from private.faturas f
+                  where f.restaurante_id = p_restaurante and f.status in ('PENDING', 'OVERDUE') order by f.vencimento limit 1));
+end $$;
+
+create or replace function public.pag_assinatura_gravar(p_restaurante uuid, p jsonb) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  insert into private.assinaturas (restaurante_id, cliente_id, assinatura_id, forma, valor, status, nome, documento, email)
+  values (p_restaurante, p ->> 'cliente_id', p ->> 'assinatura_id', p ->> 'forma', (p ->> 'valor')::numeric,
+          coalesce(p ->> 'status', 'ativa'), p ->> 'nome', p ->> 'documento', p ->> 'email')
+  on conflict (restaurante_id) do update set
+    cliente_id    = coalesce(p ->> 'cliente_id', private.assinaturas.cliente_id),
+    assinatura_id = case when p ? 'assinatura_id' then p ->> 'assinatura_id' else private.assinaturas.assinatura_id end,
+    forma         = coalesce(p ->> 'forma', private.assinaturas.forma),
+    valor         = coalesce((p ->> 'valor')::numeric, private.assinaturas.valor),
+    status        = coalesce(p ->> 'status', private.assinaturas.status),
+    nome          = coalesce(p ->> 'nome', private.assinaturas.nome),
+    documento     = coalesce(p ->> 'documento', private.assinaturas.documento),
+    email         = coalesce(p ->> 'email', private.assinaturas.email),
+    cartao        = case when p ? 'cartao' then p ->> 'cartao' else private.assinaturas.cartao end,
+    atualizado_em = now();
+end $$;
+
+-- true quando o evento é novo (o webhook processa); false quando já foi visto.
+create or replace function public.pag_evento_novo(p_id text, p_evento text) returns boolean
+language plpgsql security definer set search_path = public as $$
+begin
+  insert into private.pag_eventos (id, evento) values (p_id, left(p_evento, 60)) on conflict (id) do nothing;
+  return found;
+end $$;
+
+-- Grava a fatura vinda do Asaas. O restaurante sai do externalReference ou da assinatura.
+-- Avisa por e-mail: pago (Vortex) e vencida (restaurante e Vortex).
+create or replace function public.pag_fatura_gravar(p jsonb) returns uuid
+language plpgsql security definer set search_path = public as $$
+declare
+  v_r uuid; antes text; r public.restaurantes;
+  v_status text := left(p ->> 'status', 30);
+begin
+  select restaurante_id into v_r from private.assinaturas where assinatura_id = p ->> 'subscription';
+  if v_r is null and coalesce(p ->> 'externalReference', '') ~ '^[0-9a-f-]{36}$' then
+    select id into v_r from public.restaurantes where id = (p ->> 'externalReference')::uuid;
+  end if;
+  if v_r is null then return null; end if;
+  select status into antes from private.faturas where id = p ->> 'id';
+  insert into private.faturas (id, restaurante_id, descricao, valor, vencimento, status, forma, url, pago_em)
+  values (p ->> 'id', v_r, left(p ->> 'description', 200), (p ->> 'value')::numeric, (p ->> 'dueDate')::date, v_status,
+          left(p ->> 'billingType', 20), left(p ->> 'invoiceUrl', 300), coalesce(p ->> 'clientPaymentDate', p ->> 'paymentDate')::date)
+  on conflict (id) do update set descricao = excluded.descricao, valor = excluded.valor, vencimento = excluded.vencimento,
+    status = excluded.status, forma = excluded.forma, url = coalesce(excluded.url, private.faturas.url),
+    pago_em = coalesce(excluded.pago_em, private.faturas.pago_em), atualizado_em = now();
+  -- Cartão usado (só bandeira e final, que o Asaas manda no evento).
+  if p -> 'creditCard' ->> 'creditCardNumber' is not null then
+    update private.assinaturas set cartao = left(coalesce(p -> 'creditCard' ->> 'creditCardBrand', 'Cartão') || ' final ' || (p -> 'creditCard' ->> 'creditCardNumber'), 40),
+           atualizado_em = now() where restaurante_id = v_r;
+  end if;
+  if antes is distinct from v_status then
+    select * into r from public.restaurantes where id = v_r;
+    if v_status in ('RECEIVED', 'CONFIRMED', 'RECEIVED_IN_CASH') and coalesce(antes, '') not in ('RECEIVED', 'CONFIRMED', 'RECEIVED_IN_CASH') then
+      perform private.aviso_vortex('vtx_pago', 'Pagamento recebido: ' || r.nome,
+        private.email_html('Pagamento recebido',
+          '<p>' || private.esc_html(r.nome) || ' pagou <b>' || public.brl((p ->> 'value')::numeric) || '</b>'
+          || ' (vencimento ' || to_char((p ->> 'dueDate')::date, 'DD/MM/YYYY') || ').</p>', 'Abrir a central', 'https://tap.vortexsystems.tech/master/'));
+    elsif v_status = 'OVERDUE' then
+      perform private.aviso('rest_fatura_vencida', coalesce(nullif(r.avisos ->> 'email', ''), (select email from private.assinaturas where restaurante_id = v_r)),
+        'Mensalidade do VTX Tap em aberto',
+        private.email_html('Mensalidade em aberto',
+          '<p>A mensalidade de <b>' || public.brl((p ->> 'value')::numeric) || '</b> com vencimento em '
+          || to_char((p ->> 'dueDate')::date, 'DD/MM/YYYY') || ' ainda não foi paga.</p>'
+          || '<p>Você pode pagar no cartão, Pix ou boleto pelo link abaixo. Se já pagou, desconsidere este aviso.</p>',
+          'Pagar agora', p ->> 'invoiceUrl'), v_r);
+      perform private.aviso_vortex('vtx_vencida', 'Fatura vencida: ' || r.nome,
+        private.email_html('Fatura vencida',
+          '<p>' || private.esc_html(r.nome) || ': ' || public.brl((p ->> 'value')::numeric) || ', vencida em '
+          || to_char((p ->> 'dueDate')::date, 'DD/MM/YYYY') || '.</p>', 'Abrir a central', 'https://tap.vortexsystems.tech/master/'));
+    end if;
+  end if;
+  return v_r;
+end $$;
+
+-- Confere o segredo das chamadas do banco para a função (sincronizar o valor).
+create or replace function public.pag_segredo_ok(p_segredo text) returns boolean
+language sql stable security definer set search_path = public as $$
+  select p_segredo is not distinct from (select segredo from private.pag_config where id = 1);
+$$;
+
+-- Mudou o plano de um restaurante com assinatura: a função ajusta o valor e lança a taxa única.
+create or replace function private.plano_mudou_cobranca() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare c private.pag_config;
+begin
+  if not exists (select 1 from private.assinaturas where restaurante_id = new.restaurante_id and status = 'ativa') then return new; end if;
+  select * into c from private.pag_config where id = 1;
+  if c.url is not null then
+    perform net.http_post(url := c.url,
+      body := jsonb_build_object('acao', 'sincronizar', 'restaurante', new.restaurante_id, 'mudanca', new.id, 'taxa', coalesce(new.taxa_unica, 0)),
+      headers := jsonb_build_object('Content-Type', 'application/json', 'x-segredo', c.segredo), timeout_milliseconds := 8000);
+  end if;
+  return new;
+end $$;
+drop trigger if exists plano_mudou_cobranca on public.plano_mudancas;
+create trigger plano_mudou_cobranca after insert on public.plano_mudancas
+  for each row execute function private.plano_mudou_cobranca();
+
+do $$
+declare f text;
+begin
+  foreach f in array array['public.pag_dados(uuid)', 'public.pag_assinatura_gravar(uuid, jsonb)', 'public.pag_evento_novo(text, text)',
+    'public.pag_fatura_gravar(jsonb)', 'public.pag_segredo_ok(text)'] loop
+    execute format('revoke execute on function %s from public, anon, authenticated', f);
+    execute format('grant execute on function %s to service_role', f);
+  end loop;
+  foreach f in array array['public.minha_cobranca()', 'public.central_cobrancas()'] loop
+    execute format('revoke execute on function %s from public, anon', f);
+    execute format('grant execute on function %s to authenticated', f);
+  end loop;
+  execute 'revoke execute on function private.plano_mudou_cobranca() from public, anon, authenticated';
 end $$;

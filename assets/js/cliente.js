@@ -466,7 +466,7 @@
     unwatch = store.watchCall(id, (c) => {
       if (!c) return showStatus(initial || null);
       showStatus(c);
-    });
+    }, (sess && sess.token) || safeGet(sessKey()));
   }
 
   function showStatus(c) {
@@ -749,7 +749,9 @@
       hh = st;
       renderHH();
       if (primeira) { primeira = false; hhGarcom(); }
-    }, 5000);
+      // Muitos celulares por restaurante: com o relógio parado, consulta a cada minuto; rodando, a cada 8 s
+      // (o relógio conta sozinho na tela entre uma consulta e outra).
+    }, (st) => (st && st.rodando ? 8000 : 60000));
   }
 
   /* ---------------- Rodapé ---------------- */

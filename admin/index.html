@@ -66,6 +66,16 @@
     <nav class="tabbar" id="tabbar" aria-label="Menu principal"></nav>
   </div>
 
+  <!-- Celular: as abas que não cabem na barra de baixo -->
+  <div class="sheet" id="sh-mais" role="dialog" aria-modal="true" aria-labelledby="maisTitle" hidden>
+    <div class="sheet-backdrop" data-close></div>
+    <div class="sheet-panel" tabindex="-1">
+      <div class="sheet-grip"></div>
+      <header class="sheet-head"><h2 id="maisTitle">Mais</h2><button class="icon-btn" type="button" data-close aria-label="Fechar"></button></header>
+      <div class="sheet-body" id="maisBody"></div>
+    </div>
+  </div>
+
   <!-- Detalhe da mesa -->
   <div class="sheet" id="sh-mesa" role="dialog" aria-modal="true" aria-labelledby="mesaTitle" hidden>
     <div class="sheet-backdrop" data-close></div>

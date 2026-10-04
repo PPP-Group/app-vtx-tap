@@ -17,7 +17,7 @@
     itemEdit: null,
     ajTab: 'restaurante',
     loginModo: 'entrar',
-    view: 'chamados',
+    view: 'salao',
     filtro: 'abertos',
     fbFiltro: 'todos',
     calls: [],
@@ -42,22 +42,23 @@
   };
 
   const VIEWS = [
-    { id: 'chamados', label: 'Chamados', icon: 'bell' },
     { id: 'salao', label: 'Salão', icon: 'grid' },
+    { id: 'chamados', label: 'Chamados', icon: 'bell' },
     { id: 'comentarios', label: 'Comentários', icon: 'msg' },
     { id: 'plaquinhas', label: 'Mesas', icon: 'nfc' },
     { id: 'ajustes', label: 'Ajustes', icon: 'sliders' },
   ];
   // Fidelidade aparece quando a central libera o módulo para o restaurante.
   const temFid = () => !!(S.settings.modulos && S.settings.modulos.fidelidade && window.FidPainel);
-  // Sem o serviço de chamar o garçom no plano, somem Chamados e Salão.
+  // Sem o serviço de chamar o garçom no plano, somem Chamados e Salão; com o sino desligado na página, some Chamados.
   const temServico = (k) => !S.settings.plano || !!S.settings.plano.servicos[k];
   // Delivery aparece com o serviço no plano.
   const temDel = () => temServico('delivery') && !!window.DelPainel;
   // Prorrogação (adicional) aparece com o adicional no plano.
   const temHH = () => !!(S.settings.plano && S.settings.plano.adicionais && S.settings.plano.adicionais.prorrogacao && window.HHPainel);
   const views = () => {
-    let base = VIEWS.filter((v) => temServico('garcom') || !['chamados', 'salao'].includes(v.id));
+    const sino = S.settings.mesas.sino !== false;
+    let base = VIEWS.filter((v) => (temServico('garcom') || !['chamados', 'salao'].includes(v.id)) && (sino || v.id !== 'chamados'));
     if (temDel()) {
       const i = base.findIndex((v) => v.id === 'comentarios');
       base = [...base.slice(0, i), { id: 'delivery', label: 'Delivery', curto: 'Delivery', icon: 'receipt' }, ...base.slice(i)];
@@ -101,6 +102,27 @@
     $('#login').hidden = false;
     $('#loginBrand').textContent = nomeRest();
     const criar = S.loginModo === 'criar';
+    // Esqueci o PIN: e-mail de recuperação → código → PIN novo.
+    if (S.loginModo === 'esqueci' || S.loginModo === 'codigo') {
+      const passo2 = S.loginModo === 'codigo';
+      $('#loginForm').innerHTML = `<h2 class="login-sub">Esqueci meu PIN</h2>
+        ${passo2
+          ? `<p class="muted">Enviamos um código de 6 números para <b>${esc(S.esqueci.mascara)}</b>. Ele vale 15 minutos.${S.esqueci.demo ? ` <span class="note">Demonstração: o código é <b class="mono">${esc(S.esqueci.demo)}</b>.</span>` : ''}</p>
+             <label class="field"><span>Código do e-mail</span><input class="input mono" id="lgCodigo" inputmode="numeric" maxlength="6" autocomplete="one-time-code" required></label>
+             <label class="field"><span>Crie um PIN novo</span><input class="input pin-input" id="lgPinNovo" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="new-password" required>
+               <small class="help">De 4 a 8 números.</small></label>
+             <p class="form-error" id="lgErr" role="alert">${esc(msg)}</p>
+             <button class="btn btn-cobalt btn-block" type="submit">Trocar o PIN e entrar</button>
+             <button class="btn btn-quiet btn-block" type="button" data-login="esqueci">Mandar outro código</button>`
+          : `<p class="muted">Digite o e-mail de recuperação da sua conta. Ele é cadastrado em Ajustes › Restaurante › Equipe.</p>
+             <label class="field"><span>E-mail</span><input class="input" id="lgEmail" type="email" autocomplete="email" maxlength="120" required value="${esc((S.esqueci && S.esqueci.email) || '')}"></label>
+             <p class="form-error" id="lgErr" role="alert">${esc(msg)}</p>
+             <button class="btn btn-cobalt btn-block" type="submit">Mandar código</button>
+             <p class="login-hint">Sem e-mail cadastrado? O administrador do restaurante troca o seu PIN em Ajustes › Restaurante › Equipe. Se você é o único administrador, fale com a Vortex: a central troca para você.</p>`}
+        <button class="btn btn-quiet btn-block" type="button" data-login="entrar">Voltar para entrar</button>`;
+      setTimeout(() => ($('#lgCodigo') || $('#lgEmail')).focus(), 50);
+      return;
+    }
     $('#loginForm').innerHTML = `${S.vincular ? `<p class="note">${icon('nfc')}<span>Entre para ligar a plaquinha <b class="mono">${esc(S.vincular)}</b> a uma mesa.</span></p>` : ''}
       <div class="seg login-tabs" role="tablist" aria-label="Acesso da equipe">
         <button type="button" role="tab" aria-selected="${!criar}" data-login="entrar">Entrar</button>
@@ -118,8 +140,11 @@
            <p class="form-error" id="lgErr" role="alert">${esc(msg)}</p>
            <button class="btn btn-cobalt btn-block" type="submit">Criar conta e entrar</button>`
         : `<label class="field"><span>Seu PIN</span><input class="input pin-input" id="lgPin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="current-password" required></label>
+           ${S.aparelhoNovo ? `<label class="field"><span>Código da equipe</span><input class="input" id="lgSenhaEq" type="password" autocomplete="off" minlength="6" required>
+             <small class="help">Só na primeira vez neste aparelho. Depois, o painel pede só o PIN.</small></label>` : ''}
            <p class="form-error" id="lgErr" role="alert">${esc(msg)}</p>
            <button class="btn btn-cobalt btn-block" type="submit">Entrar no painel</button>
+           <button class="btn btn-quiet btn-block" type="button" data-login="esqueci">Esqueci meu PIN</button>
            <p class="login-hint">Ainda não tem PIN? Toque em “Criar conta” com o código da equipe, ou peça para o administrador cadastrar você.</p>`}`;
     setTimeout(() => ($('#lgPin') || $('#lgNome')).focus(), 50);
   }
@@ -140,7 +165,35 @@
       campo && campo.focus();
     };
     let r;
-    if (S.loginModo === 'criar') {
+    if (S.loginModo === 'esqueci') {
+      const email = $('#lgEmail').value.trim();
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return falhar('Digite um e-mail válido.', $('#lgEmail'));
+      btn.disabled = true;
+      try {
+        const x = await store.auth.esqueci(email);
+        S.esqueci = { email, mascara: x.email || email, demo: x.demoCodigo || null };
+      } catch (ex) {
+        btn.disabled = false;
+        return falhar(ex.message, $('#lgEmail'));
+      }
+      S.loginModo = 'codigo';
+      return showLogin();
+    }
+    if (S.loginModo === 'codigo') {
+      const codigo = $('#lgCodigo').value.replace(/\D/g, '');
+      const pin = $('#lgPinNovo').value.trim();
+      if (codigo.length !== 6) return falhar('O código tem 6 números.', $('#lgCodigo'));
+      if (!/^\d{4,8}$/.test(pin)) return falhar('O PIN precisa ter de 4 a 8 números.', $('#lgPinNovo'));
+      btn.disabled = true;
+      try {
+        r = await store.auth.redefinir({ email: S.esqueci.email, codigo, pin });
+      } catch (ex) {
+        btn.disabled = false;
+        return falhar(ex.message, /PIN/.test(ex.message) ? $('#lgPinNovo') : $('#lgCodigo'));
+      }
+      S.loginModo = 'entrar';
+      toast('PIN trocado. Use o PIN novo nas próximas vezes.', { tone: 'ok' });
+    } else if (S.loginModo === 'criar') {
       const nome = $('#lgNome').value.trim();
       const pin = $('#lgPinNovo').value.trim();
       const senhaEquipe = $('#lgSenha').value;
@@ -158,14 +211,24 @@
     } else {
       const pin = $('#lgPin').value.trim();
       if (!/^\d{4,8}$/.test(pin)) return falhar('Digite seu PIN (4 a 8 números).', $('#lgPin'));
+      const senhaEq = $('#lgSenhaEq') ? $('#lgSenhaEq').value : '';
+      if (S.aparelhoNovo && senhaEq.length < 6) return falhar('Digite o código da equipe (só na primeira vez neste aparelho).', $('#lgSenhaEq'));
       btn.disabled = true;
       try {
-        r = await store.auth.entrar(pin);
+        r = await store.auth.entrar(pin, senhaEq);
       } catch (ex) {
         btn.disabled = false;
+        if (ex.aparelhoNovo && !S.aparelhoNovo) {
+          // Aparelho novo: mostra o campo do código da equipe e mantém o PIN digitado.
+          S.aparelhoNovo = true;
+          showLogin(ex.message);
+          $('#lgPin').value = pin;
+          return $('#lgSenhaEq').focus();
+        }
         $('#lgPin').value = '';
-        return falhar(ex.message, $('#lgPin'));
+        return falhar(ex.message, ex.aparelhoNovo ? $('#lgSenhaEq') : $('#lgPin'));
       }
+      S.aparelhoNovo = false;
     }
     S.user = { nome: r.nome, admin: !!r.admin };
     unlockAudio();
@@ -552,10 +615,16 @@
     $('#sideNav').innerHTML = lista.map(
       (v) => `<a class="nav-item" href="#${v.id}" ${S.view === v.id ? 'aria-current="page"' : ''}>${icon(v.icon)}<span>${v.label}</span>${badgeFor(v.id, n)}</a>`
     ).join('');
-    $('#tabbar').style.gridTemplateColumns = `repeat(${lista.length}, 1fr)`;
-    $('#tabbar').innerHTML = lista.map(
-      (v) => `<a class="tab" href="#${v.id}" ${S.view === v.id ? 'aria-current="page"' : ''}>${icon(v.icon)}<span>${v.curto || v.label}</span>${badgeFor(v.id, n)}</a>`
-    ).join('');
+    // Celular: até 5 abas cabem na barra; com mais, ficam as 4 mais usadas e o resto vai para "Mais".
+    const PRIORIDADE = ['salao', 'chamados', 'fidelidade', 'delivery', 'prorrogacao', 'plaquinhas', 'comentarios', 'ajustes'];
+    const fixas = lista.length > 5 ? [...lista].sort((x, y) => PRIORIDADE.indexOf(x.id) - PRIORIDADE.indexOf(y.id)).slice(0, 4) : lista;
+    const resto = lista.filter((v) => !fixas.includes(v));
+    const tab = (v) => `<a class="tab" href="#${v.id}" ${S.view === v.id ? 'aria-current="page"' : ''}>${icon(v.icon)}<span>${v.curto || v.label}</span>${badgeFor(v.id, n)}</a>`;
+    const noResto = resto.find((v) => v.id === S.view);
+    $('#tabbar').style.gridTemplateColumns = `repeat(${fixas.length + (resto.length ? 1 : 0)}, 1fr)`;
+    $('#tabbar').innerHTML = lista.filter((v) => fixas.includes(v)).map(tab).join('')
+      + (resto.length ? `<button type="button" class="tab" data-mais ${noResto ? 'aria-current="page"' : ''} aria-haspopup="dialog">${icon(noResto ? noResto.icon : 'more')}<span>${noResto ? noResto.curto || noResto.label : 'Mais'}</span>${resto.some((v) => badgeFor(v.id, n)) ? '<span class="badge badge-dot" aria-label="tem novidade"></span>' : ''}</button>` : '');
+    $('#maisBody').innerHTML = `<nav class="mais-lista" aria-label="Outras abas">${resto.map((v) => `<a class="mais-item" href="#${v.id}" data-mais-ir="${v.id}" ${S.view === v.id ? 'aria-current="page"' : ''}>${icon(v.icon)}<span>${v.label}</span>${badgeFor(v.id, n)}</a>`).join('')}</nav>`;
     $('#sideFoot').innerHTML = `
       <span class="live ${S.online ? '' : 'is-off'}">${S.online ? (isDemo ? 'Ao vivo · modo demonstração' : 'Ao vivo') : 'Sem conexão'}</span>
       <div class="side-user"><span class="avatar">${esc(firstName(S.user.nome)[0] || '?').toUpperCase()}</span>
@@ -598,6 +667,16 @@
     else if (t.dataset.tool === 'sair') logout();
   });
 
+  // "Mais" no celular: abre a lista; escolher uma aba fecha a folha e depois navega (o fechar mexe no histórico).
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('[data-mais]')) { openSheet('sh-mais'); return; }
+    const ir = e.target.closest('[data-mais-ir]');
+    if (!ir) return;
+    e.preventDefault();
+    const el = $('#sh-mais');
+    el.addEventListener('sheet:close', () => go(ir.dataset.maisIr), { once: true });
+    closeSheet();
+  });
   function go(view) {
     location.hash = view;
   }
@@ -640,6 +719,8 @@
   const chavePulo = () => `nfc-config-pulada:${cfg.backend.slug || 'demo'}`;
   function avisoConfig() {
     if (S.settings.restaurante.configConcluida) return '';
+    // Só na primeira aba e em Ajustes: no celular o aviso ocupava o topo de todas as telas.
+    if (![views()[0].id, 'ajustes'].includes(S.view)) return '';
     const pulado = +get(chavePulo()) || 0;
     if (Date.now() - pulado < 7 * 864e5) return '';
     const passos = passosConfig();
@@ -648,10 +729,10 @@
     return `<section class="cfg-aviso" aria-label="Configuração do restaurante">
       <div class="cfg-aviso-h">
         <div><h2>Conclua a configuração do restaurante</h2>
-          <p>O que não estiver preenchido não aparece para o cliente. ${feitos} de ${passos.length} feitos.</p></div>
+          <p>O que não estiver preenchido não aparece para o cliente. ${feitos} de ${passos.length} feitos; falta:</p></div>
         <span class="cfg-barra" aria-hidden="true"><i style="width:${Math.round((feitos / passos.length) * 100)}%"></i></span>
       </div>
-      <ul class="cfg-passos">${passos.map((p) => `<li class="${p.ok ? 'is-ok' : ''}">${p.ok ? icon('check') : ''}<button type="button" class="link" data-cfg-ir="${p.aba}">${p.txt}</button></li>`).join('')}</ul>
+      <ul class="cfg-passos">${passos.filter((p) => !p.ok).map((p) => `<li class="${p.ok ? 'is-ok' : ''}">${p.ok ? icon('check') : ''}<button type="button" class="link" data-cfg-ir="${p.aba}">${p.txt}</button></li>`).join('')}</ul>
       <div class="vhead-actions">
         <button type="button" class="btn btn-cobalt btn-sm" data-cfg-ir="${(passos.find((p) => !p.ok) || passos[0]).aba}">Continuar configuração</button>
         <button type="button" class="btn btn-quiet btn-sm" data-cfg="pular">Pular por agora</button>
@@ -1339,6 +1420,14 @@
         <section class="panel stack" aria-labelledby="hEquipe">
           <h2 id="hEquipe">Equipe</h2>
           <ul class="team-list" id="teamList"><li class="muted">Carregando…</li></ul>
+          <form class="team-add stack" id="meuEmailForm" novalidate>
+            <h3>Seu e-mail para recuperar o PIN</h3>
+            <p class="help">Se esquecer o PIN, toque em “Esqueci meu PIN” na entrada do painel: mandamos um código para este e-mail e você cria um PIN novo sozinho.</p>
+            <div class="team-add-row">
+              <label class="field"><span>E-mail</span><input class="input" name="email" id="meuEmail" type="email" maxlength="120" autocomplete="email" placeholder="voce@email.com"></label>
+            </div>
+            <button type="submit" class="btn btn-line btn-sm">${icon('check')} Salvar e-mail</button>
+          </form>
           ${S.user.admin ? `<form class="team-add stack" id="teamAddForm" novalidate>
             <h3>Cadastrar pessoa</h3>
             <div class="team-add-row">
@@ -1357,10 +1446,27 @@
               <label class="field"><span>Repita o código</span><input class="input mono" name="codigo2" type="password" minlength="6" maxlength="40" autocomplete="new-password" required></label>
             </div>
             <button type="submit" class="btn btn-line btn-sm">${icon('lock')} Trocar o código</button>
-          </form>`
+          </form>
+          <div class="team-add stack">
+            <h3>Aparelhos</h3>
+            <p class="help">Cada aparelho entra uma vez com o código da equipe e depois só com o PIN. Perdeu um celular ou alguém saiu da equipe? Desconecte todos: cada aparelho volta a pedir o código na próxima entrada.</p>
+            <button type="button" class="btn btn-line btn-sm" data-esquecer-aparelhos>${icon('logout')} Desconectar todos os aparelhos</button>
+          </div>`
           : '<small class="help">Quem cadastra e remove pessoas é o administrador do restaurante. Você pode trocar o seu PIN.</small>'}
         </section>
       </div>
+
+      ${S.user.admin ? `<section class="panel stack" aria-labelledby="hAvisos">
+        <h2 id="hAvisos">Avisos por e-mail</h2>
+        <p class="help">Para onde a VTX manda os avisos do restaurante. Só o administrador muda.</p>
+        <form class="stack" id="avisosForm" novalidate>
+          <label class="field"><span>E-mail dos avisos</span><input class="input" name="email" type="email" maxlength="120" autocomplete="email" placeholder="gerencia@seurestaurante.com.br"></label>
+          <label class="set-inline"><span>Novo cliente no clube</span><span class="switch"><input type="checkbox" name="novo_cliente"><span></span></span></label>
+          <label class="set-inline"><span>Novo pedido no delivery</span><span class="switch"><input type="checkbox" name="novo_pedido"><span></span></span></label>
+          <label class="set-inline"><span>E-mail de boas-vindas para quem entra no clube</span><span class="switch"><input type="checkbox" name="boas_vindas"><span></span></span></label>
+          <button type="submit" class="btn btn-line btn-sm">${icon('check')} Salvar avisos</button>
+        </form>
+      </section>` : ''}
 
       <section class="panel stack" aria-labelledby="hHoras">
         <h2 id="hHoras">Horário de funcionamento</h2>
@@ -1386,6 +1492,19 @@
     try {
       const lista = await store.auth.membros();
       if (!alvo()) return;
+      const eu = lista.find((m) => m.voce);
+      if (eu && $('#meuEmail') && !$('#meuEmail').value) $('#meuEmail').value = eu.email || '';
+      if ($('#avisosForm') && !$('#avisosForm').dataset.ok) {
+        $('#avisosForm').dataset.ok = '1';
+        store.meusAvisos().then((a) => {
+          const f = $('#avisosForm');
+          if (!f) return;
+          f.elements.email.value = a.email || '';
+          f.elements.novo_cliente.checked = a.novo_cliente !== false;
+          f.elements.novo_pedido.checked = !!a.novo_pedido;
+          f.elements.boas_vindas.checked = a.boas_vindas !== false;
+        }).catch(() => {});
+      }
       const adm = !!S.user.admin;
       alvo().innerHTML = lista.length
         ? lista.map((m) => `<li class="team-row">
@@ -1438,6 +1557,39 @@
       toast(ex.message, { tone: 'error', ms: 4500 });
     }
     carregarEquipe();
+  });
+  document.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-esquecer-aparelhos]');
+    if (!b) return;
+    if (!confirm('Desconectar todos os aparelhos? Na próxima entrada, cada um pede o código da equipe junto com o PIN. Quem está usando agora continua até sair.')) return;
+    b.disabled = true;
+    try {
+      await store.auth.esquecerAparelhos();
+      toast('Aparelhos desconectados. Na próxima entrada, cada um pede o código da equipe.', { tone: 'ok', ms: 5000 });
+    } catch (ex) {
+      toast(ex.message, { tone: 'error', ms: 4500 });
+    }
+    b.disabled = false;
+  });
+  document.addEventListener('submit', async (e) => {
+    if (!['meuEmailForm', 'avisosForm'].includes(e.target.id)) return;
+    e.preventDefault();
+    const f = e.target;
+    const btn = f.querySelector('[type=submit]');
+    btn.disabled = true;
+    try {
+      if (f.id === 'meuEmailForm') {
+        await store.auth.meuEmail(f.elements.email.value.trim());
+        toast(f.elements.email.value.trim() ? 'E-mail salvo. Se esquecer o PIN, o código vai para ele.' : 'E-mail de recuperação removido.', { tone: 'ok' });
+      } else {
+        await store.salvarAvisos({ email: f.elements.email.value.trim(), novo_cliente: f.elements.novo_cliente.checked,
+          novo_pedido: f.elements.novo_pedido.checked, boas_vindas: f.elements.boas_vindas.checked });
+        toast('Avisos salvos.', { tone: 'ok' });
+      }
+    } catch (ex) {
+      toast(ex.message, { tone: 'error', ms: 4500 });
+    }
+    btn.disabled = false;
   });
   document.addEventListener('submit', async (e) => {
     if (e.target.id !== 'teamCodigoForm') return;
@@ -1915,7 +2067,7 @@
     + ` · ${p.mesas} mesas` : '—');
   async function carregarPlano() {
     try {
-      S.plano = await store.meuPlano();
+      [S.plano, S.cobranca] = await Promise.all([store.meuPlano(), store.minhaCobranca().catch(() => ({ indisponivel: true }))]);
       S.planoEd = { servicos: { ...S.plano.plano.servicos }, adicionais: { ...(S.plano.plano.adicionais || {}) }, mesas: S.plano.plano.mesas };
     } catch (e) {
       console.error(e);
@@ -1937,6 +2089,98 @@
       ${ant ? `<p class="help">Em ${nomeMes(ant.mes)}: ${ant.notas} ${ant.notas === 1 ? 'nota' : 'notas'} · ${brl(ant.valor)}.</p>` : ''}
     </section>`;
   }
+  // Mensalidade: cartão recorrente ou Pix/boleto pelo Asaas. O cartão é digitado na página segura do Asaas.
+  const FATURA = { PENDING: ['Em aberto', ''], OVERDUE: ['Vencida', 'is-late'], RECEIVED: ['Paga', 'is-paid'], CONFIRMED: ['Paga', 'is-paid'],
+    RECEIVED_IN_CASH: ['Paga', 'is-paid'], REFUNDED: ['Estornada', ''], DELETED: ['Cancelada', ''] };
+  const dataBr = (iso) => (iso ? new Date(`${String(iso).slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR') : '');
+  function pagPanel() {
+    const c = S.cobranca;
+    if (!c || c.indisponivel) return '';
+    const a = c.assinatura;
+    const abertas = (c.faturas || []).filter((f) => f.status === 'PENDING' || f.status === 'OVERDUE').sort((x, y) => x.vencimento.localeCompare(y.vencimento));
+    const prox = abertas[0];
+    const vencida = abertas.some((f) => f.status === 'OVERDUE');
+    if (!a || a.status !== 'ativa') {
+      return `<section class="panel stack pag-panel">
+        <h2>Pagamento da mensalidade</h2>
+        ${!S.user.admin ? `<p class="note">${icon('lock')}<span>A cobrança ainda não foi ativada. Só o administrador do restaurante ativa.</span></p>` : `
+        <p class="muted">Escolha como pagar os ${reais(S.plano.mensal)} por mês. No cartão, você digita os dados uma vez na página segura do Asaas e a mensalidade é cobrada sozinha todo mês. O VTX Tap não vê nem guarda o número do cartão.</p>
+        <form id="pagAtivarForm" class="stack" novalidate>
+          <div class="pag-formas" role="radiogroup" aria-label="Forma de pagamento">
+            <label class="plano-op is-on"><span><b>Cartão de crédito automático</b><small>Qualquer bandeira. Cobra todo mês sem você precisar fazer nada.</small></span>
+              <input type="radio" name="pagForma" value="cartao" checked></label>
+            <label class="plano-op"><span><b>Pix ou boleto todo mês</b><small>Chega o link por e-mail alguns dias antes do vencimento.</small></span>
+              <input type="radio" name="pagForma" value="pix"></label>
+          </div>
+          <div class="pag-campos">
+            <label class="field"><span>Nome ou razão social</span><input class="input" name="nome" required maxlength="120" autocomplete="organization" value="${esc(S.settings.restaurante && S.settings.restaurante.nome || '')}"></label>
+            <label class="field"><span>CPF ou CNPJ</span><input class="input mono" name="documento" required inputmode="numeric" maxlength="18"></label>
+            <label class="field"><span>E-mail para as cobranças</span><input class="input" name="email" type="email" required maxlength="120" autocomplete="email"></label>
+            <label class="field"><span>Celular (opcional)</span><input class="input" name="telefone" type="tel" inputmode="tel" maxlength="16" autocomplete="tel"></label>
+          </div>
+          <button class="btn btn-cobalt" type="submit">${icon('lock')} Ativar e ir para o pagamento</button>
+          <small class="help">Abre a página de pagamento do Asaas em outra aba. A primeira mensalidade vence amanhã.</small>
+        </form>`}
+      </section>`;
+    }
+    return `<section class="panel stack pag-panel">
+      <h2>Pagamento da mensalidade</h2>
+      ${vencida ? `<p class="note is-warn">${icon('alert')}<span>Há mensalidade vencida. Pague pelo botão abaixo para não interromper o serviço.</span></p>` : ''}
+      <div class="pag-resumo">
+        <div class="plano-resumo"><span>Forma</span><b class="pag-forma">${a.forma === 'cartao' ? 'Cartão automático' : 'Pix ou boleto'}</b>
+          <small>${a.forma === 'cartao' ? (a.cartao ? esc(a.cartao) : 'Cartão ainda não cadastrado: cadastre no primeiro pagamento.') : 'O link chega no e-mail ' + esc(a.email) + '.'}</small></div>
+        <div class="plano-resumo"><span>${prox ? (prox.status === 'OVERDUE' ? 'Vencida' : 'Próxima cobrança') : 'Mensalidade'}</span>
+          <b>${reais(prox ? prox.valor : a.valor)}</b><small>${prox ? `Vence em ${dataBr(prox.vencimento)}` : 'Nenhuma cobrança em aberto.'}</small></div>
+      </div>
+      ${S.user.admin ? `<div class="dom-acoes">
+        ${prox ? `<button type="button" class="btn btn-cobalt" data-pag="pagar">${icon('external')} ${a.forma === 'cartao' && !a.cartao ? 'Cadastrar o cartão e pagar' : 'Pagar agora'}</button>` : ''}
+        <button type="button" class="btn btn-line" data-pag="forma" data-forma="${a.forma === 'cartao' ? 'pix' : 'cartao'}">${a.forma === 'cartao' ? 'Mudar para Pix ou boleto' : 'Mudar para cartão automático'}</button>
+      </div>
+      <small class="help">Para trocar o cartão, mude para Pix ou boleto e volte para o cartão: a próxima cobrança pede o cartão novo. Dados de cobrança: ${esc(a.nome)} · ${esc(a.documento)}.</small>` : ''}
+      ${(c.faturas || []).length ? `<h3 class="plano-sub">Cobranças</h3><ul class="plano-hist pag-faturas">${c.faturas.map((f) => {
+        const [st, cls] = FATURA[f.status] || [f.status, ''];
+        return `<li><span><b>${reais(f.valor)}</b> · ${esc(f.descricao || 'Mensalidade')} <span class="tag pag-st ${cls}">${st}</span></span>
+          <small class="muted">Vencimento ${dataBr(f.vencimento)}${f.pago_em ? ` · pago em ${dataBr(f.pago_em)}` : ''}${f.url ? ` · <a href="${esc(f.url)}" target="_blank" rel="noopener">${f.status === 'PENDING' || f.status === 'OVERDUE' ? 'pagar' : 'recibo'}</a>` : ''}</small></li>`;
+      }).join('')}</ul>` : ''}
+    </section>`;
+  }
+  async function pagAcao(acao, dados, botao) {
+    // Abre a aba antes da resposta (o navegador bloqueia janela aberta depois de esperar).
+    const aba = window.open('', '_blank');
+    if (botao) botao.disabled = true;
+    try {
+      const r = await store.pagamento(acao, dados);
+      if (r.url && aba) aba.location.href = r.url;
+      else if (aba) aba.close();
+      S.cobranca = await store.minhaCobranca();
+      toast(r.url ? 'Página de pagamento aberta em outra aba.' : r.demo ? 'Demonstração: pagamento registrado.' : 'Pronto.', { tone: 'ok', ms: 4500 });
+      renderView();
+    } catch (ex) {
+      if (aba) aba.close();
+      toast(ex.message || 'Não foi possível agora. Tente de novo.', { tone: 'error', ms: 5000 });
+      if (botao) botao.disabled = false;
+    }
+  }
+  document.addEventListener('submit', (e) => {
+    if (e.target.id !== 'pagAtivarForm') return;
+    e.preventDefault();
+    const f = new FormData(e.target);
+    const doc = String(f.get('documento') || '').replace(/\D/g, '');
+    if (!/^(\d{11}|\d{14})$/.test(doc)) return toast('CPF ou CNPJ inválido.', { tone: 'error' });
+    pagAcao('ativar', { forma: f.get('pagForma'), nome: f.get('nome'), documento: doc, email: f.get('email'), telefone: f.get('telefone') },
+      e.target.querySelector('[type=submit]'));
+  });
+  document.addEventListener('change', (e) => {
+    if (e.target.name !== 'pagForma') return;
+    e.target.closest('.pag-formas').querySelectorAll('.plano-op').forEach((l) => l.classList.toggle('is-on', l.contains(e.target)));
+  });
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-pag]');
+    if (!b) return;
+    if (b.dataset.pag === 'forma' && !confirm(b.dataset.forma === 'pix' ? 'Mudar para Pix ou boleto? O cartão deixa de ser cobrado e o link chega por e-mail todo mês.'
+      : 'Mudar para cartão automático? A próxima cobrança pede o cartão na página segura do Asaas.')) return;
+    pagAcao(b.dataset.pag, { forma: b.dataset.forma }, b);
+  });
   function ajPlano() {
     if (!S.plano) {
       carregarPlano();
@@ -1958,6 +2202,7 @@
       ed.mesas < S.settings.mesas.total && `Hoje vocês usam ${S.settings.mesas.total} mesas. As mesas acima da ${ed.mesas} deixam de funcionar.`,
     ].filter(Boolean);
     return `<div class="aj-grid plano-grid">
+      ${pagPanel()}
       <section class="panel stack">
         <h2>Seu plano hoje</h2>
         ${atual.definido === false ? '<p class="note">A VTX ainda não definiu o plano deste restaurante: hoje tudo está liberado.</p>' : ''}
@@ -1980,7 +2225,7 @@
           </label>`).join('')}</div>
         <h3 class="plano-sub">Adicionais</h3>
         <div class="plano-ops">${ADICIONAIS.map((a) => `<label class="plano-op ${ed.adicionais[a.id] ? 'is-on' : ''}">
-            <span><b>${esc(a.nome)}</b><small>${esc(a.desc)}</small></span>
+            <span><b>${esc(a.nome)}</b><small>${esc(a.desc)}${a.combo ? ' Entra no desconto de combo.' : ''}</small></span>
             <span class="plano-op-preco">${precoAd(a)}</span>
             <span class="switch"><input type="checkbox" data-plano-ad="${a.id}" ${ed.adicionais[a.id] ? 'checked' : ''} aria-label="${esc(a.nome)}"><span></span></span>
           </label>`).join('')}</div>
@@ -1991,7 +2236,7 @@
           <small class="help">Faixas de implantação: ${Precos.IMPLANTACAO.map((f) => `${f.nome} ${reais(f.valor)}`).join(' · ')}. Passar para uma faixa maior cobra uma vez a diferença.</small></label>
         <div class="plano-resumo ${dif > 0 ? 'is-up' : dif < 0 ? 'is-down' : ''}">
           <span>Nova mensalidade</span><b>${reais(novoPreco)}<small> por mês</small></b>
-          ${mudou ? `<small>${dif > 0 ? `+${reais(dif)} por mês` : dif < 0 ? `−${reais(-dif)} por mês` : 'mesmo valor'} (hoje ${reais(S.plano.mensal)})${Precos.combo(ed.servicos).economia ? ` · desconto de combo: −${reais(Precos.combo(ed.servicos).economia)}` : ''}</small>` : '<small>Mude os serviços ou as mesas acima.</small>'}
+          ${mudou ? `<small>${dif > 0 ? `+${reais(dif)} por mês` : dif < 0 ? `−${reais(-dif)} por mês` : 'mesmo valor'} (hoje ${reais(S.plano.mensal)})${Precos.combo(Precos.itens(ed)).economia ? ` · desconto de combo: −${reais(Precos.combo(Precos.itens(ed)).economia)}` : ''}</small>` : '<small>Mude os serviços ou as mesas acima.</small>'}
         </div>
         ${taxa ? `<div class="plano-resumo is-up"><span>Taxa única pelas mesas a mais</span><b>${reais(taxa)}<small> uma vez</small></b>
           <small>Diferença da implantação para ${esc(Precos.faixa(ed.mesas).nome)}${+atual.contrato === 12 ? ' (com os 50% do contrato de 12 meses)' : ''}. Entra na próxima cobrança, junto com a mensalidade.</small></div>` : ''}
@@ -2108,7 +2353,12 @@
   document.addEventListener('change', (e) => {
     if (!e.target.matches('[data-sino]')) return;
     const on = e.target.checked;
-    saveSettings({ mesas: { ...S.settings.mesas, sino: on } }).then((ok) => ok && toast(on ? 'Sino ligado na página da mesa.' : 'Sino desligado: a página da mesa fica sem o botão de chamar.', { tone: 'ok' }));
+    saveSettings({ mesas: { ...S.settings.mesas, sino: on } }).then((ok) => {
+      if (!ok) return;
+      // A aba Chamados aparece e some junto com o sino.
+      renderChrome();
+      toast(on ? 'Sino ligado na página da mesa. A aba Chamados voltou ao menu.' : 'Sino desligado: a página da mesa fica sem o botão de chamar e a aba Chamados sai do menu.', { tone: 'ok' });
+    });
   });
 
   /* Eventos dos ajustes */
@@ -2556,6 +2806,13 @@
     route();
     window.addEventListener('hashchange', route);
     store.subscribe(queueRefresh);
+    // Cliente novo no clube: aviso na hora para a equipe.
+    if (store.onNovoCliente) store.onNovoCliente((c) => {
+      if (!temFid()) return;
+      const nome = firstName(c.nome) || 'Alguém';
+      toast(`${nome} entrou no clube.`, { tone: 'ok', ms: 5000, action: S.view !== 'fidelidade' ? { label: 'Ver', run: () => go('fidelidade') } : null });
+      notify({ id: 'cli-' + Date.now(), titulo: 'Novo cliente no clube', corpo: `${c.nome || nome} acabou de entrar no clube.` });
+    });
     refresh();
     setInterval(tick, 1000);
     // Rede de segurança caso o tempo real caia.
